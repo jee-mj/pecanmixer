@@ -30,6 +30,8 @@ pub enum SubmissionFailure {
     QueueFull,
     Stopped,
     IdExhausted,
+    /// The application has not completed its initial preferences load.
+    NotReady,
 }
 #[derive(Debug)]
 pub struct SubmissionError {
@@ -244,3 +246,65 @@ fn failed(
 
 #[cfg(test)]
 mod tests;
+
+// Fault injection stays in synthetic unit builds; production callers receive
+// only the ordinary explicit-path worker constructor.
+#[cfg(test)]
+impl SettingsWorker {
+    pub(crate) fn fixture(
+        file: SettingsFile,
+        load_gate: Option<(SyncSender<()>, Receiver<()>)>,
+        save_gate: Option<(SyncSender<()>, Receiver<()>)>,
+        fail_after_publish: bool,
+    ) -> io::Result<Self> {
+        struct Fixture {
+            file: SettingsFile,
+            load: std::sync::Mutex<Option<(SyncSender<()>, Receiver<()>)>>,
+            save: std::sync::Mutex<Option<(SyncSender<()>, Receiver<()>)>>,
+            fail: std::sync::atomic::AtomicBool,
+        }
+        impl Store for Fixture {
+            fn load(&self) -> Result<LoadedSettings, StorageError> {
+                if let Some((entered, release)) = self.load.lock().unwrap().take() {
+                    let _ = entered.send(());
+                    let _ = release.recv();
+                }
+                self.file.load()
+            }
+            fn save(
+                &self,
+                from: &LoadedSettings,
+                next: &SettingsV1,
+            ) -> Result<LoadedSettings, StorageError> {
+                if let Some((entered, release)) = self.save.lock().unwrap().take() {
+                    let _ = entered.send(());
+                    let _ = release.recv();
+                }
+                let saved = self.file.save(from, next)?;
+                if self.fail.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                    return Err(StorageError::Io {
+                        phase: crate::settings_storage::WritePhase::SyncDirectory,
+                        path: self.file.path().to_path_buf(),
+                        published: true,
+                        recovery_backup: None,
+                        source: io::Error::other("Synthetic post-rename failure"),
+                    });
+                }
+                Ok(saved)
+            }
+            fn recover(
+                &self,
+                from: &LoadedSettings,
+                next: &SettingsV1,
+            ) -> Result<RecoveredSettings, StorageError> {
+                self.file.recover(from, next)
+            }
+        }
+        Self::start_store(Fixture {
+            file,
+            load: std::sync::Mutex::new(load_gate),
+            save: std::sync::Mutex::new(save_gate),
+            fail: std::sync::atomic::AtomicBool::new(fail_after_publish),
+        })
+    }
+}

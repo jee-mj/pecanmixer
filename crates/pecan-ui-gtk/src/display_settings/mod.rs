@@ -5,8 +5,13 @@ use pecan_core::{
     settings::{HiddenKey, RowWeights, SettingsV1},
 };
 use std::collections::BTreeSet;
+mod edits;
+mod interaction;
 mod layout;
+mod panel;
+pub use edits::{DisplayEdit, RowGrip, RowResize, SplitResize};
 pub use layout::PreferenceLayout;
+pub(crate) use panel::{DisplayPanel, PanelAction};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DisplayPreferences {
@@ -30,6 +35,9 @@ impl From<&SettingsV1> for DisplayPreferences {
     }
 }
 impl DisplayPreferences {
+    pub(crate) fn weights(&self) -> RowWeights {
+        self.weights
+    }
     pub fn row_visible(&self, row: Row) -> bool {
         let key = match row {
             Row::Apps => "rij|apps",

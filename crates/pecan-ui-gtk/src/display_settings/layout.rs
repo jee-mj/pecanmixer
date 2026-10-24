@@ -7,16 +7,19 @@ use std::{
     rc::Rc,
 };
 
-struct State {
-    root: gtk::Box,
-    outer: gtk::Paned,
-    inner: gtk::Paned,
-    outputs: gtk::Paned,
-    sections: [gtk::Box; 3],
+pub(super) struct State {
+    pub(super) root: gtk::Box,
+    pub(super) outer: gtk::Paned,
+    pub(super) inner: gtk::Paned,
+    pub(super) outputs: gtk::Paned,
+    pub(super) sections: [gtk::Box; 3],
     lanes: [gtk::Box; 4],
-    preferences: RefCell<DisplayPreferences>,
+    pub(super) preferences: RefCell<DisplayPreferences>,
     allocation: Cell<(i32, i32, i32, i32)>,
     dirty: Cell<bool>,
+    pub(super) editable: Cell<bool>,
+    edit: RefCell<Option<Rc<dyn Fn(super::DisplayEdit)>>>,
+    pub(super) interaction: RefCell<Option<gtk::EventControllerLegacy>>,
 }
 /// One-way preference application. This widget neither edits/saves preferences
 /// nor owns audio/history state. User resize gestures are a separate parity task.
@@ -31,6 +34,7 @@ impl PreferenceLayout {
     pub fn new() -> Self {
         let lanes = std::array::from_fn(|_| gtk::Box::new(gtk::Orientation::Vertical, 8));
         let outputs = gtk::Paned::builder()
+            .wide_handle(true)
             .orientation(gtk::Orientation::Horizontal)
             .start_child(&scroll(&lanes[2], "Output destinations"))
             .end_child(&scroll(&lanes[3], "Rec bus presentation"))
@@ -45,6 +49,7 @@ impl PreferenceLayout {
             section("Destinations", &outputs),
         ];
         let inner = gtk::Paned::builder()
+            .wide_handle(true)
             .orientation(gtk::Orientation::Vertical)
             .start_child(&sections[1])
             .end_child(&sections[2])
@@ -54,6 +59,7 @@ impl PreferenceLayout {
             .shrink_end_child(true)
             .build();
         let outer = gtk::Paned::builder()
+            .wide_handle(true)
             .orientation(gtk::Orientation::Vertical)
             .start_child(&sections[0])
             .end_child(&inner)
@@ -76,7 +82,11 @@ impl PreferenceLayout {
             preferences: RefCell::new(DisplayPreferences::default()),
             allocation: Cell::new((-1, -1, -1, -1)),
             dirty: Cell::new(true),
+            editable: Cell::new(false),
+            edit: RefCell::new(None),
+            interaction: RefCell::new(None),
         }));
+        super::interaction::connect(&view.0);
         let weak = Rc::downgrade(&view.0);
         view.0.root.add_tick_callback(move |_, _| {
             let Some(state) = weak.upgrade() else {
@@ -86,6 +96,12 @@ impl PreferenceLayout {
             glib::ControlFlow::Continue
         });
         view
+    }
+    pub(crate) fn edit_handler(&self, callback: Rc<dyn Fn(super::DisplayEdit)>) {
+        *self.0.edit.borrow_mut() = Some(callback);
+    }
+    pub(crate) fn set_editable(&self, enabled: bool) {
+        self.0.editable.set(enabled);
     }
     pub fn widget(&self) -> &gtk::Box {
         &self.0.root
@@ -133,6 +149,12 @@ impl PreferenceLayout {
     }
 }
 impl State {
+    pub(super) fn emit(&self, edit: super::DisplayEdit) {
+        let callback = self.edit.borrow().clone();
+        if let Some(callback) = callback {
+            callback(edit);
+        }
+    }
     fn allocate(&self) {
         let allocation = (
             self.outer.height(),
@@ -157,6 +179,16 @@ impl State {
             .set_position(p.output_width(allocation.2, allocation.3));
     }
 }
+impl Drop for State {
+    fn drop(&mut self) {
+        if let Some(controller) = self.interaction.get_mut().take() {
+            if let Some(widget) = controller.widget() {
+                widget.remove_controller(&controller);
+            }
+        }
+    }
+}
+
 fn scroll(child: &gtk::Box, name: &str) -> gtk::ScrolledWindow {
     let scroll = gtk::ScrolledWindow::builder()
         .child(child)
@@ -231,3 +263,9 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod interaction_tests;
+
+#[cfg(all(test, feature = "x11-input-tests"))]
+mod xtest;

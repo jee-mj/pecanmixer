@@ -87,6 +87,15 @@ impl CoordinatedMixer {
         view.refresh();
         view
     }
+    pub(crate) fn bind_display_edits(
+        &self,
+        callback: Rc<dyn Fn(crate::display_settings::DisplayEdit)>,
+    ) {
+        self.0.layout.edit_handler(callback);
+    }
+    pub(crate) fn set_display_editable(&self, enabled: bool) {
+        self.0.layout.set_editable(enabled);
+    }
     pub fn widget(&self) -> &gtk::Box {
         &self.0.root
     }

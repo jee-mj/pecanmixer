@@ -78,6 +78,20 @@ impl NativeWorkspace {
         view.refresh();
         view
     }
+    pub(crate) fn bind_display_edits(
+        &self,
+        callback: Rc<dyn Fn(crate::display_settings::DisplayEdit)>,
+    ) {
+        self.mixer.bind_display_edits(callback);
+    }
+    pub(crate) fn apply_display(
+        &self,
+        preferences: crate::display_settings::DisplayPreferences,
+        editable: bool,
+    ) {
+        self.mixer.set_display_preferences(preferences);
+        self.mixer.set_display_editable(editable);
+    }
     pub fn widget(&self) -> &gtk::Box {
         &self.root
     }
