@@ -2,6 +2,8 @@
 //! Local readback is not graph observation; writer exit is not joined completion.
 mod service;
 mod view;
+mod routing;
+pub(crate) use routing::RoutingKey;
 use super::{Graph, Session};
 use crate::recording_buses as ui;
 use gtk::prelude::*;
