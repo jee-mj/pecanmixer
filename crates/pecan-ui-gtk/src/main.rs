@@ -5,13 +5,14 @@ use gtk::{glib, prelude::*};
 use pecan_core::{
     backend::EventSequencer, graph::Momentopname, inbox::LatestInbox, overview::OverviewState,
 };
-use pecan_ui_gtk::MixerOverview;
+use pecan_ui_gtk::GraphPresentation;
 
 #[derive(Default)]
 struct Options {
     fixture: Option<PathBuf>,
     smoke: bool,
     headless: bool,
+    patchbay: bool,
 }
 
 fn options() -> Result<Options, String> {
@@ -24,8 +25,9 @@ fn options() -> Result<Options, String> {
             }
             "--smoke" => options.smoke = true,
             "--headless" => options.headless = true,
+            "--patchbay" => options.patchbay = true,
             "--help" | "-h" => {
-                println!("pecan-ui-gtk [--fixture graph.json] [--headless | --smoke]\nWithout a fixture: observe live PipeWire; no routing, meters or recording.");
+                println!("pecan-ui-gtk [--fixture graph.json] [--headless | --smoke] [--patchbay]\nWithout a fixture: observe live PipeWire; no routing, meters or recording.");
                 std::process::exit(0);
             }
             _ => return Err(format!("unknown option: {arg}")),
@@ -75,7 +77,10 @@ fn run() -> Result<glib::ExitCode, Box<dyn std::error::Error>> {
             window.present();
             return;
         }
-        let view = Rc::new(RefCell::new(MixerOverview::new()));
+        let view = Rc::new(RefCell::new(GraphPresentation::new()));
+        if options.patchbay {
+            view.borrow().show_patchbay();
+        }
         let window = gtk::ApplicationWindow::builder()
             .application(app)
             .title("Pecan Mixer — GTK preview")
@@ -97,15 +102,10 @@ fn run() -> Result<glib::ExitCode, Box<dyn std::error::Error>> {
         }
         let app_weak = app.downgrade();
         let task = glib::MainContext::default().spawn_local(async move {
-            let mut state = OverviewState::default();
-            let mut first = true;
             while wake.recv().await.is_ok() {
                 let batch = inbox.drain();
-                view.borrow().show_notices(&batch.notices);
-                if state.apply(batch) || first {
-                    first = false;
-                    let overview = state.overview();
-                    view.borrow_mut().update(&overview);
+                let accepted = view.borrow_mut().apply(batch);
+                if let Some(overview) = accepted {
                     if options.smoke {
                         println!(
                             "GTK fixture widgets populated: connected={}, nodes={}, ports={}",

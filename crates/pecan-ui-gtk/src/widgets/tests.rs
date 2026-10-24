@@ -60,9 +60,8 @@ fn snapshot_if_requested(window: &gtk::Window, name: &str) {
     }
 }
 
-#[test]
+#[gtk::test]
 fn fixture_widget_contracts() {
-    gtk::init().expect("GTK display required: run this test under xvfb-run + dbus-run-session");
     let input: Momentopname = serde_json::from_str(AUDIO).unwrap();
     let overview = project(&input);
     let mut view = MixerOverview::new();

@@ -4,4 +4,6 @@
 //! ordering belong to the pure projection. No routing or audio mutations live here.
 mod widgets;
 
-pub use widgets::MixerOverview;
+mod presentation;
+pub use presentation::GraphPresentation;
+pub use widgets::{MixerOverview, PatchbayOverview};
