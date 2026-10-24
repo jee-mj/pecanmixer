@@ -178,7 +178,10 @@ main() {
         set -euo pipefail
         export PECAN_XTEST_FIXTURE_DISPLAY="$DISPLAY"
         export PECAN_TRAY_TEST_BUS="$DBUS_SESSION_BUS_ADDRESS"
-        cargo test -p pecan-ui-gtk --target "$2" --locked --features a11y-tests,x11-input-tests,tray-bus-tests
+        # The tray fixtures share one private watcher name and explicitly
+        # require serial libtest execution (tray/README.md). GTK serialization
+        # alone does not serialize these ordinary #[test] D-Bus fixtures.
+        cargo test -p pecan-ui-gtk --target "$2" --locked --features a11y-tests,x11-input-tests,tray-bus-tests -- --test-threads=1
         timeout 15s "$1" --fixture fixtures/graph/audio-basic.json --smoke
         timeout 15s "$1" --fixture fixtures/graph/audio-basic.json --smoke --patchbay
         timeout 15s "$1" --fixture fixtures/graph/disconnected.json --smoke --hidden

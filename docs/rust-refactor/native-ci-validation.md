@@ -49,7 +49,10 @@ fixture executable invocations have 15-second limits.
   libraries, GTK3, missing libraries or missing GTK4 evidence fail validation.
 - The core/backend suite runs without a display/session bus. GTK accessibility,
   XTest and tray fixtures run on a newly allocated Xvfb and private D-Bus session,
-  with the explicit safety markers required by the existing tests.
+  with the explicit safety markers required by the existing tests. The GTK
+  command uses `--test-threads=1`: tray fixtures share a well-known watcher name
+  and their existing README requires serial execution. GTK's own test-thread
+  serialization does not serialize ordinary D-Bus tests.
 - Application config/data/cache/runtime directories are temporary. The PipeWire
   remote name deliberately has no service. No PipeWire server is started.
 - Executable checks use only `--help` and explicit committed fixture paths:
@@ -143,3 +146,11 @@ gate to hold membership stable for the intended aggregate-flag scenario. The
 original assertions remain, production revision checks are unchanged, and the
 full workflow continues without test retries, exclusions or suppression.
 Independent review and a terminal hosted follow-up result remain required.
+
+Hosted follow-up
+[`40132277213`](https://github.com/jee-mj/pecanmixer/actions/runs/40132277213)
+passed all 134 backend tests, then failed one synthetic tray availability case
+with 287 GTK tests passing. The CI driver had omitted the documented serial
+execution requirement for the shared private D-Bus watcher fixtures. The next
+driver revision adds `--test-threads=1`; it retains all 288 tests, timeouts,
+availability assertions and runtime checks. No production tray code is changed.
