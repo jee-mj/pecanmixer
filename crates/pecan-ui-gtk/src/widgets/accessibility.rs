@@ -14,7 +14,7 @@ unsafe extern "C" {
     );
 }
 
-pub(super) fn set_name(widget: &impl IsA<gtk::Widget>, name: &str) {
+pub(crate) fn set_name(widget: &impl IsA<gtk::Widget>, name: &str) {
     let mut property = gtk::AccessibleProperty::Label.into_glib();
     let value = name.to_value();
     // SAFETY: every GtkWidget implements GtkAccessible, including on GTK 4.0.

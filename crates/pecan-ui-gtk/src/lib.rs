@@ -1,7 +1,8 @@
-//! Main-thread GTK presentation for the read-only migration preview.
+//! Main-thread GTK presentation and isolated mixer control scaffolding.
 //!
-//! This crate consumes the core overview as-is: node ordering, labels and port
-//! ordering belong to the pure projection. No routing or audio mutations live here.
+//! The application still defaults to observation. The controls module projects
+//! the pure mixer domain and forwards intents through an adapter-owned boundary;
+//! production dispatch awaits the reviewed backend intent/completion contract.
 mod widgets;
 
 mod presentation;
@@ -10,3 +11,7 @@ pub use widgets::{MixerOverview, PatchbayOverview};
 
 /// Synchronous explicit-path I/O; not wired to the preview or startup.
 pub mod settings_storage;
+
+pub mod controls;
+
+pub mod native_backend;
