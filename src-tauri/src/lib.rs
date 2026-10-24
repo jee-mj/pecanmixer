@@ -1,5 +1,6 @@
 pub mod autostart;
 mod backend_adapter;
+mod quit;
 pub use pecan_pipewire::graaf;
 pub use pecan_pipewire::meter;
 pub use pecan_pipewire::midimeter;
@@ -82,6 +83,7 @@ fn zet_mute(g: State<Graaf>, knoop: u32, mute: bool) {
 
 pub fn run() {
     tauri::Builder::default()
+        .manage(quit::QuitAdapter::default())
         // Een tweede start (uit het menu, terwijl hij al in de tray staat)
         // haalt alleen het venster van de eerste tevoorschijn.
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
