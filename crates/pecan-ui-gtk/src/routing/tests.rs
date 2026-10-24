@@ -568,3 +568,90 @@ fn bus_configuration_pending_and_partial_status_gate_routing_without_owning_sele
         }
     }
 }
+
+fn configuration_uncertainty_survives_zero_effect_route_rejection(progress: buses::Progress) {
+    let g = graph();
+    let mut bus = owner(&g);
+    let mut m = Model::default();
+    m.observe(capture(&g, &bus)).unwrap();
+    let (source, destination) = first(&m);
+    let route = intent(m.route(&m.bind().unwrap(), &source, &destination).unwrap());
+    assert!(m.report(&route.request, report(&route, NativeProgress::Queued)));
+
+    let mut uncertain = snapshot(&g);
+    uncertain.operation = Some(buses::Operation {
+        request: 4,
+        progress,
+    });
+    bus.observe(uncertain).unwrap();
+    m.observe(capture(&g, &bus)).unwrap();
+    assert_eq!(m.reconciled(capture(&g, &bus)), Err(Error::Pending));
+    assert!(m.report(
+        &route.request,
+        report(
+            &route,
+            NativeProgress::Rejected {
+                reason: NativeFailure::Disconnected,
+                counts: Counts::default(),
+            },
+        ),
+    ));
+    assert!(m.pending().is_none());
+
+    // Ordinary publication removes the displayed configuration operation; it
+    // does not attest reconciliation of its earlier uncertain outcome.
+    bus.observe(snapshot(&g)).unwrap();
+    m.observe(capture(&g, &bus)).unwrap();
+    assert_eq!(m.availability(), Err(Error::ReconciliationRequired));
+    assert!(matches!(
+        m.route(&m.bind().unwrap(), &source, &destination),
+        Err(Error::ReconciliationRequired)
+    ));
+    assert_eq!(
+        m.begin_reset(&m.bind().unwrap()),
+        Err(Error::ReconciliationRequired)
+    );
+
+    m.reconciled(capture(&g, &bus)).unwrap();
+    assert!(m.availability().is_ok());
+    assert!(!m.report(&route.request, report(&route, NativeProgress::Queued)));
+    assert!(m.route(&m.bind().unwrap(), &source, &destination).is_ok());
+}
+
+#[test]
+fn partial_configuration_survives_zero_effect_routing_rejection() {
+    configuration_uncertainty_survives_zero_effect_route_rejection(
+        buses::Progress::PartiallyApplied("synthetic partial".into()),
+    );
+}
+
+#[test]
+fn unconfirmed_configuration_survives_zero_effect_routing_rejection() {
+    configuration_uncertainty_survives_zero_effect_route_rejection(buses::Progress::Unconfirmed(
+        "synthetic timeout".into(),
+    ));
+}
+
+#[test]
+fn zero_effect_routing_rejection_without_uncertainty_allows_a_fresh_action() {
+    let g = graph();
+    let bus = owner(&g);
+    let mut m = Model::default();
+    m.observe(capture(&g, &bus)).unwrap();
+    let (source, destination) = first(&m);
+    let route = intent(m.route(&m.bind().unwrap(), &source, &destination).unwrap());
+    assert!(m.report(&route.request, report(&route, NativeProgress::Queued)));
+    assert!(m.report(
+        &route.request,
+        report(
+            &route,
+            NativeProgress::Rejected {
+                reason: NativeFailure::Disconnected,
+                counts: Counts::default(),
+            },
+        ),
+    ));
+    m.observe(capture(&g, &bus)).unwrap();
+    assert!(m.availability().is_ok());
+    assert!(m.route(&m.bind().unwrap(), &source, &destination).is_ok());
+}

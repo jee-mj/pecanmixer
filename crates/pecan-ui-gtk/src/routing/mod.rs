@@ -609,7 +609,9 @@ impl<O: Clone> Model<O> {
                 self.barrier = Some(*stamp)
             }
             NativeProgress::Rejected { counts, .. } => {
-                self.reconcile = counts.submitted > 0 || counts.in_progress > 0
+                // A zero-effect route says nothing about uncertainty already
+                // reported by configuration. Only owner reconciliation clears it.
+                self.reconcile |= counts.submitted > 0 || counts.in_progress > 0
             }
             NativeProgress::Unconfirmed { .. } => self.reconcile = true,
             _ => {}
