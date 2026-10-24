@@ -21,3 +21,6 @@ pub mod display_settings;
 
 /// Explicit serialized I/O worker, not called by startup.
 pub mod settings_worker;
+
+/// Latest-frame meter widgets; not connected to preview startup.
+pub mod meters;
