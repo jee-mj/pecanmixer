@@ -453,6 +453,17 @@ fn invalid_native_input_and_unsupported_recording_commands_are_not_dispatched() 
             kanalen: 1,
             gain: vec![1.0],
         },
+        Opdracht::ZetTransport(pecan_core::graph::Opties {
+            bussen: Vec::new(),
+            midi: false,
+            klok: None,
+            start_stop: false,
+        }),
+        Opdracht::StartBus(pecan_core::graph::BusOpname {
+            naam: "Synthetic bus".into(),
+            kanalen: vec![0],
+        }),
+        Opdracht::StopBus("Synthetic bus".into()),
     ] {
         assert_eq!(
             commands

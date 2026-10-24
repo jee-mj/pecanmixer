@@ -176,6 +176,7 @@ impl Graaf {
     /// a timeout is still pending, not permission to assume files are complete.
     /// The legacy tray adapter retains this handle and waits off-UI before exit.
     pub fn request_shutdown(&self) -> Shutdown {
+        self.completion.stop_tracked();
         self.opdrachten.stop();
         self.stop.request();
         self.completion.clone()

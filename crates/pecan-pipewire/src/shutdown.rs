@@ -12,7 +12,10 @@
 //! deliberate failure policy. Shell adapters own that policy; this API never
 //! exits the application or treats timeout as successful finalization.
 
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    mpsc, Arc, Mutex,
+};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -20,7 +23,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(5);
 const ERROR_LIMIT: usize = 32;
 
 #[derive(Clone)]
-pub struct Shutdown(Arc<Mutex<State>>, mpsc::Sender<JoinTask>);
+pub struct Shutdown(Arc<Mutex<State>>, mpsc::Sender<JoinTask>, Arc<AtomicBool>);
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ShutdownReport {
@@ -57,14 +60,83 @@ struct State {
     pending_writers: usize,
     latest_error: Option<String>,
     report: ShutdownReport,
+    tracked_writers: usize,
+    tracked_tracks: usize,
 }
 
 enum JoinTask {
     Worker(JoinHandle<()>),
     Writer(JoinHandle<Result<(), String>>),
+    TrackedWriter(
+        JoinHandle<Result<(), String>>,
+        crate::writer_status::Reporter,
+        WriterLease,
+    ),
+}
+
+pub(crate) struct WriterLease {
+    completion: Shutdown,
+    tracks: usize,
+    registered: bool,
+}
+impl Drop for WriterLease {
+    fn drop(&mut self) {
+        let mut state = self.completion.0.lock().unwrap();
+        state.tracked_writers -= 1;
+        state.tracked_tracks -= self.tracks;
+        if !self.registered {
+            state.pending_writers -= 1;
+        }
+    }
 }
 
 impl Shutdown {
+    pub(crate) fn stop_tracked(&self) {
+        self.2.store(true, Ordering::Release);
+    }
+    pub(crate) fn tracked_stop_signal(&self) -> Arc<AtomicBool> {
+        self.2.clone()
+    }
+    pub(crate) fn reserve_writer(&self, tracks: usize) -> std::io::Result<WriterLease> {
+        let mut state = self
+            .0
+            .try_lock()
+            .map_err(|_| std::io::Error::from(std::io::ErrorKind::WouldBlock))?;
+        if state.worker_joined || self.2.load(Ordering::Acquire) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "graph worker already joined",
+            ));
+        }
+        let limit = crate::writer_status::MAX_TRACKED_TRACKS;
+        if state.tracked_writers >= limit || tracks > limit.saturating_sub(state.tracked_tracks) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::WouldBlock,
+                "tracked writer capacity reached",
+            ));
+        }
+        state.tracked_writers += 1;
+        state.tracked_tracks += tracks;
+        // A reservation already owns in-flight work. Shutdown cannot complete
+        // in the interval between spawning and registering its join handle.
+        state.pending_writers += 1;
+        Ok(WriterLease {
+            completion: self.clone(),
+            tracks,
+            registered: false,
+        })
+    }
+    pub(crate) fn tracked_writer(
+        &self,
+        writer: JoinHandle<Result<(), String>>,
+        reporter: crate::writer_status::Reporter,
+        mut lease: WriterLease,
+    ) {
+        lease.registered = true;
+        self.1
+            .send(JoinTask::TrackedWriter(writer, reporter, lease))
+            .unwrap_or_else(|_| panic!("shutdown coordinator unavailable"));
+    }
     pub(crate) fn new() -> Self {
         let state = Arc::new(Mutex::new(State::default()));
         let worker_state = Arc::clone(&state);
@@ -73,7 +145,7 @@ impl Shutdown {
             .name("pecanmixer-reaper".into())
             .spawn(move || reap(rx, worker_state))
             .expect("shutdown coordinator starten");
-        Self(state, tx)
+        Self(state, tx, Arc::new(AtomicBool::new(false)))
     }
 
     pub(crate) fn worker(&self, worker: JoinHandle<()>) {
@@ -150,6 +222,7 @@ impl JoinTask {
         match self {
             Self::Worker(thread) => thread.is_finished(),
             Self::Writer(thread) => thread.is_finished(),
+            Self::TrackedWriter(thread, ..) => thread.is_finished(),
         }
     }
 
@@ -179,6 +252,27 @@ impl JoinTask {
                         state.latest_error = Some(error);
                     }
                 }
+            }
+            Self::TrackedWriter(thread, reporter, lease) => {
+                let result = thread
+                    .join()
+                    .unwrap_or_else(|_| Err("writer panicked".into()));
+                {
+                    let mut state = state.lock().unwrap();
+                    state.pending_writers -= 1;
+                    match &result {
+                        Ok(()) => state.report.writers_finalized += 1,
+                        Err(error) => {
+                            state.report.writers_failed += 1;
+                            if state.report.writer_errors.len() < ERROR_LIMIT {
+                                state.report.writer_errors.push(error.clone());
+                            }
+                            state.latest_error = Some(error.clone());
+                        }
+                    }
+                }
+                drop(lease); // Release capacity only after the actual join.
+                reporter.joined(&result);
             }
         }
     }
@@ -214,6 +308,20 @@ fn reap(rx: mpsc::Receiver<JoinTask>, state: Arc<Mutex<State>>) {
 mod tests {
     use super::*;
     use std::sync::mpsc;
+
+    #[test]
+    fn a_reserved_writer_prevents_completion_before_join_registration() {
+        let completion = Shutdown::new();
+        let lease = completion.reserve_writer(1).unwrap();
+        completion.worker(std::thread::spawn(|| {}));
+        assert!(completion.wait_timeout(Duration::from_millis(10)).is_err());
+        assert_eq!(completion.0.lock().unwrap().pending_writers, 1);
+        drop(lease);
+        assert!(completion
+            .wait_timeout(Duration::from_secs(1))
+            .unwrap()
+            .is_success());
+    }
 
     struct HeldTeardown {
         entered: mpsc::Sender<()>,
