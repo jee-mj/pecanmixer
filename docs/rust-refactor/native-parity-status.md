@@ -23,9 +23,9 @@ application is retained; the current native executable is still observational.
 | Record/stop, per-bus start/stop, elapsed time, folder action (`src/Transport.tsx`, `src/api.ts`) | Existing backend preserved; lifecycle completion integrated for legacy tray | Native recording command admission/completion, controls and folder action; recordings not supported by current native intent API |
 | MIDI clock/start-stop, MIDI tabs/route/activity (`src/MidiMixer.tsx`, `src/midi.ts`, `src/MidiMeter.tsx`) | Legacy MIDI feature flag remains disabled | Preserve disabled status; separately define/verify any enabled MIDI parity scope |
 | Meter ballistics/peak hold, per-channel rendering (`src/meters.ts`, `src/Meter.tsx`) | Pure level math; native widget work separate | Main-context feed, channel mapping, animation/hold/reset parity and acceptance |
-| Hide/show strips/rows and reconnect names (`src/App.tsx`, `Mixer`) | Validated name-based settings contract only | Native menus/actions and runtime application; transient IDs must not become durable identity |
-| Row height and destination split preferences (`useRijGewichten`, `Greep`, `Deling`) | Validated defaults/import/storage contract | Native resizing/reset controls and serialized off-UI persistence |
-| Saved buses, hidden keys, clock preference and layout (`leesBussen`, `leesKlok`, `leesVerborgen`) | Pure versioned contract + explicit-path storage boundary | Native shell effects, user-selected migration/recovery, serialized off-UI calls; no profile access performed |
+| Hide/show strips/rows and reconnect names (`src/App.tsx`, `Mixer`) | Validated contract + display-only filtering candidate; full graph retained | Native hide/show menus and production application; transient IDs must not become durable identity |
+| Row height and destination split preferences (`useRijGewichten`, `Greep`, `Deling`) | Saved-weight/width presentation + explicit serialized worker candidate | Native resizing/reset controls, startup adoption and save-trigger wiring |
+| Saved buses, hidden keys, clock preference and layout (`leesBussen`, `leesKlok`, `leesVerborgen`) | Versioned contract + storage and serialized off-UI worker candidate | Native shell effects, user-selected migration/recovery and startup adoption; no profile access performed |
 | Tray open/close/quit, autostart/single instance (`src-tauri/src/tray.rs`, `autostart.rs`, `lib.rs`) | Legacy preserved; quit now waits for explicit backend/writer completion | Native desktop integration and actual tray/desktop acceptance |
 | Graceful recorder shutdown/error/timeout handling | Backend completion + legacy tray tests | Adopt in native owner before exit; no fsync/crash-durability claim |
 | Accessible controls, keyboard navigation, responsive layout (`src/*.tsx`, `src/styles.css`) | Synthetic native names/focus/layout checks; control candidate | End-to-end keyboard/AT-SPI/Orca, physical Wayland/X11, scale/theme/distro acceptance |
@@ -36,3 +36,5 @@ topology, audio captures, private runtime logs or user profile data belong in
 this public matrix or its fixtures. Real audio correctness, live restart behavior,
 real-time performance, memory/CPU measurements and physical desktop acceptance
 remain distinct, unperformed gates.
+
+The [display settings candidate](./native-display-settings.md) preserves graph/origin state and applies no audio settings. Its base gesture candidate has a reproduced focus-return defect and remains blocked from live controls/integration.
