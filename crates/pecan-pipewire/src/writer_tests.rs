@@ -211,3 +211,6 @@ fn write_seek_and_flush_failures_still_explicitly_finalize_other_tracks() {
         }
     }
 }
+
+#[path = "writer_status_tests.rs"]
+mod status_tests;

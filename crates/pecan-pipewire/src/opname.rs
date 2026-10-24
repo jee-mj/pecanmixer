@@ -27,6 +27,14 @@ use std::rc::Rc;
 use std::sync::mpsc;
 use std::time::Instant;
 
+pub use crate::writer_queue::{
+    WriterSendError, WriterSender, MAX_WRITER_SAMPLES, WRITER_AUDIO_CAPACITY,
+};
+use crate::writer_status::Reporter;
+pub use crate::writer_status::{
+    NotOpened, TakeId, TrackId, TrackPhase, TrackReport, WriterOutcome, WriterPending, WriterPhase,
+    WriterReceipt, WriterReport, MAX_TRACKED_TRACKS,
+};
 pub use pecan_core::graph::KlokStand;
 use pipewire as pw;
 use pw::spa;
@@ -93,6 +101,117 @@ pub type Schrijver = (
     std::thread::JoinHandle<Result<(), String>>,
 );
 
+/// Native preparation only: this is not connected to command admission or the
+/// audio callback. The owning backend must validate origin/configuration before
+/// calling it and attach producers only while the receipt is Ready.
+pub struct TrackedWriter {
+    pub sender: WriterSender,
+    pub receipt: WriterReceipt,
+}
+
+/// Reserve a unique child take directory and open WAVs on the writer thread.
+/// No filesystem operation or join is performed by this function. The supplied
+/// backend completion coordinator owns the join and retains all errors.
+pub fn tracked_writer(
+    root: &Path,
+    tracks: Vec<Spoor>,
+    rate: u32,
+    completion: &crate::shutdown::Shutdown,
+) -> std::io::Result<TrackedWriter> {
+    tracked_writer_with(root, tracks, rate, completion, |path, spec| {
+        hound::WavWriter::create(path, spec).map_err(std::io::Error::other)
+    })
+}
+
+fn tracked_writer_with<W, F>(
+    root: &Path,
+    tracks: Vec<Spoor>,
+    rate: u32,
+    completion: &crate::shutdown::Shutdown,
+    mut open: F,
+) -> std::io::Result<TrackedWriter>
+where
+    W: Write + Seek + Send + 'static,
+    F: FnMut(&Path, hound::WavSpec) -> std::io::Result<hound::WavWriter<W>> + Send + 'static,
+{
+    use std::collections::BTreeSet;
+    let mut names = BTreeSet::new();
+    if tracks.is_empty()
+        || tracks.len() > MAX_TRACKED_TRACKS
+        || rate == 0
+        || root.as_os_str().len() > 4096
+        || tracks.iter().any(|t| {
+            t.kanalen == 0
+                || usize::from(t.kanalen) > MAX_TRACKED_TRACKS
+                || t.naam.len() > 256
+                || veilig(&t.naam).is_empty()
+                || !names.insert(veilig(&t.naam))
+                || rate
+                    .checked_mul(u32::from(t.kanalen))
+                    .and_then(|v| v.checked_mul(4))
+                    .is_none()
+        })
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "invalid or duplicate tracked writer format/name",
+        ));
+    }
+    let lease = completion.reserve_writer(tracks.len())?;
+    let (receipt, reporter) =
+        crate::writer_status::status(&tracks, completion.tracked_stop_signal())?;
+    let (sender, receiver) = crate::writer_queue::channel(&receipt);
+    let root = root.to_owned();
+    let producer = reporter.clone();
+    let take = receipt.take_id();
+    let thread = std::thread::Builder::new()
+        .name("pecanmixer-tracked-writer".into())
+        .spawn(move || {
+            let result = (|| {
+                if producer.stopping() {
+                    return Ok(());
+                }
+                std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+                let mut directory = None;
+                for attempt in 0..128 {
+                    let name = if attempt == 0 {
+                        format!("take-{}", take.get())
+                    } else {
+                        format!("take-{}-{attempt}", take.get())
+                    };
+                    let candidate = root.join(name);
+                    match std::fs::create_dir(&candidate) {
+                        Ok(()) => {
+                            directory = Some(candidate);
+                            break;
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                        Err(e) => return Err(e.to_string()),
+                    }
+                }
+                let directory = directory.ok_or("take directory reservation exhausted")?;
+                producer.directory(directory.clone());
+                let midi = write_tracks(
+                    &directory,
+                    &tracks,
+                    rate,
+                    receiver,
+                    Some(&producer),
+                    &mut open,
+                )?;
+                if let Some(midi) = midi {
+                    schrijf_midi(&directory.join("midi.mid"), &midi)?;
+                }
+                Ok(())
+            })()
+            .map_err(|e: String| crate::writer_status::error_text(&e));
+            producer.finished(&result);
+            result
+        })?;
+    completion.tracked_writer(thread, reporter, lease);
+    Ok(TrackedWriter { sender, receipt })
+}
+
 /// Start de schrijfdraad met één WAV per spoor in `map`. Geeft het kanaal
 /// en de draad terug; de draad eindigt na [`Bericht::Stop`] of kanaalsluiting.
 /// `Ok(())` uit de draad betekent dat alle WAV-koppen en buffers expliciet
@@ -126,8 +245,37 @@ fn schrijf_take(
     rate: u32,
     rx: mpsc::Receiver<Bericht>,
 ) -> Result<(), String> {
+    if let Some(midi) = write_tracks(map, sporen, rate, rx, None, &mut |path, spec| {
+        hound::WavWriter::create(path, spec).map_err(std::io::Error::other)
+    })? {
+        schrijf_midi(&map.join("midi.mid"), &midi)?;
+    }
+    Ok(())
+}
+
+fn write_tracks<W: Write + Seek>(
+    map: &Path,
+    sporen: &[Spoor],
+    rate: u32,
+    messages: impl IntoIterator<Item = Bericht>,
+    reporter: Option<&Reporter>,
+    open: &mut impl FnMut(&Path, hound::WavSpec) -> std::io::Result<hound::WavWriter<W>>,
+) -> Result<Option<MidiBestand>, String> {
     let mut wav = Vec::new();
-    for s in sporen {
+    for (i, s) in sporen.iter().enumerate() {
+        if reporter.is_some_and(Reporter::stopping) {
+            let errors = finalize_tracks(&mut wav, &[], reporter);
+            for index in i..sporen.len() {
+                if let Some(r) = reporter {
+                    r.track(index, TrackPhase::NotOpened(NotOpened::Stopped));
+                }
+            }
+            return if errors.is_empty() {
+                Ok(None)
+            } else {
+                Err(errors.join("; "))
+            };
+        }
         let spec = hound::WavSpec {
             channels: s.kanalen,
             sample_rate: rate,
@@ -135,57 +283,115 @@ fn schrijf_take(
             sample_format: hound::SampleFormat::Float,
         };
         let pad = map.join(format!("{}.wav", veilig(&s.naam)));
-        match hound::WavWriter::create(&pad, spec) {
-            Ok(writer) => wav.push(Some(writer)),
+        match open(&pad, spec) {
+            Ok(writer) => {
+                wav.push(Some(writer));
+                if let Some(r) = reporter {
+                    r.track(i, TrackPhase::Open);
+                }
+            }
             Err(error) => {
                 let mut errors = vec![format!("{}: {error}", pad.display())];
-                errors.extend(finaliseer(&mut wav));
+                errors.extend(finalize_tracks(&mut wav, &[], reporter));
                 return Err(errors.join("; "));
             }
         }
     }
-    if let Some(midi) = verwerk(wav, rx)? {
-        schrijf_midi(&map.join("midi.mid"), &midi)?;
+    if reporter.is_some_and(Reporter::stopping) {
+        let errors = finalize_tracks(&mut wav, &[], reporter);
+        return if errors.is_empty() {
+            Ok(None)
+        } else {
+            Err(errors.join("; "))
+        };
     }
-    Ok(())
+    if let Some(r) = reporter {
+        r.ready();
+    }
+    process_tracks(wav, messages, reporter)
 }
 
 /// Always attempt to finalize every open track, including after another
 /// track's write/close fails. Relying on WavWriter's Drop would hide errors.
-fn finaliseer<W: Write + Seek>(wav: &mut [Option<hound::WavWriter<W>>]) -> Vec<String> {
+fn finalize_tracks<W: Write + Seek>(
+    wav: &mut [Option<hound::WavWriter<W>>],
+    failures: &[Option<String>],
+    reporter: Option<&Reporter>,
+) -> Vec<String> {
     let mut errors = Vec::new();
     for (i, writer) in wav.iter_mut().enumerate() {
         if let Some(writer) = writer.take() {
-            if let Err(error) = writer.finalize() {
-                errors.push(format!("track {i} finalization: {error}"));
+            let result = writer
+                .finalize()
+                .map_err(|error| format!("track {i} finalization: {error}"));
+            if let Err(error) = &result {
+                errors.push(error.clone());
+            }
+            let result = match (failures.get(i).and_then(Option::as_ref), result) {
+                (Some(error), Err(close)) => Err(format!("{error}; {close}")),
+                (Some(error), Ok(())) => Err(error.clone()),
+                (None, result) => result,
+            };
+            if let Some(r) = reporter {
+                if let Some(error) = r.finalized(i, result) {
+                    errors.push(error);
+                }
             }
         }
     }
     errors
 }
 
+#[cfg(test)]
 fn verwerk<W: Write + Seek>(
+    wav: Vec<Option<hound::WavWriter<W>>>,
+    berichten: impl IntoIterator<Item = Bericht>,
+) -> Result<Option<MidiBestand>, String> {
+    process_tracks(wav, berichten, None)
+}
+fn process_tracks<W: Write + Seek>(
     mut wav: Vec<Option<hound::WavWriter<W>>>,
     berichten: impl IntoIterator<Item = Bericht>,
+    reporter: Option<&Reporter>,
 ) -> Result<Option<MidiBestand>, String> {
     let mut midi = None;
     let mut errors = Vec::new();
+    let mut failures = vec![None; wav.len()];
     'messages: for bericht in berichten {
         match bericht {
             Bericht::Audio(i, samples) => {
                 if let Some(Some(writer)) = wav.get_mut(i) {
+                    let mut written = 0;
                     for sample in samples {
                         if let Err(error) = writer.write_sample(sample) {
-                            errors.push(format!("track {i} write: {error}"));
-                            break 'messages;
+                            let error = format!("track {i} write: {error}");
+                            failures[i] = Some(error.clone());
+                            errors.push(error);
+                            break;
                         }
+                        written += 1;
+                    }
+                    if let Some(r) = reporter {
+                        r.written(i, written);
+                    }
+                    if failures[i].is_some() {
+                        break 'messages;
                     }
                 }
             }
             Bericht::Sluit(i) => {
                 if let Some(writer) = wav.get_mut(i).and_then(Option::take) {
-                    if let Err(error) = writer.finalize() {
-                        errors.push(format!("track {i} close: {error}"));
+                    let result = writer
+                        .finalize()
+                        .map_err(|error| format!("track {i} close: {error}"));
+                    if let Some(r) = reporter {
+                        if let Some(error) = r.finalized(i, result.clone()) {
+                            errors.push(error);
+                            break;
+                        }
+                    }
+                    if let Err(error) = result {
+                        errors.push(error);
                         break;
                     }
                 }
@@ -196,7 +402,10 @@ fn verwerk<W: Write + Seek>(
             }
         }
     }
-    errors.extend(finaliseer(&mut wav));
+    if let Some(r) = reporter {
+        r.finalizing();
+    }
+    errors.extend(finalize_tracks(&mut wav, &failures, reporter));
     if errors.is_empty() {
         Ok(midi)
     } else {

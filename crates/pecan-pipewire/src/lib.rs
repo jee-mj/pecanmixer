@@ -7,5 +7,7 @@ mod meter_captures;
 pub mod midimeter;
 pub mod opname;
 pub mod shutdown;
+mod writer_queue;
+mod writer_status;
 #[cfg(test)]
 mod test_support;
