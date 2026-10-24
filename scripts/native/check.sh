@@ -31,7 +31,8 @@ check_packages() {
 }
 
 forbidden_library() {
-    case "${1,,}" in
+    local library=${1##*/}
+    case "${library,,}" in
         libwebkit*|libjavascriptcore*|libnode.*|libv8*|libmozjs*|libquickjs*|libduktape*|libmujs*|libgjs*|libcef*|libgtk-3.*|libgdk-3.*) return 0 ;;
         *) return 1 ;;
     esac
@@ -39,14 +40,31 @@ forbidden_library() {
 
 check_linked_libraries() {
     local line library count=0 gtk4=false
-    while IFS= read -r line; do
+    local mapping='^(.*)[[:space:]]+=>[[:space:]]+(.*)$'
+    local -a libraries
+    while IFS= read -r line || [[ -n "$line" ]]; do
         [[ "$line" != *'not found'* ]] || { fail "unresolved runtime library: $line"; return 1; }
-        read -r library _ <<< "$line"
-        [[ -n "$library" ]] || continue
-        if forbidden_library "$library"; then
-            fail "forbidden native ELF dependency: $library"; return 1
+        # Remove only the trailing load address, preserving spaces in paths.
+        line=${line%"${line##*[![:space:]]}"}
+        if [[ "$line" =~ ^(.*)[[:space:]]+\(0x[[:xdigit:]]+\)$ ]]; then
+            line=${BASH_REMATCH[1]}
         fi
-        [[ "$library" != libgtk-4.so* ]] || gtk4=true
+        # ldd prints both SONAME => resolved-path and standalone absolute
+        # paths. Inspect both fields without splitting filenames on spaces.
+        if [[ "$line" =~ $mapping ]]; then
+            libraries=("${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}")
+        else
+            libraries=("$line")
+        fi
+        for library in "${libraries[@]}"; do
+            library=${library#"${library%%[![:space:]]*}"}
+            library=${library%"${library##*[![:space:]]}"}
+            [[ -n "$library" ]] || continue
+            if forbidden_library "$library"; then
+                fail "forbidden native ELF dependency: $library"; return 1
+            fi
+            [[ "${library##*/}" != libgtk-4.so* ]] || gtk4=true
+        done
         count=$((count + 1))
     done < "$1"
     (( count > 0 )) && "$gtk4" || fail 'ELF closure must include the native GTK4 library'

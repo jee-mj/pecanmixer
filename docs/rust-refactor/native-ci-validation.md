@@ -47,6 +47,10 @@ fixture executable invocations have 15-second limits.
 - Native ELF direct dependencies are recorded with `readelf`; the trusted built
   executable's transitive loader closure is inspected with `ldd`. Known web/JS
   libraries, GTK3, missing libraries or missing GTK4 evidence fail validation.
+  Both requested library names and resolved file paths are checked by basename;
+  standalone absolute paths, relative paths, spaces and a missing final newline
+  cannot hide a known forbidden filename. A directory component alone is not
+  treated as a library filename or as GTK4 evidence.
 - The core/backend suite runs without a display/session bus. GTK accessibility,
   XTest and tray fixtures run on a newly allocated Xvfb and private D-Bus session,
   with the explicit safety markers required by the existing tests. The GTK
@@ -154,3 +158,35 @@ with 287 GTK tests passing. The CI driver had omitted the documented serial
 execution requirement for the shared private D-Bus watcher fixtures. The next
 driver revision adds `--test-threads=1`; it retains all 288 tests, timeouts,
 availability assertions and runtime checks. No production tray code is changed.
+
+Hosted run
+[`40132730528`](https://github.com/jee-mj/pecanmixer/actions/runs/40132730528)
+completed successfully at `9699e85`: 67 core, 134 backend and 288 GTK tests,
+30 validator controls, three headless fixtures and three controlled smoke
+launches passed. This predates the ELF correction below and does not validate it.
+
+## ELF filename correction after independent review
+
+The reviewer demonstrated that the original first-token check accepted
+`/synthetic/libnode.so.1` and `/synthetic/libgtk-3.so.0` alongside a valid GTK4
+row. Both bypasses were reproduced before changing the validator. The correction
+normalizes library basenames, inspects both sides of an `ldd` mapping and retains
+whole path fields rather than splitting filenames on whitespace. It also reads
+an unterminated final line. It does not load any fixture library or execute a
+JavaScript runtime.
+
+The original 30 controls remain. The expanded 83 controls cover all twelve
+forbidden ELF families as absolute entries, relative requested paths, resolved
+paths and tab-separated mappings; mixed case, spaces, unterminated input, valid
+absolute GTK4 evidence and harmless directory names are included. The expanded
+suite fails against the preserved old validator and passes with the correction.
+The corrected full cloud validator also exited zero: 67 core, 134 backend and
+288 GTK tests, all 83 controls, native formatting/build, Cargo/ELF inspection,
+three headless fixtures and three controlled smoke launches passed, with no
+recorded Node-tooling attempt. The correction changes only the two validation
+scripts and this report. Its independent review and exact hosted-run result
+remain separate from these local cloud checks.
+Unknown/renamed engines, `dlopen` plugins and future installed payloads still
+require separate review; this remains a known-filename regression gate, not a
+general binary attestation. No hardware/audio, real desktop, performance,
+packaging or crash-durability acceptance is established.

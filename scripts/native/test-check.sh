@@ -26,6 +26,37 @@ for library in libwebkit2gtk-4.1.so libjavascriptcoregtk-4.1.so libnode.so.1 lib
     check reject_libraries "$work/elf"
     sed -i '$d' "$work/elf"
 done
+# ldd can print a dependency as a pathname (including the loader itself).
+# Check both the requested name and the resolved file, with no real runtimes.
+for library in libwebkit2gtk-4.1.so libjavascriptcoregtk-4.1.so libnode.so.1 libv8.so libmozjs.so.1 libquickjs.so.1 libduktape.so.1 libmujs.so.1 libgjs.so.0 libcef.so libgtk-3.so.0 libgdk-3.so.0; do
+    for row in "/synthetic/$library (0x3)" \
+        "./synthetic/$library => /synthetic/liballowed.so.1 (0x3)" \
+        "liballowed.so.1 => /synthetic/$library (0x3)"; do
+        printf '\t%s\n' "$row" >> "$work/elf"
+        check reject_libraries "$work/elf"
+        sed -i '$d' "$work/elf"
+    done
+    printf '\t/synthetic/%s\t=>\t/synthetic/liballowed.so.1 (0x3)\n' "$library" >> "$work/elf"
+    check reject_libraries "$work/elf"
+    sed -i '$d' "$work/elf"
+done
+printf '%s\n' 'liballowed.so.1 => /synthetic/with spaces/LIBNODE.so.1 (0x3)' >> "$work/elf"
+check reject_libraries "$work/elf"
+sed -i '$d' "$work/elf"
+# A final dependency must be checked even when its last newline is absent.
+cp "$work/elf" "$work/no-newline"
+printf '/synthetic/libgtk-3.so.0 (0x3)' >> "$work/no-newline"
+check reject_libraries "$work/no-newline"
+printf '%s\n' '/synthetic/libgtk-4.so.1 (0x1)' \
+    '/synthetic/libnode.so.1-directory/libgio-2.0.so.0 (0x2)' \
+    '/synthetic/libgtk-3.so.0-directory/ld-linux-x86-64.so.2 (0x3)' \
+    '/synthetic/libnode.so.1 directory/libgio-2.0.so.0 (0x4)' \
+    'liballowed.so.1 => /synthetic/libgtk-3.so.0 directory/liballowed.so.1 (0x5)' > "$work/absolute-elf"
+check check_linked_libraries "$work/absolute-elf"
+printf '/synthetic/with spaces/libgtk-4.so.1 (0x1)' > "$work/no-newline"
+check check_linked_libraries "$work/no-newline"
+printf '%s\n' 'libgio-2.0.so.0 => /synthetic/libgtk-4.so.1-directory/libgio-2.0.so.0 (0x1)' > "$work/no-gtk4"
+check reject_libraries "$work/no-gtk4"
 printf 'libgtk-4.so.1 => not found\n' > "$work/missing"
 check reject_libraries "$work/missing"
 check reject_libraries "$work/empty"
