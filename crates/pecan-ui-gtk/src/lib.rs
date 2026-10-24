@@ -31,3 +31,6 @@ pub mod application;
 pub mod lifetime;
 /// Explicit GTK-free tray adapter; not started by the preview.
 pub mod tray;
+
+/// Pure desktop commands and explicit-path autostart I/O; never called by startup.
+pub mod desktop_launch;
