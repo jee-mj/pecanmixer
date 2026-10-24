@@ -79,13 +79,15 @@ struct Inner {
 pub struct Session(Rc<Inner>);
 impl Session {
     pub(super) fn new(inbox: Arc<LatestInbox>, endpoint: Rc<dyn Endpoint>) -> Self {
+        let mut history = history::Controller::default();
+        history.buses = super::default_idle_configuration().buses;
         Self(Rc::new(Inner {
             inbox,
             endpoint,
             state: RefCell::new(State {
                 graph: None,
                 witnessed: false,
-                history: history::Controller::default(),
+                history,
                 results: HistoryResults::default(),
                 pending: None,
                 status: Status::Disconnected,

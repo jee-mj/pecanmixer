@@ -34,7 +34,10 @@ pub struct NativeWorkspace {
 }
 impl NativeWorkspace {
     pub fn new(session: Session) -> Rc<Self> {
-        let mixer = MixerControls::new(Controller::new(session.adapter(), Default::default()));
+        let mixer = MixerControls::new(Controller::new(
+            session.adapter(),
+            super::default_idle_configuration().buses,
+        ));
         let patchbay = PatchbayOverview::new();
         let shared = session.clone();
         patchbay.bind_history_actions(move |origin, input| shared.patch(origin, input));

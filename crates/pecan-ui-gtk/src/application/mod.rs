@@ -26,6 +26,19 @@ use pecan_core::{
 use pecan_pipewire::graaf::Graaf;
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
+/// Build native idle defaults without starting/applying anything. MIDI is
+/// unsupported by that API; preserve the separate legacy BusConfig default.
+pub fn default_idle_configuration() -> pecan_pipewire::bus_config::IdleBusConfig {
+    pecan_pipewire::bus_config::IdleBusConfig {
+        buses: pecan_core::domain::buses::BusConfig {
+            midi: false,
+            ..Default::default()
+        },
+        clock: None,
+        start_stop: false,
+    }
+}
+
 type Graph = Stamped<Arc<Momentopname>>;
 trait Endpoint {
     fn witness(&self, graph: &Graph) -> Result<HistoryGraph, AdmissionError>;
