@@ -2,6 +2,7 @@
 //!
 //! Native startup retains this owner through asynchronous shutdown. `fixture()` has a separate
 //! synthetic endpoint: it never constructs a Graaf or connects to PipeWire.
+mod buses;
 mod coordinator;
 mod drain;
 mod fixture;
@@ -12,6 +13,10 @@ mod shell;
 pub(crate) mod telemetry;
 mod view;
 
+pub use buses::{
+    BusOwner, Error as BusError, Origin as BusOrigin, Request as BusRequest, TakeKey as BusTakeKey,
+    TakeStatus as BusRecordingStatus, TrackKey as BusTrackKey,
+};
 pub use coordinator::volume::{GestureToken, StripIdentity};
 pub use coordinator::{Request, Session, SessionAdapter, Status};
 pub use drain::SettingsSummary;

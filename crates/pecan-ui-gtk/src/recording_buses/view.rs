@@ -96,6 +96,7 @@ struct State<O, R, T> {
     invalid: RefCell<Option<ViewError>>,
     error: RefCell<Option<String>>,
     last_origin: RefCell<Option<O>>,
+    recording_external: Cell<bool>,
     offered: RefCell<Option<Snapshot<O, R, T>>>,
     offer_scheduled: Cell<bool>,
     #[cfg(test)]
@@ -164,6 +165,7 @@ impl<O: Clone + 'static, R: Clone + Eq + 'static, T: Clone + Ord + 'static> BusC
             invalid: RefCell::new(None),
             error: RefCell::new(None),
             last_origin: RefCell::new(None),
+            recording_external: Cell::new(false),
             offered: RefCell::new(None),
             offer_scheduled: Cell::new(false),
             #[cfg(test)]
@@ -263,6 +265,14 @@ impl<O: Clone + 'static, R: Clone + Eq + 'static, T: Clone + Ord + 'static> BusC
     /// keeps reports readable across pending/coalesced state publications.
     pub fn awaited_request(&self) -> Option<R> {
         self.0.awaited.borrow().clone()
+    }
+    /// The application owns separate tracked recording controls/receipts. This
+    /// only removes the isolated library placeholder; it enables no opcode.
+    pub(crate) fn recording_owner_attached(&self) {
+        if !self.0.recording_external.replace(true) {
+            self.0.retire();
+            self.0.render();
+        }
     }
     pub fn selected_output_key(&self) -> Option<String> {
         if self.0.invalid.borrow().is_some() || self.0.offered.borrow().is_some() {
@@ -510,11 +520,13 @@ impl<O: Clone + 'static, R: Clone + Eq + 'static, T: Clone + Ord + 'static> Stat
             );
             self.tools.append(&add);
             actions.push((add.upcast(), Action::AddStereo));
-            let record = gtk::Button::with_label("Record armed buses");
-            record.set_sensitive(false);
-            record.set_tooltip_text(Some("Recording receipts are pending integration"));
-            set_name(&record, "Record armed buses · unavailable");
-            self.tools.append(&record);
+            if !self.recording_external.get() {
+                let record = gtk::Button::with_label("Record armed buses");
+                record.set_sensitive(false);
+                record.set_tooltip_text(Some("Recording receipts are pending integration"));
+                set_name(&record, "Record armed buses · unavailable");
+                self.tools.append(&record);
+            }
             let refresh = gtk::Button::with_label("Refresh status");
             set_name(&refresh, "Refresh bus and recording status");
             if let Some(origin) = self.last_origin.borrow().clone() {
@@ -786,7 +798,11 @@ impl<O: Clone + 'static, R: Clone + Eq + 'static, T: Clone + Ord + 'static> Stat
             } else if s.configuration.is_none() {
                 "Logical bus configuration unavailable".into()
             } else {
-                "Bus configuration readback · recording controls pending integration".into()
+                if self.recording_external.get() {
+                    "Bus configuration readback · recording managed by the application".into()
+                } else {
+                    "Bus configuration readback · recording controls pending integration".into()
+                }
             }
         } else {
             "Waiting for bus configuration".into()

@@ -11,12 +11,13 @@ use std::{
     cell::RefCell, collections::BTreeMap, ffi::OsString, path::PathBuf, rc::Rc, time::Duration,
 };
 
-pub const HELP: &str = "pecan-ui-gtk [--settings /absolute/settings.json | --memory-defaults] [--tray] [--hidden] [--patchbay]\npecan-ui-gtk --fixture graph.json [--headless | --smoke] [--patchbay] [--hidden]\nDefault: one native PipeWire owner; display settings are memory-only unless an explicit path is supplied. Recording and bus mutation UI are unavailable. Fixture mode starts no PipeWire, real tray or settings I/O; fixture commands have synthetic receipts only. No profile discovery or automatic legacy import.";
+pub const HELP: &str = "pecan-ui-gtk [--settings /absolute/settings.json | --memory-defaults] [--recording-root /absolute/directory] [--tray] [--hidden] [--patchbay]\npecan-ui-gtk --fixture graph.json [--headless | --smoke] [--patchbay] [--hidden]\nDefault: one native PipeWire owner; display settings are memory-only unless an explicit path is supplied. Recording requires explicit native configuration and directory selection; active arming and structural migration remain unavailable. Fixture mode starts no PipeWire, real tray or settings I/O; fixture commands have synthetic receipts only. No profile discovery or automatic legacy import.";
 
 #[derive(Clone, Default, Debug)]
 pub struct Options {
     pub fixture: Option<PathBuf>,
     pub settings: Option<PathBuf>,
+    pub recording_root: Option<PathBuf>,
     pub headless: bool,
     pub smoke: bool,
     pub patchbay: bool,
@@ -39,6 +40,13 @@ impl Options {
                     options.settings = Some(
                         args.next()
                             .ok_or("--settings requires an absolute file path")?
+                            .into(),
+                    );
+                }
+                Some("--recording-root") if options.recording_root.is_none() => {
+                    options.recording_root = Some(
+                        args.next()
+                            .ok_or("--recording-root requires an absolute directory")?
                             .into(),
                     );
                 }
@@ -65,8 +73,20 @@ impl Options {
         if (self.headless || self.smoke) && self.fixture.is_none() {
             return Err("--headless and --smoke require --fixture.".into());
         }
-        if self.fixture.is_some() && (self.settings.is_some() || self.tray) {
-            return Err("Fixture mode rejects settings paths and real tray services.".into());
+        if self.fixture.is_some()
+            && (self.settings.is_some() || self.tray || self.recording_root.is_some())
+        {
+            return Err(
+                "Fixture mode rejects settings paths, recording roots and real tray services."
+                    .into(),
+            );
+        }
+        if self
+            .recording_root
+            .as_ref()
+            .is_some_and(|p| !p.is_absolute())
+        {
+            return Err("Recording root must be an explicit absolute directory.".into());
         }
         if let Some(path) = &self.settings {
             SettingsFile::new(path.clone()).map_err(|e| e.to_string())?;
@@ -146,6 +166,13 @@ impl EntryPoint {
         });
         match result {
             Ok(shell) => {
+                if let Err(error) = shell
+                    .bus_owner()
+                    .set_recording_root(self.options.recording_root.clone())
+                {
+                    *self.failure.borrow_mut() = Some(error.to_string());
+                    shell.request_quit();
+                }
                 if self.options.patchbay {
                     shell.show_patchbay();
                 }
