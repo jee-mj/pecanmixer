@@ -1,4 +1,4 @@
-mod accessibility;
+pub(crate) mod accessibility;
 mod mixer;
 mod strip;
 
