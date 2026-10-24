@@ -1,4 +1,6 @@
 //! Synthetic registry, injected writers and temporary WAV roots only.
+#[path = "recording_arming_tests.rs"]
+mod arming;
 #[path = "recording_multitake_tests.rs"]
 mod multiple;
 use super::*;
@@ -54,7 +56,7 @@ impl ConfigTarget for Target {
     fn readback(&self) -> Option<bus_config::BusReadback> {
         Some(bus_config::BusReadback {
             node: Some(900),
-            channels: 2,
+            channels: self.gains.len(),
             gains: self.gains.clone(),
         })
     }
@@ -66,9 +68,9 @@ impl ConfigTarget for Target {
     }
     fn resize(&mut self, requested: usize) -> bus_config::ChannelResizeResult {
         bus_config::ChannelResizeResult {
-            before: 2,
+            before: self.gains.len(),
             requested,
-            actual: 2,
+            actual: self.gains.len(),
             failure: None,
         }
     }
@@ -91,12 +93,16 @@ struct Fixture {
 }
 impl Fixture {
     fn new(split: bool) -> Self {
+        Self::new_layout(if split { vec![1, 1] } else { vec![2] })
+    }
+    fn new_layout(widths: Vec<usize>) -> Self {
+        let channels: usize = widths.iter().sum();
         let commands = Commands::default();
         let node: Knoop = serde_json::from_value(
-            serde_json::json!({"id":900,"serial":9900,"naam":opname::BUS_NAAM,"volume":[1.0,1.0]}),
+            serde_json::json!({"id":900,"serial":9900,"naam":opname::BUS_NAAM,"volume":vec![1.0; channels]}),
         )
         .unwrap();
-        let ports = (0..2)
+        let ports = (0..channels as u32)
             .map(|c| Poort {
                 id: 901 + c,
                 knoop: 900,
@@ -111,7 +117,7 @@ impl Fixture {
                 groep: None,
             })
             .collect();
-        for id in [900, 901, 902] {
+        for id in 900..=900 + channels as u32 {
             commands.object_added(id);
         }
         commands.publish(Momentopname {
@@ -122,24 +128,22 @@ impl Fixture {
             ..Default::default()
         });
         let mut target = Target {
-            gains: vec![1., 1.],
+            gains: vec![1.; channels],
             options: None,
         };
         commands.refresh_config(target.readback(), false, false);
         let mut buses = BusConfig::default();
         buses.midi = false;
-        if split {
-            buses.widths = vec![1, 1];
-            buses.states.clear();
-            for key in ["rec-1", "rec-2"] {
-                buses.states.insert(
-                    key.into(),
-                    BusState {
-                        armed: true,
-                        ..Default::default()
-                    },
-                );
-            }
+        buses.widths = widths;
+        buses.states.clear();
+        for def in buses.definitions().unwrap() {
+            buses.states.insert(
+                def.key,
+                BusState {
+                    armed: true,
+                    ..Default::default()
+                },
+            );
         }
         commands
             .enqueue_config(bus_config::IdleConfigIntent {

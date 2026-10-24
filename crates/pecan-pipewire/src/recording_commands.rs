@@ -45,6 +45,7 @@ impl Commands {
                 .cloned()
                 .map(RecordingReceipt)
                 .collect(),
+            arming: state.arming.as_ref().map(|w| w.receipt.clone()),
         })
     }
     fn enqueue_recording_selection(
@@ -63,6 +64,9 @@ impl Commands {
             return Err(RecordingError::Disconnected);
         }
         state.recording.reap();
+        if state.arming.is_some() {
+            return Err(RecordingError::Busy);
+        }
         if state.recording.exhausted
             || state.recording.revision == u64::MAX
             || state.config.exhausted
@@ -84,105 +88,10 @@ impl Commands {
         if intent.expected_config != state.config.snapshot.revision {
             return Err(RecordingError::StaleConfig);
         }
-        let origin = state
-            .origins
-            .iter()
-            .find(|o| {
-                o.graph.stamp == intent.origin.stamp
-                    && Arc::ptr_eq(&o.graph.value, &intent.origin.value)
-            })
-            .ok_or(RecordingError::OriginUnavailable)?;
-        if origin.graph.stamp.epoch != state.graph.stamp.epoch {
-            return Err(RecordingError::InvalidOrigin);
-        }
-        let config = state
-            .config
-            .snapshot
-            .configuration
+        let selected = selection
             .as_ref()
-            .ok_or(RecordingError::ConfigurationUnknown)?;
-        let local = state
-            .config
-            .snapshot
-            .local
-            .as_ref()
-            .ok_or(RecordingError::Unavailable)?;
-        let node = local.node.ok_or(RecordingError::Unavailable)?;
-        let observed = origin
-            .graph
-            .value
-            .knopen
-            .iter()
-            .find(|n| n.id == node && n.naam == opname::BUS_NAAM)
-            .ok_or(RecordingError::InvalidOrigin)?;
-        let rate = origin
-            .graph
-            .value
-            .rate
-            .filter(|r| *r != 0)
-            .ok_or(RecordingError::Unavailable)?;
-        let defs = if let Some((key, _)) = &selection {
-            vec![config
-                .buses
-                .definitions()
-                .map_err(|_| RecordingError::InvalidInput)?
-                .into_iter()
-                .find(|d| &d.key == key)
-                .ok_or(RecordingError::InvalidInput)?]
-        } else {
-            config
-                .buses
-                .armed()
-                .map_err(|_| RecordingError::InvalidInput)?
-        };
-        if defs.is_empty() {
-            return Err(RecordingError::NoArmedTracks);
-        }
-        let mut tracks = Vec::new();
-        let mut references = BTreeSet::from([node]);
-        for def in defs {
-            let mut ports = Vec::new();
-            for channel in &def.channels {
-                let name = format!("rec_{}", channel + 1);
-                let mut matching = origin.graph.value.poorten.iter().filter(|p| {
-                    p.knoop == node
-                        && p.ingang
-                        && p.soort == pecan_core::graph::Soort::Audio
-                        && p.naam == name
-                });
-                let port = matching
-                    .next()
-                    .filter(|_| *channel < local.channels)
-                    .ok_or(RecordingError::InvalidOrigin)?;
-                if matching.next().is_some() {
-                    return Err(RecordingError::InvalidOrigin);
-                }
-                ports.push(port.id);
-                references.insert(port.id);
-            }
-            tracks.push(TrackSpec {
-                key: def.key,
-                name: def.file,
-                channels: def.channels,
-                ports,
-            });
-        }
-        let objects = references
-            .into_iter()
-            .map(|id| (id, origin.objects.get(&id).copied()))
-            .collect();
-        let context = Context {
-            source: origin.graph.stamp,
-            config: intent.expected_config,
-            config_identity: state.config.identity.clone(),
-            ticket: intent.ticket,
-            node,
-            serial: observed.serial,
-            rate,
-            objects,
-            tracks,
-        };
-        state.validate_recording(&context, true)?;
+            .map(|(key, _)| BTreeSet::from([key.clone()]));
+        let context = state.recording_context(&intent, selected.as_ref())?;
         if selection.is_some() {
             for existing in &state.recording.active {
                 for (index, track) in existing.context.tracks.iter().enumerate() {
@@ -236,6 +145,7 @@ impl Commands {
                 request.clone(),
                 intent.root.as_path().to_path_buf(),
             )),
+            arming: None,
         });
         state.recording.active.push(request.clone());
         state.recording.refresh_revision();
@@ -248,8 +158,11 @@ impl Commands {
         let mut state = self.0.try_lock().map_err(|_| RecordingError::Busy)?;
         if target == RecordingStop::All {
             let result = state.recording.stop_all(None, true);
+            state.cancel_arming(RecordingError::Cancelled);
             // A stopped queued start must not retain ordinary FIFO capacity.
-            state.pending.retain(|q| q.start.is_none());
+            state
+                .pending
+                .retain(|q| q.start.is_none() && q.arming.is_none());
             return Ok(result);
         }
         let take_id = match target {
@@ -270,6 +183,13 @@ impl Commands {
             .cloned()
             .ok_or(RecordingError::UnknownTake)?;
         let installed = request.installed.get().unwrap();
+        let was_reserving = match target {
+            RecordingStop::Take(_) => (0..installed.tracks.len()).any(|i| request.reserves(i)),
+            RecordingStop::Track(id) => request.reserves(id.index()),
+            RecordingStop::All => unreachable!(),
+        };
+        let was_stopped = request.stop.load(Ordering::Acquire);
+        let old_tracks = request.track_stops.load(Ordering::Acquire);
         match target {
             RecordingStop::Take(_) => request.request_stop(),
             RecordingStop::Track(id) => {
@@ -280,17 +200,20 @@ impl Commands {
             }
             _ => unreachable!(),
         }
+        if was_reserving
+            && (request.stop.load(Ordering::Acquire) != was_stopped
+                || request.track_stops.load(Ordering::Acquire) != old_tracks)
+        {
+            state.cancel_arming(RecordingError::Cancelled);
+            state.pending.retain(|q| q.arming.is_none());
+        }
         state.recording.refresh_revision();
         Ok(RecordingStopResult::Retained(RecordingReceipt(request)))
     }
     pub(crate) fn recording_owned(&self) -> bool {
-        self.0
-            .lock()
-            .unwrap()
-            .recording
-            .active
-            .iter()
-            .any(|r| r.owned())
+        let state = self.0.lock().unwrap();
+        state.arming.as_ref().is_some_and(|w| w.claimed)
+            || state.recording.active.iter().any(|r| r.owned())
     }
     pub(crate) fn legacy_recording_blocked(&self, command: &Opdracht) -> bool {
         matches!(
@@ -314,8 +237,12 @@ impl Commands {
         let mut state = self.0.lock().unwrap();
         if name.is_none() {
             state.recording.stop_all(None, false);
+            if state.arming.as_ref().is_some_and(|w| w.claimed) {
+                state.cancel_arming(RecordingError::Cancelled);
+            }
             return;
         }
+        let mut changed = false;
         for request in &state.recording.active {
             if !request.owned() {
                 continue;
@@ -326,6 +253,7 @@ impl Commands {
                     .iter()
                     .filter(|t| Some(t.name.as_str()) == name)
                 {
+                    changed |= request.reserves(track.id.index());
                     request.request_track_stop(track.id.index());
                 }
             } else if request
@@ -334,8 +262,12 @@ impl Commands {
                 .iter()
                 .any(|t| Some(t.name.as_str()) == name)
             {
+                changed |= !request.stop.load(Ordering::Acquire);
                 request.request_stop();
             }
+        }
+        if changed && state.arming.as_ref().is_some_and(|w| w.claimed) {
+            state.cancel_arming(RecordingError::Cancelled);
         }
         state.recording.refresh_revision();
     }
@@ -488,7 +420,122 @@ impl Commands {
     }
 }
 impl State {
-    fn validate_recording(&self, context: &Context, config: bool) -> Result<(), RecordingError> {
+    pub(super) fn recording_context(
+        &self,
+        intent: &RecordingStart,
+        keys: Option<&BTreeSet<String>>,
+    ) -> Result<Context, RecordingError> {
+        if intent.expected_config != self.config.snapshot.revision {
+            return Err(RecordingError::StaleConfig);
+        }
+        let origin = self
+            .origins
+            .iter()
+            .find(|o| {
+                o.graph.stamp == intent.origin.stamp
+                    && Arc::ptr_eq(&o.graph.value, &intent.origin.value)
+            })
+            .ok_or(RecordingError::OriginUnavailable)?;
+        if origin.graph.stamp.epoch != self.graph.stamp.epoch {
+            return Err(RecordingError::InvalidOrigin);
+        }
+        let config = self
+            .config
+            .snapshot
+            .configuration
+            .as_ref()
+            .ok_or(RecordingError::ConfigurationUnknown)?;
+        let local = self
+            .config
+            .snapshot
+            .local
+            .as_ref()
+            .ok_or(RecordingError::Unavailable)?;
+        let node = local.node.ok_or(RecordingError::Unavailable)?;
+        let observed = origin
+            .graph
+            .value
+            .knopen
+            .iter()
+            .find(|n| n.id == node && n.naam == opname::BUS_NAAM)
+            .ok_or(RecordingError::InvalidOrigin)?;
+        let rate = origin
+            .graph
+            .value
+            .rate
+            .filter(|r| *r != 0)
+            .ok_or(RecordingError::Unavailable)?;
+        let defs = if let Some(keys) = keys {
+            let defs = config
+                .buses
+                .definitions()
+                .map_err(|_| RecordingError::InvalidInput)?;
+            if keys.iter().any(|k| !defs.iter().any(|d| &d.key == k)) {
+                return Err(RecordingError::InvalidInput);
+            }
+            defs.into_iter().filter(|d| keys.contains(&d.key)).collect()
+        } else {
+            config
+                .buses
+                .armed()
+                .map_err(|_| RecordingError::InvalidInput)?
+        };
+        if defs.is_empty() {
+            return Err(RecordingError::NoArmedTracks);
+        }
+        let mut tracks = Vec::new();
+        let mut references = BTreeSet::from([node]);
+        for def in defs {
+            let mut ports = Vec::new();
+            for channel in &def.channels {
+                let name = format!("rec_{}", channel + 1);
+                let mut matching = origin.graph.value.poorten.iter().filter(|p| {
+                    p.knoop == node
+                        && p.ingang
+                        && p.soort == pecan_core::graph::Soort::Audio
+                        && p.naam == name
+                });
+                let port = matching
+                    .next()
+                    .filter(|_| *channel < local.channels)
+                    .ok_or(RecordingError::InvalidOrigin)?;
+                if matching.next().is_some() {
+                    return Err(RecordingError::InvalidOrigin);
+                }
+                ports.push(port.id);
+                references.insert(port.id);
+            }
+            tracks.push(TrackSpec {
+                key: def.key,
+                name: def.file,
+                channels: def.channels,
+                ports,
+            });
+        }
+        let objects = references
+            .into_iter()
+            .map(|id| (id, origin.objects.get(&id).copied()))
+            .collect();
+        let context = Context {
+            source: origin.graph.stamp,
+            config: intent.expected_config,
+            config_identity: self.config.identity.clone(),
+            ticket: intent.ticket,
+            node,
+            serial: observed.serial,
+            rate,
+            objects,
+            tracks,
+        };
+        self.validate_recording(&context, true)?;
+        Ok(context)
+    }
+
+    pub(super) fn validate_recording(
+        &self,
+        context: &Context,
+        config: bool,
+    ) -> Result<(), RecordingError> {
         if self.stopped {
             return Err(RecordingError::Stopped);
         }

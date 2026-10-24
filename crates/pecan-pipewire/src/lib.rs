@@ -8,6 +8,7 @@ mod meter_captures;
 pub mod midimeter;
 pub mod opname;
 pub mod recording;
+pub mod recording_arming;
 pub mod shutdown;
 #[cfg(test)]
 mod test_support;

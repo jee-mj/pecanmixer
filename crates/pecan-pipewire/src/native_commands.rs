@@ -197,6 +197,7 @@ impl Commands {
                 native: Some(Tag { id, index }),
                 config: None,
                 start: None,
+                arming: None,
             });
         }
         let count = intent.commands.len();

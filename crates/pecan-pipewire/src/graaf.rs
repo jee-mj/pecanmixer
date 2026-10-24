@@ -164,6 +164,14 @@ impl Graaf {
     pub fn recording_snapshot(&self) -> Option<crate::recording::RecordingSnapshot> {
         self.opdrachten.recording_snapshot()
     }
+    /// Dynamic audio arming only; completion is a local decision, not writer
+    /// finalization or server acknowledgement. Retain all child take receipts.
+    pub fn arm_recordings(
+        &self,
+        intent: crate::recording_arming::RecordingArming,
+    ) -> Result<crate::recording_arming::ArmingReceipt, crate::recording::RecordingError> {
+        self.opdrachten.enqueue_arming(intent)
+    }
     /// Start one configured audio bus in its own immutable take. No-op returns
     /// existing ownership, not capture/audio-arrival or finalization success.
     pub fn start_recording_bus(
@@ -1022,6 +1030,20 @@ fn sessie(
                     false,
                 );
                 opdrachten.pump_recording(&native_capture, !opnemer.borrow().is_empty());
+                let completion = transport.borrow().schrijvers.clone();
+                opdrachten.drive_arming(
+                    &mut IdleConfigTarget {
+                        bus: bus.as_ref().as_ref(),
+                        staat: &staat,
+                        opnemer: &opnemer,
+                        klok: &klok,
+                        transport: &transport,
+                        opdrachten: &opdrachten,
+                    },
+                    &completion,
+                    !opnemer.borrow().is_empty(),
+                    opname::tracked_writer,
+                );
                 opdrachten.refresh_config(
                     bus.as_ref().as_ref().map(Bus::local_readback),
                     !opnemer.borrow().is_empty() || opdrachten.recording_live(),
