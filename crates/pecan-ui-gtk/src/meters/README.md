@@ -4,6 +4,11 @@ This module supplies native per-channel and mini-meter presentation. It does not
 start a backend, create audio links, change startup, or make the preview a
 functional mixer. Inputs in its tests are authored synthetic data.
 
+`TelemetryAdapter<I>` now provides an isolated accepted-batch/projection bridge
+with caller-supplied registry identities, retained widgets and explicit surface /
+viewport activation. Its [integration contract](adapter/README.md) describes the
+single-consumer, identity, reset and mounting requirements. Startup is unchanged.
+
 The owning GTK shell retains one `MeterFeed`, feeds each accepted inbox batch,
 and retains a `MeterWidget` wrapper for each displayed bar:
 
