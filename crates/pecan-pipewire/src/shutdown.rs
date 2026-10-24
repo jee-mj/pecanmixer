@@ -12,7 +12,7 @@
 //! deliberate failure policy. The legacy tray still uses its fixed delay;
 //! switching that UI to this API and presenting failures is separate work.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -20,7 +20,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(5);
 const ERROR_LIMIT: usize = 32;
 
 #[derive(Clone)]
-pub struct Shutdown(Arc<Mutex<State>>);
+pub struct Shutdown(Arc<Mutex<State>>, mpsc::Sender<JoinTask>);
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ShutdownReport {
@@ -53,36 +53,59 @@ pub enum ShutdownPending {
 #[derive(Default)]
 struct State {
     worker_registered: bool,
-    worker: Option<JoinHandle<()>>,
-    writers: Vec<JoinHandle<Result<(), String>>>,
+    worker_joined: bool,
+    pending_writers: usize,
+    latest_error: Option<String>,
     report: ShutdownReport,
+}
+
+enum JoinTask {
+    Worker(JoinHandle<()>),
+    Writer(JoinHandle<Result<(), String>>),
 }
 
 impl Shutdown {
     pub(crate) fn new() -> Self {
-        Self(Arc::default())
+        let state = Arc::new(Mutex::new(State::default()));
+        let worker_state = Arc::clone(&state);
+        let (tx, rx) = mpsc::channel();
+        std::thread::Builder::new()
+            .name("pecanmixer-reaper".into())
+            .spawn(move || reap(rx, worker_state))
+            .expect("shutdown coordinator starten");
+        Self(state, tx)
     }
 
     pub(crate) fn worker(&self, worker: JoinHandle<()>) {
-        let mut state = self.0.lock().unwrap();
-        assert!(
-            !state.worker_registered,
-            "one graph worker per shutdown handle"
-        );
-        state.worker_registered = true;
-        state.worker = Some(worker);
+        {
+            let mut state = self.0.lock().unwrap();
+            assert!(
+                !state.worker_registered,
+                "one graph worker per shutdown handle"
+            );
+            state.worker_registered = true;
+        }
+        self.1
+            .send(JoinTask::Worker(worker))
+            .unwrap_or_else(|_| panic!("shutdown coordinator unavailable"));
     }
 
     pub(crate) fn writer(&self, writer: JoinHandle<Result<(), String>>) {
-        self.0.lock().unwrap().writers.push(writer);
+        self.0.lock().unwrap().pending_writers += 1;
+        self.1
+            .send(JoinTask::Writer(writer))
+            .unwrap_or_else(|_| panic!("shutdown coordinator unavailable"));
     }
 
-    /// Called by the existing low-rate transport tick; never wait for I/O.
+    /// Consume the last already-joined writer error at the transport tick.
+    /// Never join, wait for I/O or wait for thread-local teardown here.
     pub(crate) fn reap_writers(&self) -> Option<String> {
-        self.0.lock().unwrap().reap_writers()
+        self.0.lock().unwrap().latest_error.take()
     }
 
-    /// Safe to poll on the UI thread: join only threads already finished.
+    /// Safe to poll on the UI thread: inspect already-joined completion state.
+    /// Thread-local teardown can block join even after is_finished(); joins
+    /// therefore run exclusively on the background coordinator.
     /// A returned report can contain errors; check `is_success()` before exit.
     pub fn try_complete(&self) -> Option<ShutdownReport> {
         self.0.try_lock().ok()?.poll()
@@ -90,17 +113,18 @@ impl Shutdown {
 
     /// Wait off the UI/graph/process thread, for at most the supplied duration
     /// plus scheduler/polling overhead. Timeout is pending, not successful
-    /// finalization. No unbounded `join` is used, even for a failed writer.
+    /// finalization. This method never joins; background joining may remain
+    /// pending after this wait returns.
     pub fn wait_timeout(&self, timeout: Duration) -> Result<ShutdownReport, ShutdownPending> {
         let started = Instant::now();
         loop {
-            let pending = if let Ok(mut state) = self.0.try_lock() {
+            let pending = if let Ok(state) = self.0.try_lock() {
                 if let Some(report) = state.poll() {
                     return Ok(report);
                 }
                 ShutdownPending::Running {
-                    worker_running: !state.worker_registered || state.worker.is_some(),
-                    pending_writers: state.writers.len(),
+                    worker_running: !state.worker_registered || !state.worker_joined,
+                    pending_writers: state.pending_writers,
                 }
             } else {
                 ShutdownPending::Busy
@@ -115,37 +139,74 @@ impl Shutdown {
 }
 
 impl State {
-    fn reap_writers(&mut self) -> Option<String> {
-        let (finished, pending): (Vec<_>, Vec<_>) = std::mem::take(&mut self.writers)
-            .into_iter()
-            .partition(JoinHandle::is_finished);
-        self.writers = pending;
-        let mut latest = None;
-        for writer in finished {
-            match writer
-                .join()
-                .unwrap_or_else(|_| Err("writer panicked".into()))
-            {
-                Ok(()) => self.report.writers_finalized += 1,
-                Err(error) => {
-                    self.report.writers_failed += 1;
-                    if self.report.writer_errors.len() < ERROR_LIMIT {
-                        self.report.writer_errors.push(error.clone());
+    fn poll(&self) -> Option<ShutdownReport> {
+        (self.worker_registered && self.worker_joined && self.pending_writers == 0)
+            .then(|| self.report.clone())
+    }
+}
+
+impl JoinTask {
+    fn is_finished(&self) -> bool {
+        match self {
+            Self::Worker(thread) => thread.is_finished(),
+            Self::Writer(thread) => thread.is_finished(),
+        }
+    }
+
+    /// Only called by the background coordinator. Never hold the state lock
+    /// across join: TLS destructors and the OS may still block indefinitely.
+    fn join(self, state: &Mutex<State>) {
+        match self {
+            Self::Worker(thread) => {
+                let panicked = thread.join().is_err();
+                let mut state = state.lock().unwrap();
+                state.report.worker_panicked = panicked;
+                state.worker_joined = true;
+            }
+            Self::Writer(thread) => {
+                let result = thread
+                    .join()
+                    .unwrap_or_else(|_| Err("writer panicked".into()));
+                let mut state = state.lock().unwrap();
+                state.pending_writers -= 1;
+                match result {
+                    Ok(()) => state.report.writers_finalized += 1,
+                    Err(error) => {
+                        state.report.writers_failed += 1;
+                        if state.report.writer_errors.len() < ERROR_LIMIT {
+                            state.report.writer_errors.push(error.clone());
+                        }
+                        state.latest_error = Some(error);
                     }
-                    latest = Some(error);
                 }
             }
         }
-        latest
     }
+}
 
-    fn poll(&mut self) -> Option<ShutdownReport> {
-        self.reap_writers();
-        if self.worker.as_ref().is_some_and(JoinHandle::is_finished) {
-            self.report.worker_panicked = self.worker.take().unwrap().join().is_err();
+fn reap(rx: mpsc::Receiver<JoinTask>, state: Arc<Mutex<State>>) {
+    let mut pending: Vec<JoinTask> = Vec::new();
+    loop {
+        let mut i = 0;
+        while i < pending.len() {
+            if pending[i].is_finished() {
+                pending.swap_remove(i).join(&state);
+            } else {
+                i += 1;
+            }
         }
-        (self.worker_registered && self.worker.is_none() && self.writers.is_empty())
-            .then(|| self.report.clone())
+        match rx.recv_timeout(POLL_INTERVAL) {
+            Ok(task) => pending.push(task),
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                // All completion handles have been dropped. Still finish
+                // joining registered work off-thread; no caller is waiting.
+                for task in pending {
+                    task.join(&state);
+                }
+                return;
+            }
+        }
     }
 }
 
@@ -153,6 +214,82 @@ impl State {
 mod tests {
     use super::*;
     use std::sync::mpsc;
+
+    struct HeldTeardown {
+        entered: mpsc::Sender<()>,
+        release: mpsc::Receiver<()>,
+    }
+
+    impl Drop for HeldTeardown {
+        fn drop(&mut self) {
+            let _ = self.entered.send(());
+            // Keep regression cleanup bounded even if an assertion fails.
+            let _ = self.release.recv_timeout(Duration::from_secs(2));
+        }
+    }
+
+    thread_local! {
+        static TEARDOWN: std::cell::RefCell<Option<HeldTeardown>> = const { std::cell::RefCell::new(None) };
+    }
+
+    fn held_thread<T: Send + 'static>(value: T) -> (JoinHandle<T>, mpsc::Sender<()>) {
+        let (entered, waiting) = mpsc::channel();
+        let (release, gate) = mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            TEARDOWN.with(|slot| {
+                *slot.borrow_mut() = Some(HeldTeardown {
+                    entered,
+                    release: gate,
+                })
+            });
+            value
+        });
+        waiting.recv_timeout(Duration::from_secs(2)).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while !thread.is_finished() {
+            assert!(
+                Instant::now() < deadline,
+                "probe must reach the finished-before-TLS-exit state"
+            );
+            std::thread::yield_now();
+        }
+        (thread, release)
+    }
+
+    #[test]
+    fn gated_thread_local_teardown_cannot_block_polling_or_timed_wait() {
+        for block_worker in [false, true] {
+            let completion = Shutdown::new();
+            let release = if block_worker {
+                let (thread, release) = held_thread(());
+                completion.worker(thread);
+                release
+            } else {
+                let (thread, release) = held_thread(Ok(()));
+                completion.writer(thread);
+                completion.worker(std::thread::spawn(|| {}));
+                release
+            };
+            let probe_completion = completion.clone();
+            let (sent, received) = mpsc::sync_channel(1);
+            completion.writer(std::thread::spawn(move || {
+                let poll = probe_completion.try_complete();
+                let timed = probe_completion.wait_timeout(Duration::from_millis(1));
+                let _ = sent.send((poll, timed));
+                Ok(())
+            }));
+            // Both API calls must return before teardown is released. The
+            // old caller-side join blocks here despite is_finished() == true.
+            let observed = received.recv_timeout(Duration::from_millis(250));
+            release.send(()).unwrap();
+            let (poll, timed) = observed.expect("completion inspection blocked on TLS teardown");
+            assert!(poll.is_none());
+            assert!(timed.is_err());
+            let report = completion.wait_timeout(Duration::from_secs(2)).unwrap();
+            assert!(report.is_success());
+            assert_eq!(report.writers_finalized, if block_worker { 1 } else { 2 });
+        }
+    }
 
     #[test]
     fn unfinished_writer_times_out_and_the_same_handle_can_later_complete() {
