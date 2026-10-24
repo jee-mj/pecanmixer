@@ -1,0 +1,14 @@
+[package]
+name = "pecan-pipewire"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "Reusable Pecan Mixer PipeWire backend"
+
+[dependencies]
+pecan-core = { path = "../pecan-core" }
+pipewire.workspace = true
+serde_json.workspace = true
+hound = "3"
+midly = { version = "0.5", default-features = false, features = ["std"] }
+libc = "0.2"

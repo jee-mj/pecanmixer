@@ -26,10 +26,10 @@ use std::rc::Rc;
 use std::sync::mpsc;
 use std::time::Instant;
 
+pub use pecan_core::graph::KlokStand;
 use pipewire as pw;
 use pw::spa;
 use pw::sys as pw_sys;
-use serde::Serialize;
 
 pub const BUS_NAAM: &str = "pecanmixer-opname";
 /// Ticks per kwartnoot in het MIDI-bestand.
@@ -87,15 +87,14 @@ pub struct Spoor {
 }
 
 /// Het kanaal naar de schrijfdraad en de draad zelf, die zegt of het lukte.
-pub type Schrijver = (mpsc::Sender<Bericht>, std::thread::JoinHandle<Result<(), String>>);
+pub type Schrijver = (
+    mpsc::Sender<Bericht>,
+    std::thread::JoinHandle<Result<(), String>>,
+);
 
 /// Start de schrijfdraad met één WAV per spoor in `map`. Geeft het kanaal
 /// en de draad terug; de draad eindigt na [`Bericht::Stop`].
-pub fn schrijver(
-    map: &Path,
-    sporen: Vec<Spoor>,
-    rate: u32,
-) -> std::io::Result<Schrijver> {
+pub fn schrijver(map: &Path, sporen: Vec<Spoor>, rate: u32) -> std::io::Result<Schrijver> {
     std::fs::create_dir_all(map)?;
     let (tx, rx) = mpsc::channel::<Bericht>();
     let map = map.to_owned();
@@ -111,7 +110,10 @@ pub fn schrijver(
                     sample_format: hound::SampleFormat::Float,
                 };
                 let pad = map.join(format!("{}.wav", veilig(&s.naam)));
-                wav.push(Some((hound::WavWriter::create(pad, spec).map_err(|e| e.to_string())?, 0u64)));
+                wav.push(Some((
+                    hound::WavWriter::create(pad, spec).map_err(|e| e.to_string())?,
+                    0u64,
+                )));
             }
             let mut midi = None;
             for b in rx {
@@ -151,7 +153,13 @@ pub fn schrijver(
 /// Een bestandsnaam zonder slash en dergelijke.
 fn veilig(naam: &str) -> String {
     naam.chars()
-        .map(|c| if c.is_alphanumeric() || " -_.()".contains(c) { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || " -_.()".contains(c) {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .trim()
         .to_owned()
@@ -171,7 +179,9 @@ pub fn nieuwe_map() -> PathBuf {
 
 /// `~/Recordings`: elke take krijgt hierin een eigen map.
 pub fn opnamemap() -> PathBuf {
-    let thuis = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| ".".into());
+    let thuis = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| ".".into());
     thuis.join("Recordings")
 }
 
@@ -274,7 +284,10 @@ fn schrijf_midi(pad: &Path, m: &MidiBestand) -> Result<(), String> {
         });
         vorige = tick;
     }
-    nul.push(TrackEvent { delta: u28::new(0), kind: TrackEventKind::Meta(MetaMessage::EndOfTrack) });
+    nul.push(TrackEvent {
+        delta: u28::new(0),
+        kind: TrackEventKind::Meta(MetaMessage::EndOfTrack),
+    });
     sporen.push(nul);
 
     for (i, naam) in m.namen.iter().enumerate() {
@@ -298,15 +311,24 @@ fn schrijf_midi(pad: &Path, m: &MidiBestand) -> Result<(), String> {
         let mut spoor = Vec::new();
         let mut vorige = 0u64;
         for (t, kind) in ev {
-            spoor.push(TrackEvent { delta: u28::new((t - vorige).min(0x0fff_ffff) as u32), kind });
+            spoor.push(TrackEvent {
+                delta: u28::new((t - vorige).min(0x0fff_ffff) as u32),
+                kind,
+            });
             vorige = t;
         }
-        spoor.push(TrackEvent { delta: u28::new(0), kind: TrackEventKind::Meta(MetaMessage::EndOfTrack) });
+        spoor.push(TrackEvent {
+            delta: u28::new(0),
+            kind: TrackEventKind::Meta(MetaMessage::EndOfTrack),
+        });
         sporen.push(spoor);
     }
 
     let smf = Smf {
-        header: Header::new(Format::Parallel, Timing::Metrical(midly::num::u15::new(PPQ as u16))),
+        header: Header::new(
+            Format::Parallel,
+            Timing::Metrical(midly::num::u15::new(PPQ as u16)),
+        ),
         tracks: sporen,
     };
     smf.save(pad).map_err(|e| e.to_string())
@@ -322,13 +344,6 @@ pub struct Klok {
     pub recent: VecDeque<Instant>,
     /// Start (`true`) of Stop (`false`) gezien op de klokpoort.
     pub verzoek: Option<bool>,
-}
-
-#[derive(Clone, Debug, Default, Serialize)]
-pub struct KlokStand {
-    pub bpm: Option<f64>,
-    /// De pulsen komen regelmatig binnen.
-    pub lock: bool,
 }
 
 impl Klok {
@@ -352,7 +367,10 @@ impl Klok {
             .map(|(a, b)| b.duration_since(*a).as_secs_f64())
             .collect();
         let gem = tussen.iter().sum::<f64>() / tussen.len() as f64;
-        let max_afwijking = tussen.iter().map(|d| (d / gem - 1.0).abs()).fold(0.0, f64::max);
+        let max_afwijking = tussen
+            .iter()
+            .map(|d| (d / gem - 1.0).abs())
+            .fold(0.0, f64::max);
         KlokStand {
             bpm: Some(60.0 / (gem * f64::from(PULSEN))),
             lock: r.len() > PULSEN as usize && max_afwijking < 0.2,
@@ -392,7 +410,12 @@ pub struct Bus {
 ///
 /// # Safety
 /// `filter` moet leven; process mag niet tegelijk lopen (zelfde draad).
-unsafe fn bus_poort(filter: *mut pw_sys::pw_filter, dsp: &str, naam: &str, kanaal: Option<&str>) -> *mut c_void {
+unsafe fn bus_poort(
+    filter: *mut pw_sys::pw_filter,
+    dsp: &str,
+    naam: &str,
+    kanaal: Option<&str>,
+) -> *mut c_void {
     let mut props = pw::properties::properties! {
         *pw::keys::FORMAT_DSP => dsp,
         *pw::keys::PORT_NAME => naam,
@@ -430,7 +453,8 @@ impl Bus {
             "node.dont-reconnect" => "true",
         };
         // SAFETY: zoals in midimeter: de core leeft langer dan de bus.
-        let filter = unsafe { pw_sys::pw_filter_new(core.as_raw_ptr(), naam.as_ptr(), props.into_raw()) };
+        let filter =
+            unsafe { pw_sys::pw_filter_new(core.as_raw_ptr(), naam.as_ptr(), props.into_raw()) };
         if filter.is_null() {
             return None;
         }
@@ -468,7 +492,12 @@ impl Bus {
                 return None;
             }
         }
-        let bus = Self { filter, _haak: haak, _events: events, binnen };
+        let bus = Self {
+            filter,
+            _haak: haak,
+            _events: events,
+            binnen,
+        };
         bus.zet_kanalen(kanalen);
         Some(bus)
     }
@@ -487,7 +516,14 @@ impl Bus {
         while b.kanalen.len() < n {
             let i = b.kanalen.len();
             // SAFETY: filter leeft.
-            let p = unsafe { bus_poort(self.filter, DSP_AUDIO, &format!("rec_{}", i + 1), Some(&format!("AUX{i}"))) };
+            let p = unsafe {
+                bus_poort(
+                    self.filter,
+                    DSP_AUDIO,
+                    &format!("rec_{}", i + 1),
+                    Some(&format!("AUX{i}")),
+                )
+            };
             if p.is_null() {
                 break;
             }
@@ -534,7 +570,9 @@ impl Drop for Bus {
 unsafe extern "C" fn bus_process(data: *mut c_void, positie: *mut spa::sys::spa_io_position) {
     // SAFETY: `data` is de RefCell<BusBinnen> uit `maak`.
     let binnen = unsafe { &*data.cast::<RefCell<BusBinnen>>() };
-    let Ok(mut b) = binnen.try_borrow_mut() else { return };
+    let Ok(mut b) = binnen.try_borrow_mut() else {
+        return;
+    };
     let n = if positie.is_null() {
         0
     } else {
@@ -555,7 +593,13 @@ unsafe extern "C" fn bus_process(data: *mut c_void, positie: *mut spa::sys::spa_
     if n == 0 {
         return;
     }
-    let BusBinnen { kanalen, gain, pieken, opnemer, .. } = &mut *b;
+    let BusBinnen {
+        kanalen,
+        gain,
+        pieken,
+        opnemer,
+        ..
+    } = &mut *b;
     let op = opnemer.try_borrow().ok();
     let takes = op.as_deref().filter(|t| !t.is_empty());
     // Elk kanaal: gain erop, piek bijhouden, en bewaren als er opgenomen wordt.
@@ -571,7 +615,11 @@ unsafe extern "C" fn bus_process(data: *mut c_void, positie: *mut spa::sys::spa_
         }
         for j in 0..n {
             // SAFETY: binnen de n samples die PipeWire gaf.
-            let x = if p.is_null() { 0.0 } else { unsafe { *p.add(j) } } * g;
+            let x = if p.is_null() {
+                0.0
+            } else {
+                unsafe { *p.add(j) }
+            } * g;
             piek = piek.max(x.abs());
             if takes.is_some() {
                 kanaal.push(x);
@@ -635,7 +683,11 @@ mod tests {
         let pad = map.join("t.mid");
         let m = MidiBestand {
             namen: vec!["FP-30".into()],
-            events: vec![(0, 0.0, vec![0x90, 64, 76]), (0, 0.5, vec![0x80, 64, 0]), (0, 0.6, vec![0xf8])],
+            events: vec![
+                (0, 0.0, vec![0x90, 64, 76]),
+                (0, 0.5, vec![0x80, 64, 0]),
+                (0, 0.6, vec![0xf8]),
+            ],
             pulsen: None,
         };
         schrijf_midi(&pad, &m).unwrap();

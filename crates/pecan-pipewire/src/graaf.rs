@@ -21,20 +21,22 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
+pub use pecan_core::graph::{
+    BusOpname, Kabel, Knoop, Momentopname, Opdracht, Opties, Pieken, Poort, Soort, TransportStand,
+};
 use pipewire as pw;
 use pw::node::NodeState;
 use pw::spa::param::ParamType;
 use pw::spa::pod::{Object, Pod, Property, Value, ValueArray};
 use pw::spa::utils::dict::DictRef;
 use pw::types::ObjectType;
-use serde::Serialize;
 
 use crate::meter::{self, Meter};
 use crate::midimeter::{Activiteit, MidiMeter};
-use crate::opname::{self, Actief, Bericht, Bus, Klok, KlokStand, MidiBestand, Opnemer, Spoor};
+use crate::opname::{self, Actief, Bericht, Bus, Klok, MidiBestand, Opnemer, Spoor};
 
 /// Wat PipeWire in `format.dsp` zet voor MIDI: oude bytes of UMP.
 const DSP_MIDI: &str = "8 bit raw midi";
@@ -47,106 +49,13 @@ const MELD_INTERVAL: Duration = Duration::from_millis(40);
 /// Hoe lang hij wacht voor hij opnieuw verbindt als de server weg is.
 const OPNIEUW_NA: Duration = Duration::from_secs(2);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Soort {
-    Audio,
-    Midi,
-    /// Video en wat er verder nog over een poort kan.
-    Anders,
-}
-
-impl Soort {
-    fn van_dsp(dsp: Option<&str>) -> Self {
-        match dsp {
-            Some(DSP_AUDIO) => Self::Audio,
-            Some(DSP_MIDI | DSP_UMP) => Self::Midi,
-            _ => Self::Anders,
-        }
+fn soort_van_dsp(dsp: Option<&str>) -> Soort {
+    match dsp {
+        Some(DSP_AUDIO) => Soort::Audio,
+        Some(DSP_MIDI | DSP_UMP) => Soort::Midi,
+        _ => Soort::Anders,
     }
 }
-
-#[derive(Clone, Debug, Serialize)]
-pub struct Knoop {
-    pub id: u32,
-    pub serial: Option<u64>,
-    /// `node.name`: machineleesbaar en het stabielst, `alsa_output.…`.
-    pub naam: String,
-    /// `node.description`: "Fireface 400 Pro".
-    pub beschrijving: Option<String>,
-    /// `node.nick`: "Fireface400 PCM".
-    pub bijnaam: Option<String>,
-    /// `media.class`: `Audio/Sink`, `Stream/Output/Audio`, `Midi/Bridge`, …
-    pub klasse: Option<String>,
-    /// `device.id`: de node hoort bij een apparaat (een geluidskaart, HDMI).
-    pub apparaat: Option<u32>,
-    /// `application.name` van een stream: "Firefox".
-    pub app: Option<String>,
-    /// `media.name` van een stream: de titel van wat er speelt.
-    pub media: Option<String>,
-    /// `running`, `idle`, `suspended`, `creating` of `error`.
-    pub stand: Option<&'static str>,
-    /// `target.object` uit de `default`-metadata: waar de stream naartoe is
-    /// verplaatst. Een serial of een `node.name`; `None` = WirePlumber kiest.
-    pub doel: Option<String>,
-    /// Volume per kanaal, lineair (1.0 = 0 dB), uit de Props van de node.
-    pub volume: Option<Vec<f32>>,
-    pub mute: Option<bool>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct Poort {
-    pub id: u32,
-    pub knoop: u32,
-    /// `port.id`: de volgorde binnen de node, die van de driver.
-    pub volgnummer: Option<u32>,
-    /// `port.name`: `playback_FL`, `capture_AUX3`, `Fireface400: MIDI 1 (capture)`.
-    pub naam: String,
-    /// `port.alias`: `Fireface400:Fireface400 MIDI 1`.
-    pub alias: Option<String>,
-    /// `true` voor een ingang, `false` voor een uitgang.
-    pub ingang: bool,
-    pub soort: Soort,
-    /// `audio.channel`: `FL`, `FR`, `MONO`, `AUX0`.
-    pub kanaal: Option<String>,
-    pub monitor: bool,
-    pub fysiek: bool,
-    /// `port.group`: bij de Midi-Bridge het ALSA-client-nummer, dus het apparaat.
-    pub groep: Option<String>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct Kabel {
-    pub id: u32,
-    pub uit_knoop: u32,
-    pub uit_poort: u32,
-    pub in_knoop: u32,
-    pub in_poort: u32,
-    /// De client die de link legde. Is dat WirePlumber, dan is het beleid;
-    /// anders handwerk.
-    pub client: Option<u32>,
-}
-
-/// Alles wat de schil nodig heeft om de graph te tekenen.
-#[derive(Clone, Debug, Default, Serialize)]
-pub struct Momentopname {
-    pub verbonden: bool,
-    /// Samplerate van de graph: de geforceerde als die er is, anders de standaard.
-    pub rate: Option<u32>,
-    pub quantum: Option<u32>,
-    /// `node.name` van de standaard-uitgang en -ingang.
-    pub standaard_sink: Option<String>,
-    pub standaard_bron: Option<String>,
-    /// De client-ids van WirePlumber (meestal één).
-    pub wireplumber: Vec<u32>,
-    pub knopen: Vec<Knoop>,
-    pub poorten: Vec<Poort>,
-    pub kabels: Vec<Kabel>,
-}
-
-/// Piek per kanaal sinds de vorige melding, lineair, per node-id. De
-/// kanalen staan in de volgorde van de poorten (`port.id`).
-pub type Pieken = BTreeMap<u32, Vec<f32>>;
 
 /// Wat de draad meldt: een nieuwe stand van de graph, of nieuwe pieken.
 /// Apart, want pieken komen 25 keer per seconde en de graph zelden.
@@ -165,71 +74,8 @@ pub enum Melding<'a> {
 /// (`MIDI_AAN` in api.ts).
 pub const MIDI: bool = false;
 
-/// Eén bus: een WAV met deze kanalen van de Rec bus. De naam is ook de
-/// bestandsnaam, en zo stop je hem weer.
-#[derive(Clone, Debug, serde::Deserialize)]
-pub struct BusOpname {
-    pub naam: String,
-    pub kanalen: Vec<usize>,
-}
-
-/// Wat Record doet, en de klok.
-#[derive(Clone, Debug, serde::Deserialize)]
-pub struct Opties {
-    /// De gewapende bussen.
-    pub bussen: Vec<BusOpname>,
-    /// De MIDI-ingang van de bus is gewapend.
-    pub midi: bool,
-    /// De MIDI-bronpoort van de externe klok; `None` = intern.
-    pub klok: Option<u32>,
-    /// Starten en stoppen op MIDI Start/Stop van de klok.
-    pub start_stop: bool,
-}
-
-#[derive(Clone, Debug, Default, Serialize)]
-pub struct TransportStand {
-    pub bezig: bool,
-    /// De map van de laatst gestarte take.
-    pub map: Option<String>,
-    /// Hoe lang de oudste lopende take al loopt.
-    pub seconden: f64,
-    /// Per bus die opneemt: hoe lang al.
-    pub bussen: BTreeMap<String, f64>,
-    pub klok: KlokStand,
-    /// Wat er misging bij de laatste opname.
-    pub fout: Option<String>,
-}
-
 /// Wordt aangeroepen vanaf de graph-draad.
 pub type Melder = Box<dyn Fn(Melding) + Send + 'static>;
-
-/// Wat de schil de graph kan laten doen. Alles op object-id: de schil werkt
-/// met de momentopname van zojuist, en een id die intussen weg is doet niets.
-#[derive(Clone, Debug)]
-pub enum Opdracht {
-    /// Een link van een uitgangspoort naar een ingangspoort. Blijft bestaan
-    /// als Pecan Mixer sluit (`object.linger`): wat je patcht, blijft gepatcht.
-    Verbind { uit: u32, naar: u32 },
-    /// Een link weghalen, van wie hij ook is.
-    Ontkoppel { kabel: u32 },
-    /// `target.object` van een node zetten (een serial) of wissen. Dan
-    /// verplaatst WirePlumber de stream, zoals bij pavucontrol.
-    ZetDoel { knoop: u32, doel: Option<String> },
-    /// Volume per kanaal, lineair.
-    ZetVolume { knoop: u32, volume: Vec<f32> },
-    ZetMute { knoop: u32, mute: bool },
-    /// Opties voor de volgende opname, en welke klok.
-    ZetTransport(Opties),
-    /// Hoeveel kanalen de Rec bus heeft, en hun gain (lineair, 0 = mute).
-    ZetBus { kanalen: usize, gain: Vec<f32> },
-    /// Record: de gewapende bussen en MIDI uit de opties, samen in één take.
-    Start,
-    /// Eén bus in een eigen take.
-    StartBus(BusOpname),
-    /// Alles stoppen.
-    Stop,
-    StopBus(String),
-}
 
 /// De levende spiegel. Leeft zo lang als de app; de draad stopt niet.
 pub struct Graaf {
@@ -244,7 +90,7 @@ impl Graaf {
         let (tx, rx) = pw::channel::channel();
         std::thread::Builder::new()
             .name("pecanmixer-graaf".to_owned())
-            .spawn(move || draad(gedeeld, melder, rx))
+            .spawn(move || draad(gedeeld, melder, rx, false, Arc::default()))
             .expect("graph-draad starten");
         Self {
             laatste,
@@ -262,12 +108,88 @@ impl Graaf {
     }
 }
 
+/// A strictly observational worker: no Rec bus, meters, links or command API.
+/// Dropping it requests cancellation without blocking the GTK main thread.
+pub struct Observer {
+    stop: Arc<StopSignal>,
+    _sender: pw::channel::Sender<Opdracht>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Observer {
+    /// Wait for cancellation off the UI thread, e.g. in a headless harness.
+    pub fn stop_and_join(mut self) -> std::thread::Result<()> {
+        self.stop.request();
+        self.thread.take().map_or(Ok(()), |thread| thread.join())
+    }
+}
+
+impl Drop for Observer {
+    fn drop(&mut self) {
+        self.stop.request();
+    }
+}
+
+#[derive(Default)]
+struct StopSignal {
+    stopped: Mutex<bool>,
+    wake: Condvar,
+}
+
+impl StopSignal {
+    fn request(&self) {
+        *self.stopped.lock().unwrap_or_else(|e| e.into_inner()) = true;
+        self.wake.notify_all();
+    }
+
+    fn requested(&self) -> bool {
+        *self.stopped.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn retry_wait(&self) {
+        let guard = self.stopped.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = self
+            .wake
+            .wait_timeout_while(guard, OPNIEUW_NA, |stop| !*stop);
+    }
+}
+
+/// Publish owned, stamped events into a bounded inbox. The legacy shell keeps
+/// its borrowed serialization callback while the native UI uses this seam.
+pub fn observe(inbox: Arc<pecan_core::inbox::LatestInbox>) -> std::io::Result<Observer> {
+    use pecan_core::backend::EventSequencer;
+    let sequence = RefCell::new(EventSequencer::default());
+    let melder: Melder = Box::new(move |event| {
+        let mut sequence = sequence.borrow_mut();
+        let owned = match event {
+            Melding::Graaf(value) => sequence.graph(value.clone()),
+            Melding::Pieken(value) => sequence.peaks(value.clone()),
+            Melding::Midi(value) => sequence.midi(value.clone()),
+            Melding::Transport(value) => sequence.transport(value.clone()),
+        };
+        inbox.publish(owned);
+    });
+    let stop = Arc::new(StopSignal::default());
+    let worker_stop = Arc::clone(&stop);
+    let (tx, rx) = pw::channel::channel();
+    let thread = std::thread::Builder::new()
+        .name("pecanmixer-observer".into())
+        .spawn(move || draad(Arc::default(), melder, rx, true, worker_stop))?;
+    Ok(Observer {
+        stop,
+        _sender: tx,
+        thread: Some(thread),
+    })
+}
+
 /// Blijft verbinden: als de server herstart of even weg is, komt de spiegel
 /// vanzelf terug.
 fn draad(
     laatste: Arc<Mutex<Momentopname>>,
     melder: Melder,
     mut rx: pw::channel::Receiver<Opdracht>,
+    read_only: bool,
+    stop: Arc<StopSignal>,
 ) {
     pw::init();
     let melder = Rc::new(melder);
@@ -279,8 +201,14 @@ fn draad(
         }
     });
     let overig: Rc<dyn Fn(Melding)> = Rc::new(move |m: Melding| melder(m));
-    loop {
-        rx = match sessie(Rc::clone(&meld), Rc::clone(&overig), rx) {
+    while !stop.requested() {
+        rx = match sessie(
+            Rc::clone(&meld),
+            Rc::clone(&overig),
+            rx,
+            read_only,
+            Arc::clone(&stop),
+        ) {
             (Ok(()), rx) => rx,
             (Err(fout), rx) => {
                 eprintln!("pecanmixer: PipeWire: {fout}");
@@ -288,7 +216,7 @@ fn draad(
             }
         };
         meld(Momentopname::default());
-        std::thread::sleep(OPNIEUW_NA);
+        stop.retry_wait();
     }
 }
 
@@ -352,7 +280,10 @@ impl Staat {
     fn global(&mut self, id: u32, soort: &ObjectType, props: &DictRef) {
         match soort {
             ObjectType::Node => {
-                if props.get("node.name").is_some_and(|n| n.starts_with(meter::VOORVOEGSEL)) {
+                if props
+                    .get("node.name")
+                    .is_some_and(|n| n.starts_with(meter::VOORVOEGSEL))
+                {
                     self.eigen.insert(id);
                     return;
                 }
@@ -394,7 +325,7 @@ impl Staat {
                         naam: tekst(props, "port.name").unwrap_or_default(),
                         alias: tekst(props, "port.alias"),
                         ingang: props.get("port.direction") == Some("in"),
-                        soort: Soort::van_dsp(props.get("format.dsp")),
+                        soort: soort_van_dsp(props.get("format.dsp")),
                         kanaal: tekst(props, "audio.channel"),
                         monitor: props.get("port.monitor") == Some("true"),
                         fysiek: props.get("port.physical") == Some("true"),
@@ -450,13 +381,16 @@ impl Staat {
         let Some(k) = self.knopen.get_mut(&id) else {
             return;
         };
-        k.stand = Some(match info.state() {
-            NodeState::Running => "running",
-            NodeState::Idle => "idle",
-            NodeState::Suspended => "suspended",
-            NodeState::Creating => "creating",
-            NodeState::Error(_) => "error",
-        });
+        k.stand = Some(
+            match info.state() {
+                NodeState::Running => "running",
+                NodeState::Idle => "idle",
+                NodeState::Suspended => "suspended",
+                NodeState::Creating => "creating",
+                NodeState::Error(_) => "error",
+            }
+            .to_owned(),
+        );
         if let Some(props) = info.props() {
             k.app = tekst(props, "application.name");
             k.media = tekst(props, "media.name");
@@ -484,7 +418,10 @@ impl Staat {
         };
         for p in obj.properties {
             match (p.key, p.value) {
-                (pw::spa::sys::SPA_PROP_channelVolumes, Value::ValueArray(ValueArray::Float(v))) => {
+                (
+                    pw::spa::sys::SPA_PROP_channelVolumes,
+                    Value::ValueArray(ValueArray::Float(v)),
+                ) => {
                     k.volume = Some(v);
                     self.vuil = true;
                 }
@@ -536,14 +473,22 @@ impl Staat {
     }
 
     fn metadata(&mut self, metadata: &str, sleutel: &str, waarde: Option<&str>) {
-        let getal = || waarde.and_then(|w| w.trim().parse::<u32>().ok()).filter(|&n| n > 0);
+        let getal = || {
+            waarde
+                .and_then(|w| w.trim().parse::<u32>().ok())
+                .filter(|&n| n > 0)
+        };
         match (metadata, sleutel) {
             ("settings", "clock.rate") => self.rate = getal(),
             ("settings", "clock.force-rate") => self.force_rate = getal(),
             ("settings", "clock.quantum") => self.quantum = getal(),
             ("settings", "clock.force-quantum") => self.force_quantum = getal(),
-            ("default", "default.audio.sink") => self.standaard_sink = waarde.and_then(naam_uit_json),
-            ("default", "default.audio.source") => self.standaard_bron = waarde.and_then(naam_uit_json),
+            ("default", "default.audio.sink") => {
+                self.standaard_sink = waarde.and_then(naam_uit_json)
+            }
+            ("default", "default.audio.source") => {
+                self.standaard_bron = waarde.and_then(naam_uit_json)
+            }
             _ => return,
         }
         self.vuil = true;
@@ -551,7 +496,10 @@ impl Staat {
 }
 
 fn tekst(props: &DictRef, sleutel: &str) -> Option<String> {
-    props.get(sleutel).filter(|s| !s.is_empty()).map(str::to_owned)
+    props
+        .get(sleutel)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
 }
 
 fn getal<T: std::str::FromStr>(props: &DictRef, sleutel: &str) -> Option<T> {
@@ -588,7 +536,11 @@ fn props_pod(eigenschap: Property) -> Option<Vec<u8>> {
 enum Binding {
     Knoop(pw::node::Node, pw::node::NodeListener),
     /// Met de naam: `default` of `settings`.
-    Metadata(pw::metadata::Metadata, pw::metadata::MetadataListener, String),
+    Metadata(
+        pw::metadata::Metadata,
+        pw::metadata::MetadataListener,
+        String,
+    ),
 }
 
 /// Eén verbinding met de server, tot die wegvalt. Geeft de ontvanger van de
@@ -597,6 +549,8 @@ fn sessie(
     meld: Rc<dyn Fn(Momentopname)>,
     meld_overig: Rc<dyn Fn(Melding)>,
     rx: pw::channel::Receiver<Opdracht>,
+    read_only: bool,
+    stop: Arc<StopSignal>,
 ) -> (Result<(), pw::Error>, pw::channel::Receiver<Opdracht>) {
     let opzet = || -> Result<_, pw::Error> {
         let mainloop = pw::main_loop::MainLoopRc::new(None)?;
@@ -735,7 +689,11 @@ fn sessie(
     let opnemer: Opnemer = Rc::default();
     let klok: Rc<RefCell<Klok>> = Rc::default();
     let transport: Rc<RefCell<Transport>> = Rc::default();
-    let bus = Rc::new(Bus::maak(&core, Rc::clone(&opnemer), 2));
+    let bus = Rc::new(
+        (!read_only)
+            .then(|| Bus::maak(&core, Rc::clone(&opnemer), 2))
+            .flatten(),
+    );
 
     let ontvanger = rx.attach(mainloop.loop_(), {
         let core = core.clone();
@@ -747,39 +705,44 @@ fn sessie(
         let klok = Rc::clone(&klok);
         let transport = Rc::clone(&transport);
         let bus = Rc::clone(&bus);
-        move |o| match o {
-            Opdracht::ZetBus { kanalen, gain } => {
-                if let Some(b) = bus.as_ref() {
-                    b.zet_kanalen(kanalen);
-                    b.zet_gain(&gain);
-                }
+        move |o| {
+            if read_only {
+                return;
             }
-            Opdracht::ZetTransport(opties) => {
-                let mut k = klok.borrow_mut();
-                if k.bron != opties.klok {
-                    k.recent.clear();
+            match o {
+                Opdracht::ZetBus { kanalen, gain } => {
+                    if let Some(b) = bus.as_ref() {
+                        b.zet_kanalen(kanalen);
+                        b.zet_gain(&gain);
+                    }
                 }
-                k.bron = opties.klok.filter(|_| MIDI);
-                k.start_stop = opties.start_stop;
-                transport.borrow_mut().opties = Some(opties);
+                Opdracht::ZetTransport(opties) => {
+                    let mut k = klok.borrow_mut();
+                    if k.bron != opties.klok {
+                        k.recent.clear();
+                    }
+                    k.bron = opties.klok.filter(|_| MIDI);
+                    k.start_stop = opties.start_stop;
+                    transport.borrow_mut().opties = Some(opties);
+                }
+                Opdracht::Start => begin(
+                    &staat.borrow(),
+                    &mut transport.borrow_mut(),
+                    &opnemer,
+                    bus.as_ref().as_ref().and_then(Bus::knoop_id),
+                    None,
+                ),
+                Opdracht::StartBus(b) => begin(
+                    &staat.borrow(),
+                    &mut transport.borrow_mut(),
+                    &opnemer,
+                    bus.as_ref().as_ref().and_then(Bus::knoop_id),
+                    Some(b),
+                ),
+                Opdracht::Stop => eindig(&opnemer, &klok.borrow()),
+                Opdracht::StopBus(naam) => eindig_bus(&opnemer, &klok.borrow(), &naam),
+                o => uitvoeren(o, &core, &registry, &bindingen.borrow(), &gelegd),
             }
-            Opdracht::Start => begin(
-                &staat.borrow(),
-                &mut transport.borrow_mut(),
-                &opnemer,
-                bus.as_ref().as_ref().and_then(Bus::knoop_id),
-                None,
-            ),
-            Opdracht::StartBus(b) => begin(
-                &staat.borrow(),
-                &mut transport.borrow_mut(),
-                &opnemer,
-                bus.as_ref().as_ref().and_then(Bus::knoop_id),
-                Some(b),
-            ),
-            Opdracht::Stop => eindig(&opnemer, &klok.borrow()),
-            Opdracht::StopBus(naam) => eindig_bus(&opnemer, &klok.borrow(), &naam),
-            o => uitvoeren(o, &core, &registry, &bindingen.borrow(), &gelegd),
         }
     });
 
@@ -787,11 +750,14 @@ fn sessie(
     let meters: Rc<RefCell<BTreeMap<u32, Meter>>> = Rc::default();
     // En één node die alle MIDI-uitgangen afluistert.
     let midi = Rc::new(RefCell::new(
-        MIDI.then(|| MidiMeter::maak(&core, Rc::clone(&opnemer), Rc::clone(&klok))).flatten(),
+        (MIDI && !read_only)
+            .then(|| MidiMeter::maak(&core, Rc::clone(&opnemer), Rc::clone(&klok)))
+            .flatten(),
     ));
     let tikken = std::cell::Cell::new(0u32);
 
     let timer = mainloop.loop_().add_timer({
+        let mainloop = mainloop.downgrade();
         let staat = Rc::clone(&staat);
         let meters = Rc::clone(&meters);
         let midi = Rc::clone(&midi);
@@ -801,6 +767,12 @@ fn sessie(
         let transport = Rc::clone(&transport);
         let bus = Rc::clone(&bus);
         move |_| {
+            if stop.requested() {
+                if let Some(mainloop) = mainloop.upgrade() {
+                    mainloop.quit();
+                }
+                return;
+            }
             // Start of Stop van de externe klok.
             let verzoek = klok.borrow_mut().verzoek.take();
             match verzoek {
@@ -822,10 +794,17 @@ fn sessie(
                 let stand = TransportStand {
                     bezig: !takes.is_empty(),
                     map: t.map.as_ref().map(|m| m.display().to_string()),
-                    seconden: takes.iter().map(|a| a.t0.elapsed().as_secs_f64()).fold(0.0, f64::max),
+                    seconden: takes
+                        .iter()
+                        .map(|a| a.t0.elapsed().as_secs_f64())
+                        .fold(0.0, f64::max),
                     bussen: takes
                         .iter()
-                        .flat_map(|a| a.bussen.iter().map(|b| (b.2.clone(), a.t0.elapsed().as_secs_f64())))
+                        .flat_map(|a| {
+                            a.bussen
+                                .iter()
+                                .map(|b| (b.2.clone(), a.t0.elapsed().as_secs_f64()))
+                        })
                         .collect(),
                     klok: klok.borrow().stand(),
                     fout: t.fout.clone(),
@@ -852,7 +831,11 @@ fn sessie(
                 s.vuil = false;
                 meld(s.momentopname());
                 // Meters bijwerken: weg wat weg is, nieuw wat nieuw is.
-                let moet = s.meterbaar();
+                let moet = if read_only {
+                    BTreeMap::new()
+                } else {
+                    s.meterbaar()
+                };
                 drop(s);
                 let mut m = meters.borrow_mut();
                 m.retain(|id, meter| moet.get(id).is_some_and(|(_, _, k)| *k == meter.kanalen));
@@ -869,7 +852,11 @@ fn sessie(
             let m = meters.borrow();
             let mut pieken: Pieken = m.iter().map(|(id, meter)| (*id, meter.oogst())).collect();
             // De Rec bus meet zichzelf, onder zijn eigen node-id.
-            if let Some((b, id)) = bus.as_ref().as_ref().and_then(|b| b.knoop_id().map(|id| (b, id))) {
+            if let Some((b, id)) = bus
+                .as_ref()
+                .as_ref()
+                .and_then(|b| b.knoop_id().map(|id| (b, id)))
+            {
                 pieken.insert(id, b.oogst());
             }
             if !pieken.is_empty() {
@@ -903,8 +890,9 @@ struct Transport {
 impl Transport {
     /// Klare schrijvertjes oogsten, zodat een fout op het scherm komt.
     fn ruim_op(&mut self) {
-        let (klaar, bezig): (Vec<_>, Vec<_>) =
-            std::mem::take(&mut self.schrijvers).into_iter().partition(|d| d.is_finished());
+        let (klaar, bezig): (Vec<_>, Vec<_>) = std::mem::take(&mut self.schrijvers)
+            .into_iter()
+            .partition(|d| d.is_finished());
         self.schrijvers = bezig;
         for d in klaar {
             if let Err(e) = d.join().unwrap_or(Err("writer panicked".into())) {
@@ -917,18 +905,33 @@ impl Transport {
 /// Start een take in een nieuwe map. `None` = Record: de bussen en MIDI
 /// uit de opties, samen. Anders alleen die ene bus. Een bus die al opneemt,
 /// doet niet nog eens mee.
-fn begin(s: &Staat, t: &mut Transport, opnemer: &Opnemer, bus: Option<u32>, een: Option<BusOpname>) {
+fn begin(
+    s: &Staat,
+    t: &mut Transport,
+    opnemer: &Opnemer,
+    bus: Option<u32>,
+    een: Option<BusOpname>,
+) {
     t.fout = None;
     let alles = een.is_none();
-    let opties = t.opties.clone().unwrap_or(Opties { bussen: Vec::new(), midi: true, klok: None, start_stop: false });
-    let lopend: BTreeSet<String> =
-        opnemer.borrow().iter().flat_map(|a| a.bussen.iter().map(|b| b.2.clone())).collect();
+    let opties = t.opties.clone().unwrap_or(Opties {
+        bussen: Vec::new(),
+        midi: true,
+        klok: None,
+        start_stop: false,
+    });
+    let lopend: BTreeSet<String> = opnemer
+        .borrow()
+        .iter()
+        .flat_map(|a| a.bussen.iter().map(|b| b.2.clone()))
+        .collect();
     let bussen: Vec<BusOpname> = een
         .map_or(opties.bussen, |b| vec![b])
         .into_iter()
         .filter(|b| !b.kanalen.is_empty() && !lopend.contains(&b.naam))
         .collect();
-    let midi = MIDI && alles && opties.midi && !opnemer.borrow().iter().any(|a| !a.midi_namen.is_empty());
+    let midi =
+        MIDI && alles && opties.midi && !opnemer.borrow().iter().any(|a| !a.midi_namen.is_empty());
     match plan(s, &bussen, midi, bus) {
         Err(e) => {
             // Alles loopt al: dan is er niets mis.
@@ -959,12 +962,20 @@ fn begin(s: &Staat, t: &mut Transport, opnemer: &Opnemer, bus: Option<u32>, een:
     }
 }
 
-type Plan = (Vec<Spoor>, Vec<(usize, Vec<usize>, String)>, BTreeMap<u32, usize>, Vec<String>);
+type Plan = (
+    Vec<Spoor>,
+    Vec<(usize, Vec<usize>, String)>,
+    BTreeMap<u32, usize>,
+    Vec<String>,
+);
 
 /// Welke sporen er komen: per bus een WAV, en als `midi` per MIDI-bron die
 /// naar de bus gaat een spoor in het MIDI-bestand.
 fn plan(s: &Staat, bussen: &[BusOpname], midi: bool, bus: Option<u32>) -> Result<Plan, String> {
-    let bus = s.knopen.get(&bus.ok_or("The Rec bus is not there")?).ok_or("The Rec bus is not there")?;
+    let bus = s
+        .knopen
+        .get(&bus.ok_or("The Rec bus is not there")?)
+        .ok_or("The Rec bus is not there")?;
     let midi_in: BTreeSet<u32> = s
         .poorten
         .values()
@@ -976,7 +987,10 @@ fn plan(s: &Staat, bussen: &[BusOpname], midi: bool, bus: Option<u32>) -> Result
     let mut lijst = Vec::new();
     for b in bussen {
         lijst.push((sporen.len(), b.kanalen.clone(), b.naam.clone()));
-        sporen.push(Spoor { naam: b.naam.clone(), kanalen: b.kanalen.len() as u16 });
+        sporen.push(Spoor {
+            naam: b.naam.clone(),
+            kanalen: b.kanalen.len() as u16,
+        });
     }
 
     // MIDI: per bronpoort die naar de bus gaat.
@@ -996,7 +1010,11 @@ fn plan(s: &Staat, bussen: &[BusOpname], midi: bool, bus: Option<u32>) -> Result
                     .and_then(|a| a.split(':').next())
                     .unwrap_or(&p.naam)
                     .to_owned(),
-                (_, Some(n)) => n.app.clone().or(n.beschrijving.clone()).unwrap_or(n.naam.clone()),
+                (_, Some(n)) => n
+                    .app
+                    .clone()
+                    .or(n.beschrijving.clone())
+                    .unwrap_or(n.naam.clone()),
                 _ => format!("MIDI {}", k.uit_poort),
             };
             sporen_midi.insert(k.uit_poort, midi_namen.len());
@@ -1022,7 +1040,12 @@ fn eindig(opnemer: &Opnemer, klok: &Klok) {
 /// het MIDI-bestand van die take met hem.
 fn eindig_bus(opnemer: &Opnemer, klok: &Klok, naam: &str) {
     let mut takes = opnemer.borrow_mut();
-    let Some(i) = takes.iter().position(|a| a.bussen.iter().any(|b| b.2 == naam)) else { return };
+    let Some(i) = takes
+        .iter()
+        .position(|a| a.bussen.iter().any(|b| b.2 == naam))
+    else {
+        return;
+    };
     let a = &mut takes[i];
     if let Some(j) = a.bussen.iter().position(|b| b.2 == naam) {
         let (spoor, ..) = a.bussen.remove(j);
@@ -1111,5 +1134,27 @@ fn stuur_props(bindingen: &BTreeMap<u32, Binding>, knoop: u32, eigenschap: Prope
     };
     if let Some(pod) = Pod::from_bytes(&bytes) {
         node.set_param(ParamType::Props, 0, pod);
+    }
+}
+
+#[cfg(test)]
+mod observer_tests {
+    use super::*;
+
+    #[test]
+    fn cancellation_interrupts_reconnect_delay_without_a_server_or_display() {
+        let stop = Arc::new(StopSignal::default());
+        let worker_stop = Arc::clone(&stop);
+        let (ready, waiting) = std::sync::mpsc::channel();
+        let (done, completed) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            ready.send(()).unwrap();
+            worker_stop.retry_wait();
+            done.send(worker_stop.requested()).unwrap();
+        });
+        waiting.recv_timeout(Duration::from_secs(1)).unwrap();
+        stop.request();
+        assert!(completed.recv_timeout(Duration::from_secs(1)).unwrap());
+        worker.join().unwrap();
     }
 }

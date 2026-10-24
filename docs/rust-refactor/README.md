@@ -1,6 +1,6 @@
 # Rust refactor research
 
-This directory collects the research snapshot supporting the proposed native Rust/GTK refactor in [issue #1](https://github.com/jee-mj/pecanmixer/issues/1). It contains planning and static analysis only: it does not implement the refactor, establish feature parity, or demonstrate runtime performance. The application version remains `0.1.0`.
+This directory collects the research snapshot supporting the proposed native Rust/GTK refactor in [issue #1](https://github.com/jee-mj/pecanmixer/issues/1). The five research artifacts remain historical planning/static-analysis snapshots. The [first implementation status](./native-slice.md) records the new bounded native connectivity slice; it does not establish feature parity or runtime performance. The application version remains `0.1.0`.
 
 ## Artifact index
 
@@ -11,6 +11,8 @@ This directory collects the research snapshot supporting the proposed native Rus
 | [`pecanmixer-js-node-inventory.md`](./pecanmixer-js-node-inventory.md) | Human-readable inventory of first-party JavaScript/TypeScript, npm tooling, IPC/events, Tauri/WebView dependencies, and removal obligations | `d8d473818331342ab53a0e1e4d3ced7977293449` | Static repository and lockfile inventory; package records are not proof of installed or shipped bytes |
 | [`pecanmixer-js-node-inventory.json`](./pecanmixer-js-node-inventory.json) | Machine-readable companion containing tracked-file hashes, symbols, package records, commands, events, scripts, and webview-related Cargo entries | `d8d473818331342ab53a0e1e4d3ced7977293449` | Structured static evidence for the human-readable inventory |
 | [`pecanmixer-issue-1-native-gtk-proposal.md`](./pecanmixer-issue-1-native-gtk-proposal.md) | Focused GTK architecture decision, backend/UI boundary, parity map, first-PR vertical slice, test plan, and staged removal checklist | `d8d473818331342ab53a0e1e4d3ced7977293449` | Design proposal grounded in source inspection and primary GTK/GNOME documentation; proposed APIs are uncompiled |
+
+The implementation now moves the graph/meter/recorder code into shared crates and adds a separate read-only GTK preview. Historical source paths/revisions below describe the research baseline, not the current file layout.
 
 ## Revision and provenance
 
@@ -26,4 +28,4 @@ The recommendation is to use direct GTK 4 through `gtk4-rs`, retain and extract 
 
 That recommendation is an architectural judgment, not a benchmark result. Static inspection established, among other facts, 18 frontend TS/TSX/declaration files, 13 Tauri commands, four emitted events, 133 npm lockfile package records excluding the root, a dedicated PipeWire worker, 40 ms graph/meter coalescing, passive meter capture, and separate recording writer threads. The inspected audio path is primarily PipeWire graph/control plus metering and recording; no application-owned real-time DSP/mixing engine was identified.
 
-No dependency installation, build, test suite, GUI, audio device, live PipeWire/WirePlumber restart, accessibility session, packaging run, binary-size measurement, latency measurement, CPU/memory benchmark, or feature-parity exercise was performed. Runtime behavior, performance, distro availability, desktop integration, accessibility, packaging, and final license closure remain implementation-time verification work.
+During the original research, no dependency installation, build, test suite, GUI, audio device, live PipeWire/WirePlumber restart, accessibility session, packaging run, binary-size measurement, latency measurement, CPU/memory benchmark, or feature-parity exercise was performed. The later implementation checks are listed separately in [native-slice.md](./native-slice.md). Runtime behavior, performance, distro availability, desktop integration, accessibility, packaging, and final license closure remain implementation-time verification work.

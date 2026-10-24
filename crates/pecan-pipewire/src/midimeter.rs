@@ -20,10 +20,10 @@ use std::ptr;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+pub use pecan_core::graph::Activiteit;
 use pipewire as pw;
 use pw::spa;
 use pw::sys as pw_sys;
-use serde::Serialize;
 
 use crate::meter::VOORVOEGSEL;
 use crate::opname::{Klok, Opnemer};
@@ -41,16 +41,6 @@ pub const PB: u8 = 4;
 pub const CLK: u8 = 8;
 
 /// Wat er sinds de vorige oogst uit één bronpoort kwam.
-#[derive(Clone, Debug, Default, Serialize)]
-pub struct Activiteit {
-    pub events: u32,
-    /// Bit `n` = kanaal `n + 1`.
-    pub kanalen: u16,
-    pub soorten: u8,
-    /// Het laatste muzikale event ("Note On E4 · vel 76"); klok telt niet mee.
-    pub laatste: Option<String>,
-}
-
 struct Poort {
     bron: u32,
     data: *mut c_void,
@@ -73,7 +63,11 @@ pub struct MidiMeter {
 }
 
 impl MidiMeter {
-    pub fn maak(core: &pw::core::CoreRc, opnemer: Opnemer, klok: Rc<RefCell<Klok>>) -> Option<Self> {
+    pub fn maak(
+        core: &pw::core::CoreRc,
+        opnemer: Opnemer,
+        klok: Rc<RefCell<Klok>>,
+    ) -> Option<Self> {
         let naam = CString::new(NAAM).ok()?;
         debug_assert!(NAAM.starts_with(VOORVOEGSEL));
         let props = pw::properties::properties! {
@@ -87,7 +81,8 @@ impl MidiMeter {
         };
         // SAFETY: de core leeft zo lang als de sessie, en de meter wordt aan
         // het eind van de sessie weggegooid, vóór de core.
-        let filter = unsafe { pw_sys::pw_filter_new(core.as_raw_ptr(), naam.as_ptr(), props.into_raw()) };
+        let filter =
+            unsafe { pw_sys::pw_filter_new(core.as_raw_ptr(), naam.as_ptr(), props.into_raw()) };
         if filter.is_null() {
             return None;
         }
@@ -130,7 +125,12 @@ impl MidiMeter {
     /// Maakt de poorten en links gelijk aan `bronnen` (de ids van alle
     /// MIDI-uitgangen). `eigen` zijn de poorten van onze node zoals het
     /// register ze kent: (node, `in_<bron>`) → poort-id, nodig om te linken.
-    pub fn stem_af(&mut self, core: &pw::core::CoreRc, bronnen: &[u32], eigen: &BTreeMap<(u32, String), u32>) {
+    pub fn stem_af(
+        &mut self,
+        core: &pw::core::CoreRc,
+        bronnen: &[u32],
+        eigen: &BTreeMap<(u32, String), u32>,
+    ) {
         let knoop = self.knoop_id();
         let mut b = self.binnen.borrow_mut();
         // Weg wat weg is.
@@ -144,7 +144,11 @@ impl MidiMeter {
             blijft
         });
         self.links.retain(|bron, _| bronnen.contains(bron));
-        let Binnen { poorten, activiteit, .. } = &mut *b;
+        let Binnen {
+            poorten,
+            activiteit,
+            ..
+        } = &mut *b;
         activiteit.retain(|bron, _| bronnen.contains(bron));
 
         // Nieuw wat nieuw is.
@@ -174,7 +178,10 @@ impl MidiMeter {
             if self.links.contains_key(&bron) {
                 continue;
             }
-            let (Some(knoop), Some(poort)) = (knoop, knoop.and_then(|k| eigen.get(&(k, format!("in_{bron}"))))) else {
+            let (Some(knoop), Some(poort)) = (
+                knoop,
+                knoop.and_then(|k| eigen.get(&(k, format!("in_{bron}")))),
+            ) else {
                 continue;
             };
             let props = pw::properties::properties! {
@@ -226,13 +233,23 @@ unsafe extern "C" fn bij_process(data: *mut c_void, positie: *mut spa::sys::spa_
         (0, 48_000)
     } else {
         // SAFETY: PipeWire geeft een geldige positie mee.
-        unsafe { ((*positie).clock.duration, (*positie).clock.rate.denom.max(1)) }
+        unsafe {
+            (
+                (*positie).clock.duration,
+                (*positie).clock.rate.denom.max(1),
+            )
+        }
     };
     let wanneer = |offset: u32| {
         let terug = duur.saturating_sub(u64::from(offset)) as f64 / f64::from(rate);
         nu.checked_sub(Duration::from_secs_f64(terug)).unwrap_or(nu)
     };
-    let Binnen { poorten, activiteit, opnemer, klok } = &mut *b;
+    let Binnen {
+        poorten,
+        activiteit,
+        opnemer,
+        klok,
+    } = &mut *b;
     let mut op = opnemer.try_borrow_mut().ok();
     let mut klok = klok.try_borrow_mut().ok();
     for p in poorten.iter() {
@@ -255,10 +272,13 @@ unsafe extern "C" fn bij_process(data: *mut c_void, positie: *mut spa::sys::spa_
                         let a = activiteit.entry(p.bron).or_default();
                         lees_sequentie(bytes, |offset, soort, w| {
                             tel(a, soort, w);
-                            let Some(raw) = als_bytes(soort, w) else { return };
+                            let Some(raw) = als_bytes(soort, w) else {
+                                return;
+                            };
                             let t = wanneer(offset);
                             // De klok volgen, en Start/Stop doorgeven.
-                            if let Some(k) = klok.as_deref_mut().filter(|k| k.bron == Some(p.bron)) {
+                            if let Some(k) = klok.as_deref_mut().filter(|k| k.bron == Some(p.bron))
+                            {
                                 match raw.first() {
                                     Some(0xf8) => {
                                         k.puls(t);
@@ -321,7 +341,9 @@ fn lees_sequentie(pod: &[u8], mut f: impl FnMut(u32, u32, &[u8])) {
     let eind = (8 + grootte as usize).min(pod.len());
     let mut c = 16;
     while c + 16 <= eind {
-        let (Some(offset), Some(ctype), Some(n)) = (u32_op(pod, c), u32_op(pod, c + 4), u32_op(pod, c + 8)) else {
+        let (Some(offset), Some(ctype), Some(n)) =
+            (u32_op(pod, c), u32_op(pod, c + 4), u32_op(pod, c + 8))
+        else {
             break;
         };
         let start = c + 16;
@@ -346,7 +368,11 @@ fn tel(a: &mut Activiteit, ctype: u32, w: &[u8]) {
         SPA_CONTROL_UMP => {
             let Some(woord) = u32_op(w, 0) else { return };
             match woord >> 28 {
-                0x1 | 0x2 => ((woord >> 16) as u8, (woord >> 8) as u8 & 0x7f, woord as u8 & 0x7f),
+                0x1 | 0x2 => (
+                    (woord >> 16) as u8,
+                    (woord >> 8) as u8 & 0x7f,
+                    woord as u8 & 0x7f,
+                ),
                 _ => return,
             }
         }
@@ -391,7 +417,9 @@ fn tel(a: &mut Activiteit, ctype: u32, w: &[u8]) {
 
 /// 64 → "E4" (middelste C = C4).
 fn noot(n: u8) -> String {
-    const NAMEN: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    const NAMEN: [&str; 12] = [
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+    ];
     format!("{}{}", NAMEN[(n % 12) as usize], n as i32 / 12 - 1)
 }
 
