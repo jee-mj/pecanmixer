@@ -125,7 +125,7 @@ impl Graaf {
     /// returned handle and poll `try_complete`, or use `wait_timeout` off-UI.
     /// Success requires finalized writers and a joined graph worker and writers;
     /// a timeout is still pending, not permission to assume files are complete.
-    /// The legacy tray adapter still needs to adopt this protocol before exit.
+    /// The legacy tray adapter retains this handle and waits off-UI before exit.
     pub fn request_shutdown(&self) -> Shutdown {
         self.opdrachten.stop();
         self.stop.request();
