@@ -370,3 +370,235 @@ fn xtest_unmap_during_move_preserves_original_and_fresh_remap_can_connect() {
     assert_eq!(calls.borrow()[0].1, Action::Connect([201, 301]));
     window.close();
 }
+
+fn module_header(view: &PatchbayOverview, node: u32, input: bool) -> layout::Point {
+    let geometry = view.geometry.borrow();
+    let module = geometry
+        .modules
+        .iter()
+        .find(|m| m.node == node && m.input == input)
+        .unwrap();
+    layout::Point {
+        x: module.origin.x + 20.,
+        y: module.origin.y + 20.,
+    }
+}
+fn module_origin(view: &PatchbayOverview, node: u32, input: bool) -> layout::Point {
+    view.geometry
+        .borrow()
+        .modules
+        .iter()
+        .find(|m| m.node == node && m.input == input)
+        .unwrap()
+        .origin
+}
+#[gtk::test]
+fn xtest_module_movement_updates_endpoints_then_port_patch_still_uses_one_audio_intent() {
+    let (view, window, input, calls, _) = setup();
+    let original = module_origin(&view, 20, false);
+    let from = module_header(&view, 20, false);
+    drag(
+        &input,
+        &view,
+        &window,
+        from,
+        layout::Point {
+            x: from.x + 120.,
+            y: from.y + 70.,
+        },
+    );
+    assert_point_near(
+        module_origin(&view, 20, false),
+        layout::Point {
+            x: original.x + 120.,
+            y: original.y + 70.,
+        },
+    );
+    assert!(
+        calls.borrow().is_empty(),
+        "placement is not an undo/audio operation"
+    );
+    {
+        let geometry = view.geometry.borrow();
+        let endpoint = geometry.ports.iter().find(|p| p.id == 201).unwrap().point;
+        assert_eq!(
+            geometry.cables.iter().find(|c| c.id == 500).unwrap().from,
+            endpoint
+        );
+    }
+    drag(&input, &view, &window, port(&view, 201), port(&view, 301));
+    assert_eq!(calls.borrow().len(), 1);
+    assert_eq!(calls.borrow()[0].1, Action::Connect([201, 301]));
+    window.close();
+}
+#[gtk::test]
+fn xtest_rearrange_retires_held_module_and_cable_gestures_without_audio() {
+    for cable in [false, true] {
+        let (view, window, input, calls, _) = setup();
+        let original = module_origin(&view, 20, false);
+        let from = if cable {
+            port(&view, 101)
+        } else {
+            module_header(&view, 20, false)
+        };
+        input.move_to(&view, &window, from);
+        input.button(true);
+        input.move_to(
+            &view,
+            &window,
+            layout::Point {
+                x: from.x + 80.,
+                y: from.y + 40.,
+            },
+        );
+        view.rearrange();
+        settle();
+        input.move_to(&view, &window, layout::Point { x: 350., y: 300. });
+        input.button(false);
+        assert_eq!(module_origin(&view, 20, false), original);
+        assert!(
+            calls.borrow().is_empty(),
+            "reset cannot become move/disconnect on late release"
+        );
+        window.close();
+    }
+}
+#[gtk::test]
+fn xtest_graph_replacement_cancels_module_move_and_new_press_can_move_replacement() {
+    let (mut view, window, input, calls, mut graph) = setup();
+    let from = module_header(&view, 20, false);
+    input.move_to(&view, &window, from);
+    input.button(true);
+    input.move_to(
+        &view,
+        &window,
+        layout::Point {
+            x: from.x + 30.,
+            y: from.y + 20.,
+        },
+    );
+    let saved = module_origin(&view, 20, false);
+    graph.stamp.revision += 1;
+    Arc::make_mut(&mut graph.value)
+        .knopen
+        .iter_mut()
+        .find(|n| n.id == 20)
+        .unwrap()
+        .serial = Some(9100);
+    assert!(view.update_graph(graph));
+    input.move_to(
+        &view,
+        &window,
+        layout::Point {
+            x: from.x + 300.,
+            y: from.y + 100.,
+        },
+    );
+    input.button(false);
+    assert_eq!(module_origin(&view, 20, false), saved);
+    assert!(calls.borrow().is_empty());
+    let from = module_header(&view, 20, false);
+    drag(
+        &input,
+        &view,
+        &window,
+        from,
+        layout::Point {
+            x: from.x + 20.,
+            y: from.y + 10.,
+        },
+    );
+    assert_point_near(
+        module_origin(&view, 20, false),
+        layout::Point {
+            x: saved.x + 20.,
+            y: saved.y + 10.,
+        },
+    );
+    assert!(calls.borrow().is_empty());
+    window.close();
+}
+
+fn assert_point_near(actual: layout::Point, expected: layout::Point) {
+    assert!(
+        (actual.x - expected.x).abs() < 0.01 && (actual.y - expected.y).abs() < 0.01,
+        "actual={actual:?}, expected={expected:?}"
+    );
+}
+
+#[gtk::test]
+fn xtest_module_capture_survives_scroll_resize_without_switching_target() {
+    let (view, window, input, calls, _) = setup();
+    window.set_default_size(500, 1000);
+    settle();
+    view.canvas_scroll.hadjustment().set_value(0.);
+    settle();
+    let original = module_origin(&view, 20, false);
+    let start = module_header(&view, 20, false);
+    input.move_to(&view, &window, start);
+    input.button(true);
+    let adjustment = view.canvas_scroll.hadjustment();
+    adjustment.set_value(adjustment.upper() - adjustment.page_size());
+    settle();
+    window.set_default_size(600, 1000);
+    settle();
+    let end = layout::Point { x: 320., y: 100. };
+    input.move_to(&view, &window, end);
+    input.button(false);
+    assert_point_near(
+        module_origin(&view, 20, false),
+        layout::Point {
+            x: original.x + end.x - start.x,
+            y: original.y + end.y - start.y,
+        },
+    );
+    assert!(calls.borrow().is_empty());
+    window.close();
+}
+#[gtk::test]
+fn xtest_disconnect_during_module_drag_keeps_last_position_and_cancels_late_release() {
+    let (mut view, window, input, calls, mut graph) = setup();
+    let from = module_header(&view, 20, false);
+    input.move_to(&view, &window, from);
+    input.button(true);
+    input.move_to(
+        &view,
+        &window,
+        layout::Point {
+            x: from.x + 30.,
+            y: from.y + 20.,
+        },
+    );
+    let saved = module_origin(&view, 20, false);
+    let mut gone = graph.clone();
+    gone.stamp.revision += 1;
+    Arc::make_mut(&mut gone.value).verbonden = false;
+    view.update_graph(gone);
+    settle();
+    input.button(false);
+    graph.stamp.epoch += 1;
+    graph.stamp.revision += 2;
+    assert!(view.update_graph(graph));
+    settle();
+    assert_eq!(module_origin(&view, 20, false), saved);
+    let from = module_header(&view, 20, false);
+    drag(
+        &input,
+        &view,
+        &window,
+        from,
+        layout::Point {
+            x: from.x + 20.,
+            y: from.y + 10.,
+        },
+    );
+    assert_point_near(
+        module_origin(&view, 20, false),
+        layout::Point {
+            x: saved.x + 20.,
+            y: saved.y + 10.,
+        },
+    );
+    assert!(calls.borrow().is_empty());
+    window.close();
+}

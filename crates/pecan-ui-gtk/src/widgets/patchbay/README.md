@@ -47,7 +47,7 @@ observer/full-graph feeds from retaining an editable stale presentation origin.
 
 The canvas uses GTK gestures and deterministic canvas-coordinate hit regions.
 Scrolling and resizing do not change routing state or reconstruct origin data.
-No custom module rearrangement, persistent positions, auto-scroll, MIDI editing,
+No persistent positions, auto-scroll, MIDI editing,
 production mutation, recorder/tray/settings effects or full patchbay parity is
 claimed.
 
@@ -78,3 +78,6 @@ These are source/widget/native synthetic input checks. Physical pointer/touch,
 Wayland, cross-application capture/focus, assistive-technology actions, actual audio,
 server recovery, CPU/memory/latency measurements and packaging acceptance remain
 unperformed. Full application integration and independent review are still needed.
+
+Session-only module dragging and Rearrange are described in the
+[placement contract](./session/README.md); they send no audio/history command.

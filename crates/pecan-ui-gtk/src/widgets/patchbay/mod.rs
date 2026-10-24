@@ -4,6 +4,7 @@ mod actions;
 mod controls;
 mod layout;
 mod pointer;
+mod session;
 
 use super::accessibility::set_name;
 use gtk::prelude::*;
@@ -20,6 +21,9 @@ pub struct PatchbayOverview {
     root: gtk::Box,
     actions: controls::Controls,
     pointer: pointer::Pointer,
+    session: session::Session,
+    #[cfg(test)]
+    rearrange: gtk::Button,
     status: gtk::Label,
     notices: gtk::Label,
     scope: gtk::Label,
@@ -119,6 +123,18 @@ impl PatchbayOverview {
         let actions = controls::Controls::new();
         actions.attach(&connections);
         let pointer = pointer::Pointer::new(&actions, &geometry, &canvas, &drawing);
+        let session = session::Session::new(
+            &geometry,
+            &pointer,
+            &canvas,
+            &modules,
+            &canvas_scroll,
+            &drawing,
+        );
+        let rearrange = gtk::Button::with_label("Rearrange");
+        set_name(&rearrange, "Rearrange patchbay modules");
+        rearrange.set_tooltip_text(Some("Reset this session's module positions"));
+        session.bind_reset(&rearrange);
         let list = gtk::Box::new(gtk::Orientation::Vertical, 8);
         list.append(actions.widget());
         list.append(&connection_title);
@@ -134,6 +150,7 @@ impl PatchbayOverview {
             .shrink_end_child(true)
             .vexpand(true)
             .build();
+        root.append(&rearrange);
         for label in [&title, &scope, &status, &notices, &empty] {
             root.append(label);
         }
@@ -142,6 +159,9 @@ impl PatchbayOverview {
             root,
             actions,
             pointer,
+            session,
+            #[cfg(test)]
+            rearrange,
             status,
             notices,
             scope,
@@ -194,12 +214,18 @@ impl PatchbayOverview {
         if !self.actions.update(graph.clone()) {
             return false;
         }
+        self.session.graph_changed(Some(&graph.value));
         self.render(
             &pecan_core::overview::project(&graph.value),
             &graph.value.kabels,
         );
         self.connections.unselect_all();
+        self.session.flush();
         true
+    }
+    /// Reset session-only module positions; this sends no audio/history intent.
+    pub fn rearrange(&self) {
+        self.session.rearrange();
     }
     pub fn show_message(&self, message: &str) {
         self.notices.set_text(message);
@@ -210,7 +236,10 @@ impl PatchbayOverview {
     /// snapshot is required to resume editing after this method.
     pub fn update(&mut self, overview: &Overview, links: &[Kabel]) -> bool {
         self.actions.suspend_origin();
-        self.render(overview, links)
+        self.session.graph_changed(None);
+        let changed = self.render(overview, links);
+        self.session.flush();
+        changed
     }
     /// Only structural changes replace widgets; motion/levels never rebuild.
     fn render(&mut self, overview: &Overview, links: &[Kabel]) -> bool {
@@ -266,7 +295,9 @@ impl PatchbayOverview {
         let metrics = Metrics {
             line: f64::from(height.max(20)),
         };
-        let layout = Layout::build(overview, &links, metrics);
+        let layout = self
+            .session
+            .set_layout(Layout::build(overview, &links, metrics));
         self.canvas
             .set_size_request(layout.width as i32, layout.height as i32);
         self.drawing.set_content_width(layout.width as i32);
@@ -338,6 +369,7 @@ impl PatchbayOverview {
                 ),
             );
             self.modules.put(&frame, module.origin.x, module.origin.y);
+            self.session.register(module.node, module.input, &frame);
         }
         self.connection_title.set_text(&if layout.undrawn == 0 {
             format!("Connections · {}", links.len())
@@ -433,6 +465,7 @@ mod tests;
 
 impl Drop for PatchbayOverview {
     fn drop(&mut self) {
+        self.session.retire();
         self.pointer.retire();
     }
 }
