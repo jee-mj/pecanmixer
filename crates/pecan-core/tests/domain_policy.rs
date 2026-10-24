@@ -25,10 +25,24 @@ fn summary(items: &[mixer::Strip]) -> Value {
     json!(items.iter().map(|s|json!({"node":s.node.id,"key":s.key,"name":s.name,"channels":s.channels,"ports":s.ports.iter().map(|p|p.id).collect::<Vec<_>>(),"targetable":s.targetable,"bus":s.bus.as_ref().map(|b|&b.key)})).collect::<Vec<_>>())
 }
 fn snapshot(graph: Momentopname, epoch: u64, revision: u64) -> Input {
-    Input::Graph(Stamped {
-        stamp: Stamp { epoch, revision },
-        value: Arc::new(graph),
-    })
+    // Explicit synthetic registry witness. These original policy cases do not
+    // replace objects within an epoch; replacement probes use fresh generations.
+    static AUTHORITY: std::sync::OnceLock<Arc<()>> = std::sync::OnceLock::new();
+    let generations = graph
+        .knopen
+        .iter()
+        .map(|n| n.id)
+        .chain(graph.poorten.iter().map(|p| p.id))
+        .map(|id| (id, u64::from(id) + 1))
+        .collect();
+    Input::NativeGraph(pecan_core::history_identity::HistoryGraph::from_registry(
+        Stamped {
+            stamp: Stamp { epoch, revision },
+            value: Arc::new(graph),
+        },
+        AUTHORITY.get_or_init(|| Arc::new(())).clone(),
+        generations,
+    ))
 }
 fn close(a: f64, b: f64) {
     assert!((a - b).abs() < 1e-6, "{a} != {b}")

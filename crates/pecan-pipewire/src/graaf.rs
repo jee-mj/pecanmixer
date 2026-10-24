@@ -142,6 +142,16 @@ impl Graaf {
         self.opdrachten.enqueue_native(intent)
     }
 
+    /// Obtain registry identity for the exact native inbox graph. Feed this to
+    /// history's `Input::NativeGraph` before planning. A copied/evicted origin
+    /// fails closed; retain the owned witness, not the origin-cache entry.
+    pub fn history_graph(
+        &self,
+        graph: &Stamped<Arc<Momentopname>>,
+    ) -> Result<pecan_core::history_identity::HistoryGraph, AdmissionError> {
+        self.opdrachten.history_graph(graph)
+    }
+
     fn start_with_commands(opdrachten: Arc<Commands>, melder: Melder) -> Self {
         let gedeeld = Arc::clone(&opdrachten);
         let stop = Arc::new(StopSignal::default());
