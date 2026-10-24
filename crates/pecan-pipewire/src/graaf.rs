@@ -88,7 +88,12 @@ pub type Melder = Box<dyn Fn(Melding) + Send + 'static>;
 /// and retains its unit return and unchanged IPC payloads. Legacy callers
 /// cannot supply an intent epoch: already obsolete frontend IDs that happen
 /// to be reused before admission require a future deliberate IPC migration.
+/// Queued commands retain the published graph's object generations at admission.
+/// An intent from a graph already superseded before admission needs richer
+/// caller identity than the unchanged epoch-only command payload.
 /// The native read-only `Observer` exposes neither command entry point.
+/// Cancellation clears queued work; one already dequeued command may still
+/// execute or finish. It does not interrupt or roll back that command.
 pub struct Graaf {
     opdrachten: Arc<Commands>,
     stop: Arc<StopSignal>,
@@ -639,7 +644,9 @@ fn sessie(
             let staat = Rc::clone(&staat);
             let bindingen = Rc::clone(&bindingen);
             let registry = registry.downgrade();
+            let opdrachten = Arc::clone(&opdrachten);
             move |g| {
+                opdrachten.object_added(g.id);
                 let Some(props) = g.props else {
                     return;
                 };
@@ -722,7 +729,9 @@ fn sessie(
         .global_remove({
             let staat = Rc::clone(&staat);
             let bindingen = Rc::clone(&bindingen);
+            let opdrachten = Arc::clone(&opdrachten);
             move |id| {
+                opdrachten.object_removed(id);
                 staat.borrow_mut().weg(id);
                 bindingen.borrow_mut().remove(&id);
             }
@@ -1216,12 +1225,26 @@ mod command_tests {
         }
     }
 
+    fn publish_fixture(backend: &Graaf) {
+        let graph = graph();
+        for id in graph
+            .knopen
+            .iter()
+            .map(|v| v.id)
+            .chain(graph.poorten.iter().map(|v| v.id))
+            .chain(graph.kabels.iter().map(|v| v.id))
+        {
+            backend.opdrachten.object_added(id);
+        }
+        backend.opdrachten.publish(graph);
+    }
+
     fn backend() -> Graaf {
         let backend = Graaf {
             opdrachten: Arc::default(),
             stop: Arc::default(),
         };
-        backend.opdrachten.publish(graph());
+        publish_fixture(&backend);
         backend
     }
 
@@ -1308,7 +1331,7 @@ mod command_tests {
         }
         let old_stamp = backend.current_graph().stamp;
         backend.opdrachten.publish(Momentopname::default());
-        backend.opdrachten.publish(graph()); // Deliberately reuse every ID.
+        publish_fixture(&backend); // Deliberately reuse every ID.
         assert!(backend.current_graph().stamp.epoch > old_stamp.epoch);
         assert_eq!(backend.dispatch(old), Err(DispatchError::StaleEpoch));
         let fresh = Opdracht::ZetMute {
@@ -1346,7 +1369,7 @@ mod command_tests {
                 |_| panic!("no execution while disconnected"),
             )
             .is_empty());
-        backend.opdrachten.publish(graph());
+        publish_fixture(&backend);
         assert!(backend
             .opdrachten
             .drain(|_| true, |_| panic!("no replay"))
@@ -1503,7 +1526,7 @@ mod command_tests {
         assert_eq!(executed, expected);
         backend.doe(Opdracht::Start);
         backend.opdrachten.publish(Momentopname::default());
-        backend.opdrachten.publish(graph());
+        publish_fixture(&backend);
         assert!(backend
             .opdrachten
             .drain(|_| true, |_| panic!("no restamping"))
@@ -1569,7 +1592,7 @@ mod command_tests {
         backend.dispatch(command(&backend, Opdracht::Stop)).unwrap();
         backend.opdrachten.publish(Momentopname::default());
         assert_eq!(backend.dispatch(old), Err(DispatchError::StaleEpoch));
-        backend.opdrachten.publish(graph());
+        publish_fixture(&backend);
         // No intervening drain: all ordinary capacity and the reserved slot
         // must be available atomically with the new epoch publication.
         for i in 0..NORMAL_CAPACITY {
@@ -1659,5 +1682,159 @@ mod command_tests {
             .drain(|_| true, |o| executed.push(o))
             .is_empty());
         assert_eq!(executed, [Opdracht::Stop]);
+    }
+
+    #[test]
+    fn admitted_node_and_parent_identities_cannot_bind_to_same_session_replacements() {
+        let backend = backend();
+        let mut state = live(&graph());
+        let old_stamp = backend.current_graph().stamp;
+        let pending = [
+            Opdracht::ZetMute {
+                knoop: 20,
+                mute: true,
+            },
+            Opdracht::ZetVolume {
+                knoop: 20,
+                volume: vec![0.5],
+            },
+            Opdracht::ZetDoel {
+                knoop: 20,
+                doel: Some("-1".into()),
+            },
+            Opdracht::Verbind {
+                uit: 201,
+                naar: 101,
+            },
+            Opdracht::Ontkoppel { kabel: 500 },
+        ];
+        for o in pending.iter().cloned() {
+            backend.dispatch(command(&backend, o)).unwrap();
+        }
+        let mut replacement = state.knopen[&20].clone();
+        replacement.serial = Some(999_999);
+        // Same hooks used by the actual registry callbacks, before any
+        // coalesced graph publication. Ports may still refer to node ID 20.
+        backend.opdrachten.object_removed(20);
+        state.weg(20);
+        backend.opdrachten.object_added(20);
+        state.knopen.insert(20, replacement);
+        assert_eq!(backend.current_graph().stamp, old_stamp);
+        assert!(
+            pending.iter().all(|o| state.geldige_objecten(o)),
+            "numeric presence alone would pass"
+        );
+        assert_eq!(
+            backend.opdrachten.drain(
+                |o| state.geldige_objecten(o),
+                |_| panic!("must never mutate the replacement"),
+            ),
+            vec![DispatchError::InvalidObject; pending.len()]
+        );
+        // Until publication, fresh admission against the old snapshot must
+        // not adopt the replacement's live generation either.
+        let fresh = Opdracht::ZetMute {
+            knoop: 20,
+            mute: false,
+        };
+        backend.dispatch(command(&backend, fresh.clone())).unwrap();
+        assert_eq!(
+            backend
+                .opdrachten
+                .drain(|o| state.geldige_objecten(o), |_| panic!("old snapshot")),
+            [DispatchError::InvalidObject]
+        );
+        backend.opdrachten.publish(state.momentopname());
+        backend.dispatch(command(&backend, fresh.clone())).unwrap();
+        let mut executed = Vec::new();
+        assert!(backend
+            .opdrachten
+            .drain(|o| state.geldige_objecten(o), |o| executed.push(o))
+            .is_empty());
+        assert_eq!(executed, [fresh]);
+    }
+
+    #[test]
+    fn port_link_and_clock_generations_reject_reuse_even_with_identical_dtos() {
+        for (id, o) in [
+            (
+                201,
+                Opdracht::Verbind {
+                    uit: 201,
+                    naar: 101,
+                },
+            ),
+            (500, Opdracht::Ontkoppel { kabel: 500 }),
+            (
+                201,
+                Opdracht::ZetTransport(Opties {
+                    bussen: vec![],
+                    midi: false,
+                    klok: Some(201),
+                    start_stop: false,
+                }),
+            ),
+        ] {
+            let backend = backend();
+            let mut state = live(&graph());
+            if matches!(&o, Opdracht::ZetTransport(_)) {
+                state.poorten.get_mut(&201).unwrap().soort = Soort::Midi;
+            }
+            assert!(state.geldige_objecten(&o));
+            backend.dispatch(command(&backend, o.clone())).unwrap();
+            backend.opdrachten.object_removed(id);
+            backend.opdrachten.object_added(id);
+            // No serialized serial field exists for ports or links, and the
+            // replacement may expose exactly the same DTO. Generation still
+            // changes and the admitted command must not cross that boundary.
+            assert_eq!(
+                backend.opdrachten.drain(
+                    |o| state.geldige_objecten(o),
+                    |_| panic!("must not bind old work to a replacement"),
+                ),
+                [DispatchError::InvalidObject]
+            );
+            backend.opdrachten.publish(state.momentopname());
+            backend.dispatch(command(&backend, o.clone())).unwrap();
+            let mut executed = Vec::new();
+            assert!(backend
+                .opdrachten
+                .drain(|o| state.geldige_objecten(o), |o| executed.push(o))
+                .is_empty());
+            assert_eq!(executed, [o]);
+        }
+    }
+
+    #[test]
+    fn cancellation_after_dequeue_allows_only_the_already_claimed_command() {
+        let backend = backend();
+        backend
+            .dispatch(command(&backend, Opdracht::Start))
+            .unwrap();
+        backend.dispatch(command(&backend, Opdracht::Stop)).unwrap();
+        let mut executed = Vec::new();
+        assert!(backend
+            .opdrachten
+            .drain(
+                |_| {
+                    backend.opdrachten.stop();
+                    true
+                },
+                |o| executed.push(o),
+            )
+            .is_empty());
+        assert_eq!(
+            executed,
+            [Opdracht::Start],
+            "cancellation is not rollback of claimed work"
+        );
+        assert_eq!(
+            backend.dispatch(command(&backend, Opdracht::Stop)),
+            Err(DispatchError::Stopped)
+        );
+        assert!(backend
+            .opdrachten
+            .drain(|_| panic!("cancelled"), |_| panic!("cancelled"))
+            .is_empty());
     }
 }
