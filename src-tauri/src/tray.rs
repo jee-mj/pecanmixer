@@ -8,7 +8,6 @@
 //! komt de linkerklik binnen als `activate` en het menu op de rechterklik.
 
 use std::sync::Mutex;
-use std::time::Duration;
 
 use ksni::blocking::{Handle, TrayMethods};
 use ksni::menu::{CheckmarkItem, StandardItem};
@@ -18,6 +17,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::autostart;
 use crate::graaf::{Graaf, Opdracht};
+use crate::quit::{Action, Phase, QuitAdapter};
 
 /// Wat het icoon laat zien. Alleen bij een verandering gaat er iets over D-Bus.
 #[derive(Clone, Default, PartialEq)]
@@ -98,16 +98,58 @@ fn wissel_venster(app: &AppHandle) {
     }
 }
 
-/// Stoppen. Loopt er een opname, dan eerst die netjes afsluiten: anders
-/// missen de WAV's hun lengte in de kop.
-pub fn stop(app: &AppHandle, neemt_op: bool) {
-    if neemt_op {
-        if let Some(g) = app.try_state::<Graaf>() {
-            g.doe(Opdracht::Stop);
-            std::thread::sleep(Duration::from_millis(600));
+/// Request full backend shutdown regardless of the cached recording flag:
+/// writers can still be finalizing after transport reports "not recording".
+/// No completion/D-Bus wait runs in the UI/tray callback. Repeated clicks
+/// share one attempt; timeout keeps the app open and retains its handle.
+pub fn stop(app: &AppHandle, _neemt_op: bool) {
+    let Some(quit) = app.try_state::<QuitAdapter>() else {
+        eprintln!("pecanmixer: Quit blocked: coordinator is not ready");
+        return;
+    };
+    let Some(attempt) = quit.begin() else { return };
+    let worker_app = app.clone();
+    if let Err(error) = std::thread::Builder::new()
+        .name("pecanmixer-quit".into())
+        .spawn(move || {
+            let quit = worker_app.state::<QuitAdapter>();
+            let action = quit.run(attempt, || {
+                worker_app
+                    .try_state::<Graaf>()
+                    .map(|graph| graph.request_shutdown())
+                    .ok_or_else(|| "Backend is not ready. Choose Retry Quit.".into())
+            });
+            match action {
+                Action::Exit(code) => worker_app.exit(code),
+                Action::StayOpen => {
+                    eprintln!("pecanmixer: {:?}", quit.phase());
+                    // menu_about_to_show refreshes presentation on the next
+                    // menu open. Never wait for a D-Bus update acknowledgement.
+                }
+            }
+        })
+    {
+        quit.could_not_spawn(format!(
+            "Could not start quit check: {error}. Choose Retry Quit."
+        ));
+        eprintln!("pecanmixer: {:?}", quit.phase());
+    }
+}
+
+fn quit_phase(app: &AppHandle) -> Phase {
+    app.try_state::<QuitAdapter>()
+        .map(|q| q.phase())
+        .unwrap_or_else(|| {
+            Phase::Blocked("Quit coordinator is not ready. Choose Retry Quit.".into())
+        })
+}
+
+fn exit_after_error(app: &AppHandle) {
+    if let Some(quit) = app.try_state::<QuitAdapter>() {
+        if let Action::Exit(code) = quit.exit_after_error() {
+            app.exit(code);
         }
     }
-    app.exit(0);
 }
 
 impl ksni::Tray for Icoon {
@@ -130,6 +172,7 @@ impl ksni::Tray for Icoon {
     fn tool_tip(&self) -> ToolTip {
         let mut regels = vec![status(&self.stand)];
         regels.extend(opname(&self.stand));
+        regels.extend(quit_phase(&self.app).status());
         ToolTip {
             title: concat!("Pecan Mixer ", env!("CARGO_PKG_VERSION")).into(),
             description: regels.join("\n"),
@@ -141,7 +184,13 @@ impl ksni::Tray for Icoon {
         wissel_venster(&self.app);
     }
 
+    // Override ksni's default hook so its AboutToShow handler refreshes
+    // properties/menu from the current quit phase. Background completion
+    // never blocks on Handle::update (including from inside a tray callback).
+    fn menu_about_to_show(&mut self) {}
+
     fn menu(&self) -> Vec<MenuItem<Self>> {
+        let quit = quit_phase(&self.app);
         let mut menu: Vec<MenuItem<Self>> = vec![StandardItem {
             label: status(&self.stand),
             enabled: false,
@@ -152,6 +201,16 @@ impl ksni::Tray for Icoon {
             menu.push(
                 StandardItem {
                     label: o,
+                    enabled: false,
+                    ..Default::default()
+                }
+                .into(),
+            );
+        }
+        if let Some(message) = quit.status() {
+            menu.push(
+                StandardItem {
+                    label: message,
                     enabled: false,
                     ..Default::default()
                 }
@@ -195,11 +254,23 @@ impl ksni::Tray for Icoon {
             .into(),
         );
         menu.push(MenuItem::Separator);
+        // Bind the action to the label the user was shown. A cached normal
+        // Quit item must not become an error acknowledgement after rendering.
+        let error_exit_offered = matches!(quit, Phase::Failed(_));
         menu.push(
             StandardItem {
-                label: "Quit".into(),
+                label: quit.label().into(),
+                enabled: !matches!(quit, Phase::Waiting | Phase::Exiting),
                 icon_name: "application-exit".into(),
-                activate: Box::new(|t: &mut Self| stop(&t.app, t.stand.opname)),
+                activate: Box::new(move |t: &mut Self| {
+                    // Recheck current policy; cached menu items cannot force
+                    // an exit while another attempt is still pending.
+                    if error_exit_offered {
+                        exit_after_error(&t.app);
+                    } else {
+                        stop(&t.app, t.stand.opname);
+                    }
+                }),
                 ..Default::default()
             }
             .into(),
@@ -217,13 +288,18 @@ pub fn maak(app: &AppHandle) {
     // Zonder tray (geen StatusNotifierWatcher) draait de app gewoon door,
     // alleen zonder icoon.
     if let Ok(handle) = icoon.spawn() {
-        app.manage(Tray { handle, laatst: Mutex::new(Stand::default()) });
+        app.manage(Tray {
+            handle,
+            laatst: Mutex::new(Stand::default()),
+        });
     }
 }
 
 /// Past de stand aan; het icoon hoort het alleen als er echt iets verandert.
 pub fn werk_bij(app: &AppHandle, f: impl FnOnce(&mut Stand)) {
-    let Some(t) = app.try_state::<Tray>() else { return };
+    let Some(t) = app.try_state::<Tray>() else {
+        return;
+    };
     let mut laatst = t.laatst.lock().unwrap();
     let mut nieuw = laatst.clone();
     f(&mut nieuw);

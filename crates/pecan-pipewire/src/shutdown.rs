@@ -9,8 +9,8 @@
 //! A timeout leaves the handle usable: the caller may poll again. A filesystem
 //! operation cannot safely be forcibly cancelled, so unfinished writers keep
 //! running. A shell must not exit on a timeout or failed report without its own
-//! deliberate failure policy. The legacy tray still uses its fixed delay;
-//! switching that UI to this API and presenting failures is separate work.
+//! deliberate failure policy. Shell adapters own that policy; this API never
+//! exits the application or treats timeout as successful finalization.
 
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread::JoinHandle;
