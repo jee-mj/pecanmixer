@@ -125,3 +125,24 @@ core diagnosis. The failing integration assertion remains intact.
 
 Final connected headless comparison and controlled fixture smoke pass with the
 shared uncertainty hold included. No actual native backend was started.
+
+
+### Reducer-only confirmation
+
+A second reproduction, `pure_core_reset_target_clear_before_auto_restore_preserves_history`,
+uses only the unchanged core Controller/HistoryGraph and runs without GTK,
+Session, routing widgets, display or session bus. It confirms the exact plan is
+one target-clear command, supplies its completion stamp and the same-identity
+post-command graph, then fails the same `(1, 0)` history assertion with `(0, 0)`.
+This independently isolates the dependency from the new owner wiring.
+
+Run it with:
+
+```sh
+cargo test -p pecan-ui-gtk --locked pure_core_reset_target_clear_before_auto_restore_preserves_history -- --test-threads=1
+```
+
+Result: 0 passed, 1 failed. The full-mode counts above precede this additional
+reducer-only test; production code is identical to `0fbe4ba`. Both reset
+reproductions remain unignored and block promotion. No shared core production
+source or interface was changed to conceal or bypass the failure.
