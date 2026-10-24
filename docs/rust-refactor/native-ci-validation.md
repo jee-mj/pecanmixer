@@ -129,8 +129,17 @@ compiled afresh on the initial run. A GitHub-hosted Ubuntu workflow execution
 has not been observed by this local verification, and is a separate integration
 check. No real audio/server, user profile, login or package installation was used.
 
-PR2's existing aggregate-recording-flag test has a separately reported writer-join
-snapshot race. The deterministic test-only correction `3e48684` is retained in
-the migration review series, outside this CI-only branch. This workflow does not
-retry or suppress a failure; integrate that fixture correction through its
-normal review before treating the CI gate as reliably repeatable under load.
+The initial hosted run
+[`40131961545`](https://github.com/jee-mj/pecanmixer/actions/runs/40131961545)
+failed the existing aggregate-recording-flag test: a stopped writer joined
+between snapshot capture and admission, correctly producing StaleRecording.
+The other 133 backend tests passed; checkout and native dependency installation
+succeeded. This was the previously reported test-ordering race, not a weakened
+production admission rule or a CI dependency/scaffolding failure.
+
+The exact test-only correction `3e48684` is now included as a cherry-pick from
+the separate migration review series. It uses the existing bounded teardown
+gate to hold membership stable for the intended aggregate-flag scenario. The
+original assertions remain, production revision checks are unchanged, and the
+full workflow continues without test retries, exclusions or suppression.
+Independent review and a terminal hosted follow-up result remain required.
