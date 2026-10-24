@@ -4,6 +4,8 @@
 //! constructs backend-origin tokens or treats admission as completion. The
 //! application keeps its read-only default until a production adapter is wired
 //! and covered by synthetic integration tests.
+/// Pure legacy fader interaction policy; no dispatch or widget adoption.
+pub mod fader;
 mod gesture;
 mod keyboard;
 mod model;
