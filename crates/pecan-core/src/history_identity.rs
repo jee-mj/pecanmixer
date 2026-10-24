@@ -4,6 +4,7 @@
 use crate::{
     backend::Stamped,
     domain::{
+        audio::is_bus,
         buses::BusConfig,
         history::{plan, Action},
         mixer::Mixer,
@@ -62,7 +63,11 @@ impl Guard {
         actions: [&Action; 2],
         buses: &BusConfig,
     ) -> Option<Self> {
-        let ids = dependencies(actions, &frame.graph.value, buses)?;
+        let targets = target_bindings(actions, &frame.graph.value, buses)?;
+        let mut ids = dependencies(actions, &frame.graph.value, buses)?;
+        // Potential selectors may already match objects not mentioned by the
+        // current link-only plan. Their generations belong to the witness too.
+        ids.extend(targets.values().flat_map(|ids| ids.iter().copied()));
         let generations = ids
             .into_iter()
             .map(|id| Some((id, *frame.generations.get(&id)?)))
@@ -71,7 +76,7 @@ impl Guard {
             authority: frame.authority.clone(),
             epoch: frame.graph.stamp.epoch,
             generations,
-            targets: target_bindings(actions, &frame.graph.value),
+            targets,
             routes: route_bindings(actions, &frame.graph.value, buses)?,
         })
     }
@@ -89,7 +94,7 @@ impl Guard {
                 .all(|(id, generation)| frame.generations.get(id) == Some(generation))
             && dependencies(actions, &frame.graph.value, buses)
                 .is_some_and(|ids| ids.iter().all(|id| self.generations.contains_key(id)))
-            && self.targets == target_bindings(actions, &frame.graph.value)
+            && target_bindings(actions, &frame.graph.value, buses).as_ref() == Some(&self.targets)
             && route_bindings(actions, &frame.graph.value, buses).as_ref() == Some(&self.routes)
     }
 }
@@ -143,44 +148,96 @@ fn route_bindings(
     Some(bindings)
 }
 
-// A generation union alone is insufficient for string selectors in a batch:
-// an originally unresolved target could later match another existing dependency.
-fn target_bindings(actions: [&Action; 2], graph: &Momentopname) -> BTreeMap<String, BTreeSet<u32>> {
+// A generation union alone is insufficient for string selectors in a batch.
+// Keep both currently generated selectors and the selectors a Route can emit
+// after ordinary link/policy transitions, so validation does not depend on
+// whether this particular graph happens to plan links, targets or no commands.
+fn target_bindings(
+    actions: [&Action; 2],
+    graph: &Momentopname,
+    buses: &BusConfig,
+) -> Option<BTreeMap<String, BTreeSet<u32>>> {
+    fn bind(target: &str, graph: &Momentopname, bindings: &mut BTreeMap<String, BTreeSet<u32>>) {
+        bindings.insert(
+            target.into(),
+            graph
+                .knopen
+                .iter()
+                .filter(|n| n.naam == target || n.serial.is_some_and(|s| s.to_string() == target))
+                .map(|n| n.id)
+                .collect(),
+        );
+    }
     fn collect(
         action: &Action,
         graph: &Momentopname,
+        buses: &BusConfig,
         bindings: &mut BTreeMap<String, BTreeSet<u32>>,
-    ) {
+    ) -> Option<()> {
         match action {
             Action::Target {
                 target: Some(target),
                 ..
             } => {
-                bindings.insert(
-                    target.clone(),
-                    graph
-                        .knopen
-                        .iter()
-                        .filter(|n| {
-                            n.naam == *target || n.serial.is_some_and(|s| s.to_string() == *target)
-                        })
-                        .map(|n| n.id)
-                        .collect(),
-                );
+                bind(target, graph, bindings);
+            }
+            Action::Route {
+                source,
+                destination,
+                ..
+            } => {
+                let model = Mixer::build(graph, &buses.definitions().ok()?);
+                let source = model.source(source)?;
+                let destination = model.destination(destination)?;
+                // These are the two target-capable branches in plan_toggle.
+                // Ignore transient link state and current policy selection:
+                // either branch may become reachable on a later replay.
+                if source
+                    .node
+                    .klasse
+                    .as_deref()
+                    .is_some_and(|c| c.starts_with("Stream/Output"))
+                    && destination.targetable
+                {
+                    if let Some(serial) = destination.node.serial {
+                        bind(&serial.to_string(), graph, bindings);
+                    }
+                }
+                if destination
+                    .node
+                    .klasse
+                    .as_deref()
+                    .is_some_and(|c| c.starts_with("Stream/Input"))
+                    && !is_bus(&destination.node)
+                    && source.targetable
+                {
+                    if let Some(serial) = source.node.serial {
+                        bind(&serial.to_string(), graph, bindings);
+                    }
+                }
             }
             Action::Batch(actions) => {
                 for action in actions {
-                    collect(action, graph, bindings);
+                    collect(action, graph, buses, bindings)?;
                 }
             }
             _ => {}
         }
+        Some(())
     }
     let mut bindings = BTreeMap::new();
     for action in actions {
-        collect(action, graph, &mut bindings);
+        collect(action, graph, buses, &mut bindings)?;
+        for command in plan(action, graph, buses).ok()? {
+            if let Opdracht::ZetDoel {
+                doel: Some(target), ..
+            } = command
+            {
+                bind(&target, graph, &mut bindings);
+            }
+        }
     }
-    bindings
+    Some(bindings)
 }
 
 fn dependencies(

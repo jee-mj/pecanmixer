@@ -58,6 +58,25 @@ cannot silently redirect one selector to a different object merely because that
 object was already a dependency of another member. Existing first-match route
 key resolution is preserved; this does not make colliding strip keys unique.
 
+Selector witnesses include explicit `Target` actions, currently generated
+`ZetDoel` commands and potential serial selectors from both target-capable
+branches of a `Route`. A link-only or no-op plan can later become a target plan
+without changing the witness. Potential selectors are limited to the planner's
+stream/targetable-strip capabilities; hardware-only routes and non-targetable
+channel pairs do not acquire unrelated serial dependencies. Every initially
+matching node's registry generation is retained, including potential matches
+absent from the initial command list.
+
+This closes the batch case where a route to serial `2020` and a mute on node 15
+were captured together, then node 15 acquired the name `2020` without any
+generation change. The old generation union alone allowed undo/redo to retain
+the selector after its resolution changed. The corrected witness invalidates
+that step. Stable link/target transitions and switching between a route's two
+target-capable branches remain usable. This does not change resolver priority
+or make an initially ambiguous address unique; it retains the observed match
+set and rejects changes. Future planner target capabilities must remain covered
+by the potential-selector witness and its transition regressions.
+
 Link generations are excluded: disconnect replay resolves the latest link ID
 from the original, still-identical endpoint pair. Connect no-ops still progress
 locally when the accepted graph already proves the pair exists; native commands
@@ -87,8 +106,10 @@ settings, dependency versions or application versions change here. These tests
 make no hardware, audio, desktop-input or performance acceptance claim.
 
 Cloud checks for this candidate: `cargo test -p pecan-core -p pecan-pipewire
--p pecanmixer --lib --tests --locked` passes 56 core, 58 backend and 10 legacy
+-p pecanmixer --lib --tests --locked` passes 64 core, 58 backend and 10 legacy
 tests. `cargo build -p pecan-ui-gtk --locked` and
-`cargo check -p pecanmixer --examples --locked` pass. There are 14 new core and
-five new backend regressions. GTK widget/input tests were not rerun for this
+`cargo check -p pecanmixer --examples --locked` pass. There are 22 identity-specific
+core tests (including eight selector regressions) and five backend regressions.
+Two selector regressions first reproduced the stale generated/potential-selector
+failure before the correction. GTK widget/input tests were not rerun for this
 backend/core-only change.
