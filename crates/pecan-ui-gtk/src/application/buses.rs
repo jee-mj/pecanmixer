@@ -51,6 +51,7 @@ struct ConfigWork {
     progress: ui::Progress,
     terminal: bool,
     completion: Option<ConfigSnapshot>,
+    reconcile_requested: bool,
 }
 struct Retained {
     receipt: Rc<dyn TakePoll>,
@@ -413,6 +414,7 @@ impl BusOwner {
             progress: ui::Progress::Queued,
             terminal: false,
             completion: None,
+            reconcile_requested: false,
         });
         // Do not hold UI state/model borrows across an injected/native handoff.
         match backend.configure(IdleConfigIntent {
@@ -622,14 +624,16 @@ impl BusOwner {
     pub fn refresh(&self) {
         {
             let mut d = self.data.borrow_mut();
-            if d.operation.as_ref().is_some_and(|o| o.terminal)
-                && self.view.awaited_request().is_none()
-            {
-                d.operation = None;
-            }
-            if !d.protocol_invalid {
+            if let Some(work) = d.operation.as_mut().filter(|w| w.terminal) {
+                // A request to inspect is not evidence that inspection worked.
+                // Keep the receipt and its barrier across busy/stale reads.
+                work.reconcile_requested = true;
+            } else if !d.protocol_invalid {
                 d.error = None;
             }
+            // Publish the retained barrier even if inspection is busy, and
+            // acknowledge the widget's explicit Refresh without an audio write.
+            d.publication = None;
         }
         self.poll();
     }
@@ -641,6 +645,16 @@ impl BusOwner {
         self.polling.set(false);
     }
     fn poll_inner(&self) {
+        // Capture the requested operation before inspecting. A reentrant
+        // Refresh during receipt polling cannot consume an earlier inspection.
+        let reconciliation = self
+            .data
+            .borrow()
+            .operation
+            .as_ref()
+            .filter(|w| w.reconcile_requested)
+            .map(|w| w.request.clone());
+        let mut inspected = None;
         let read = self.service.as_ref().and_then(|s| s.read());
         if let Some(Readback {
             revision,
@@ -649,6 +663,7 @@ impl BusOwner {
         }) = read
         {
             if revision.owner == config.revision.owner {
+                inspected = Some(config.clone());
                 let reports: Vec<_> = takes
                     .into_iter()
                     .map(|receipt| {
@@ -728,6 +743,7 @@ impl BusOwner {
         {
             self.config_report(&request, report);
         }
+        self.reconcile(reconciliation.as_ref(), inspected.as_ref());
         {
             let mut d = self.data.borrow_mut();
             while d.takes.values().filter(|t| t.status.complete).count() > 16 {
@@ -751,6 +767,32 @@ impl BusOwner {
             d.stopped_takes.retain(|id| takes.contains(id));
         }
         self.publish();
+    }
+    fn reconcile(&self, requested: Option<&Request>, inspected: Option<&ConfigSnapshot>) {
+        let (Some(requested), Some(inspected)) = (requested, inspected) else {
+            return;
+        };
+        let graph = self.session.graph();
+        let mut d = self.data.borrow_mut();
+        let ready = !d.protocol_invalid
+            && self.view.awaited_request().is_none()
+            && inspected.connected
+            && graph
+                .as_ref()
+                .is_some_and(|g| g.value.verbonden && g.stamp.epoch == inspected.revision.epoch)
+            && d.operation.as_ref().is_some_and(|w| {
+                &w.request == requested
+                    && w.reconcile_requested
+                    && w.terminal
+                    && revision_covers(
+                        inspected.revision,
+                        w.completion.as_ref().map_or(w.expected, |c| c.revision),
+                    )
+            });
+        if ready {
+            d.operation = None;
+            d.error = None;
+        }
     }
     fn config_report(&self, request: &Request, report: ConfigReport) {
         let release = {
@@ -894,6 +936,11 @@ impl BusOwner {
         }
         Some(errors)
     }
+}
+fn revision_covers(now: ConfigRevision, required: ConfigRevision) -> bool {
+    now.owner == required.owner
+        && (now.epoch > required.epoch
+            || (now.epoch == required.epoch && now.revision >= required.revision))
 }
 fn take_errors(report: &TakeStatus) -> Vec<String> {
     let mut errors = vec![];

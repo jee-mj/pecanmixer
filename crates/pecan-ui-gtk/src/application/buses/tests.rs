@@ -1,5 +1,6 @@
 //! Controlled UI-side projections only. No native constructor, capture, writer
 //! file, real tray or user directory is used.
+mod reconciliation;
 use super::*;
 use crate::application::{ApplicationOwner, ApplicationShell, FixtureDriver, ShellOptions};
 use pecan_core::{domain::history::Action as GraphAction, graph::Momentopname};

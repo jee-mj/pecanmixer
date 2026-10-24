@@ -171,7 +171,7 @@ impl BusOwner {
             let d = self.data.borrow();
             (
             d.error.clone().unwrap_or_else(||if self.service.is_none(){"No synthetic/native bus endpoint attached; configuration unavailable.".into()}else if d.root.is_none(){"Choose an explicit recording directory to enable starts. Stops use retained identities; local config completion is not observed ports.".into()}else{"Recording status reflects local attachment/finalization; only retained joined evidence completes a take.".into()}),
-            d.takes.values().map(|t|t.status.clone()).collect::<Vec<_>>(),d.operation.as_ref().is_some_and(|o|!o.terminal||matches!(o.progress,ui::Progress::PartiallyApplied(_)|ui::Progress::Unconfirmed(_))))
+            d.takes.values().map(|t|t.status.clone()).collect::<Vec<_>>(),!coherent(&d)||d.operation.as_ref().is_some_and(|o|!o.terminal||matches!(o.progress,ui::Progress::PartiallyApplied(_)|ui::Progress::Unconfirmed(_))))
         };
         self.status.set_text(&message);
         // Keep a focus receiver during cancelled held input. The immutable
@@ -334,15 +334,12 @@ impl BusOwner {
     }
 }
 pub(super) fn coherent(d: &Data) -> bool {
-    d.operation
-        .as_ref()
-        .and_then(|w| w.completion.as_ref())
-        .is_none_or(|completed| {
-            d.config.as_ref().is_some_and(|now| {
-                now.revision.owner == completed.revision.owner
-                    && (now.revision.epoch > completed.revision.epoch
-                        || (now.revision.epoch == completed.revision.epoch
-                            && now.revision.revision >= completed.revision.revision))
+    d.operation.as_ref().is_none_or(|work| {
+        !work.reconcile_requested
+            && work.completion.as_ref().is_none_or(|completed| {
+                d.config
+                    .as_ref()
+                    .is_some_and(|now| revision_covers(now.revision, completed.revision))
             })
-        })
+    })
 }

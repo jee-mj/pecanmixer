@@ -7,6 +7,16 @@ or validation-scaffolding follow-ups. New owner/UI/lifetime wiring requires
 independent review before PR2 publication. No live backend, capture, real writer,
 user profile or hardware was run for this slice.
 
+## Independent review gate
+
+The original `30553a53` candidate is blocked by independent review of busy
+Refresh: terminal configuration evidence could be dropped before successful
+inspection, exposing cached configuration as usable. The separate
+[bounded reconciliation correction](./native-bus-reconciliation-correction.md)
+reproduces and addresses that finding. It requires independent re-review; the
+bus owner remains excluded from public PR2 until that gate clears. The cloud
+check table below records the original candidate, not a clearance of that finding.
+
 ## One owner and the existing protocols
 
 `ApplicationShell::bus_owner()` exposes its retained `BusOwner`. The shell passes
@@ -154,9 +164,10 @@ Final cloud checks:
 | Mixer/patchbay/hidden-disconnected smoke | PASS: fixture only, controlled Quit |
 | Recording-root/fixture rejection and help | PASS: invalid modes reject before resources; no normal native launch run |
 | Formatting, whitespace, scope/privacy and native Cargo-tree/ELF | PASS; no new dependency, legacy web runtime or GTK3 |
-| Independent owner/lifetime integration review | PENDING; no adapter source promoted to PR2 |
+| Independent owner/lifetime integration review | BLOCKED at `30553a53`; correction pending independent re-review; no adapter promoted to PR2 |
 
-No final check failure or dependency/environment blocker remains. Backend/core/
+The original implementation checks had no dependency/environment blocker; the
+subsequent independent Refresh finding above remains the promotion gate. Backend/core/
 legacy source and dependencies are unchanged; their cleared baseline evidence is
 67 core, 134 backend, 10 legacy tests and five example compilations.
 No hardware/audio/live PipeWire/restart, physical desktop/Wayland/AT-SPI/Orca,
