@@ -63,10 +63,19 @@ view.bind_intents(move |event| match event {
 `R: Clone + Eq` must uniquely identify each actual tracked operation, including
 its original source/owner where applicable. A reused ticket alone is insufficient.
 `Tracked(R)` is handoff ownership, not observed configuration or recording success.
-The view waits for Snapshot.operation with that exact identity; unrelated status
-or elapsed-time publications cannot release the gate. Queued/Applying remain
-pending through the pure model. Only later authoritative snapshots replace bus
-configuration/arming. A checkbox returns to its observed value while pending.
+The view retains that identity until a valid Snapshot.operation with the exact
+identity reports a terminal result. Queued/Applying never release it, even when
+the report is published reentrantly during handoff. Missing, mismatched or invalid
+publications cannot release the gate. Pending work therefore stays gated if a
+later state-only snapshot omits the operation. Only authoritative snapshots replace
+bus configuration/arming. A checkbox returns to its observed value while pending.
+
+AppliedLocally, NoOpLocally, Rejected, PartiallyApplied and Unconfirmed are terminal
+for handoff retention. Partial/unconfirmed results still block configuration
+through the pure model's reconciliation restriction. Clearing `awaited_request()`
+does not authorize retry: the owner must preserve that typed failure status until
+it can explicitly publish reconciled authoritative readback. Refresh is a read
+request and never performs this reconciliation or retries a write itself.
 
 The future adapter maps the existing idle API's true ConfigProgress and
 LocalConfigOutcome and retains the captured ConfigRevision inside `O`. It must
@@ -85,7 +94,13 @@ origin. No automatic retry of writes or optimistic history is implemented.
 Callbacks run without model/callback RefCell borrows held across application
 integration. A selection stages only local UI choice and restores its exact
 previous fallback state on rejection. Reentrant status/selection publication is
-supported and correlated. The owner
+supported and correlated. A valid matching terminal publication still current
+when the configuration callback returns can resolve that handoff immediately.
+Invalid publications cannot do so. The identity is unknown before `Tracked(R)`
+returns, so `awaited_request() == None` inside that callback is not an acknowledgement
+that the owner may discard a report. If a reentrant terminal report was replaced
+by another publication, the owner must republish it after returning the handoff.
+The owner
 retains all admitted work and shutdown/finalization obligations outside the view.
 Replacing a widget, dropping it or losing a report is not completion/cancellation.
 
@@ -121,13 +136,19 @@ owner integration and mixed-view native tests before live adoption.
 
 ## Validation and remaining parity
 
-Thirteen synthetic widget tests cover independent selection; observed arming;
+Twenty synthetic widget tests cover independent selection; observed arming;
 handoff correlation and no optimistic configuration; pending/error/refresh and
 fresh retry; stale callbacks/reconnect; multiple, missing and unmatched track IDs;
 malformed/duplicate publications; reentrant status and drop cleanup; a 1,000-frame
 coalescing storm; long labels, resize/focus and track reordering. Three optional
 XTest fixtures cover held pointer split-to-join replacement, held Space repeats,
 and focus/Escape/release/fresh activation. The 13 existing pure model tests remain.
+
+Seven retention regressions cover matching Queued/Applying followed by unrelated
+or reconnect publications; reentrant pending handoffs; all terminal outcomes and
+fresh retry; invalid matching reports; reentrant terminal validity; and coalesced
+pending frames with a replaced terminal report. Five fail on the uncorrected
+`baa1cfd` view, including the three independently reported pending-retention cases.
 
 Remaining work includes the live owner/idle-config adapter, actual recording
 receipts and transport, bus gain/mute controls, route/active-track migration,
@@ -138,9 +159,9 @@ touch/Wayland/cross-application/AT workflows, recording/audio quality, performan
 and full functional acceptance remain untested. No version bump, PR2 write,
 merge, release or legacy deletion is included.
 
-Cloud checks pass: 26 focused pure/widget tests in default mode; 29 with the
+Cloud checks pass: 33 focused pure/widget tests in default mode; 36 with the
 accessibility test backend and three XTest cases; native GTK build; formatting
-and whitespace checks. The complete default GTK package also passes 85 tests.
+and whitespace checks. The complete default GTK package also passes 92 tests.
 GTK runs use a deliberately started Xvfb/private bus and
 fatal criticals. Exact published accessible labels are checked through GTK's
 test backend; these are fixture checks, not physical desktop or AT acceptance.

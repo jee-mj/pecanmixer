@@ -37,6 +37,19 @@ pub enum ViewError {
     UnexpectedAdapterReply,
 }
 type Callback<O, R> = dyn Fn(Event<O>) -> Result<Handoff<R>, String>;
+fn terminal_for<R: Eq>(operation: Option<&Operation<R>>, request: &R) -> bool {
+    operation.is_some_and(|op| {
+        &op.request == request
+            && match op.progress {
+                Progress::Queued | Progress::Applying => false,
+                Progress::AppliedLocally
+                | Progress::NoOpLocally
+                | Progress::Rejected(_)
+                | Progress::PartiallyApplied(_)
+                | Progress::Unconfirmed(_) => true,
+            }
+    })
+}
 struct BusRow {
     frame: gtk::Frame,
     title: gtk::Label,
@@ -179,10 +192,12 @@ impl<O: Clone + 'static, R: Clone + Eq + 'static, T: Clone + Ord + 'static> BusC
     pub fn observe(&self, snapshot: Snapshot<O, R, T>) -> Result<(), ViewError> {
         self.0.offered.borrow_mut().take();
         let origin = snapshot.origin.clone();
-        let matched = snapshot
-            .operation
+        let completed = self
+            .0
+            .awaited
+            .borrow()
             .as_ref()
-            .is_some_and(|op| self.0.awaited.borrow().as_ref() == Some(&op.request));
+            .is_some_and(|request| terminal_for(snapshot.operation.as_ref(), request));
         let result = self
             .0
             .model
@@ -210,7 +225,9 @@ impl<O: Clone + 'static, R: Clone + Eq + 'static, T: Clone + Ord + 'static> BusC
             *self.0.last_origin.borrow_mut() = Some(origin);
         }
         *self.0.error.borrow_mut() = None;
-        if matched && result.is_ok() {
+        // Pending progress cannot release this identity: a later replaceable
+        // snapshot may omit the operation while the same work is still running.
+        if completed && result.is_ok() {
             self.0.awaited.borrow_mut().take();
         }
         self.0.refreshing.set(false);
@@ -242,7 +259,8 @@ impl<O: Clone + 'static, R: Clone + Eq + 'static, T: Clone + Ord + 'static> BusC
     pub fn publication_error(&self) -> Option<ViewError> {
         self.0.invalid.borrow().clone()
     }
-    /// Owner reports for this request must survive coalesced state publications.
+    /// Retained until a valid matching terminal report is consumed. The owner
+    /// keeps reports readable across pending/coalesced state publications.
     pub fn awaited_request(&self) -> Option<R> {
         self.0.awaited.borrow().clone()
     }
@@ -306,13 +324,18 @@ impl<O: Clone + 'static, R: Clone + Eq + 'static, T: Clone + Ord + 'static> Stat
         self.handing_off.set(false);
         match result {
             Ok(Handoff::Tracked(request)) => {
-                let reported = self
-                    .model
-                    .borrow()
-                    .snapshot()
-                    .and_then(|s| s.operation.as_ref())
-                    .is_some_and(|op| op.request == request);
-                if !reported {
+                // A callback can publish reentrantly before returning its real
+                // request identity. Apply the same terminal/validity rule as
+                // observe; Queued/Applying and invalid reports retain the gate.
+                let completed = self.invalid.borrow().is_none()
+                    && terminal_for(
+                        self.model
+                            .borrow()
+                            .snapshot()
+                            .and_then(|s| s.operation.as_ref()),
+                        &request,
+                    );
+                if !completed {
                     *self.awaited.borrow_mut() = Some(request);
                 }
             }
