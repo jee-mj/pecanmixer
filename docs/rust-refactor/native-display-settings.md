@@ -1,10 +1,12 @@
 # Display settings and explicit persistence worker candidate
 
-This isolated increment is based on mixer candidate
-`d42c9ef9ae18f17d112ea85c1a1b75c56e121c11`. It is not wired to main startup or a
-production native owner. **That base has an independently reproduced focus-return
-input-lifetime defect and is not cleared for live controls or PR2 integration.**
-This settings increment does not fix or supersede that defect.
+This delta was independently reviewed at
+`4e3115544a62b8b3756d83f9edcb421983242b10`. Its original mixer base's focus-return
+input-lifetime defect was separately corrected and reviewed at
+`7a12de4d755f9db667060f9c10d8533707489a97`. The
+[combined UI source candidate](./native-ui-source-batch.md) reconciles both without
+changing main startup or enabling a production owner. Its final integration gate
+remains separate from the constituent source reviews.
 
 ## Presentation contract
 
@@ -64,7 +66,8 @@ completion. Native application quit integration is not included.
   pass. Core/backend/legacy suites were not repeated: their source is unchanged
   by this increment. Dependency manifests, lockfile and versions are unchanged.
 
-The passing suite does not clear the separately reproduced base focus defect.
+The original settings suite did not establish gesture correctness; the separate
+correction and combined integration gates apply.
 No main startup, recorder/tray/clock/bus action, meter widget, user profile or
 actual audio device was touched. No hardware/audio, physical desktop/AT-SPI/Orca,
 performance, crash/power-loss or packaging acceptance was run. Filesystem faults

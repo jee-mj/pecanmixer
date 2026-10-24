@@ -2,7 +2,7 @@
 //!
 //! The application still defaults to observation. The controls module projects
 //! the pure mixer domain and forwards intents through an adapter-owned boundary;
-//! production dispatch awaits the reviewed backend intent/completion contract.
+//! production ownership and receipt/history wiring remain separate.
 mod widgets;
 
 mod presentation;
