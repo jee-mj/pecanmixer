@@ -78,3 +78,5 @@ device names/IDs/topology, audio capture, user profile or private runtime logs a
 used. Real audio/hardware/restart, physical desktop/Wayland/AT-SPI/Orca, cross-app
 input, CPU/memory/latency/real-time, crash/power-loss, distribution and license
 acceptance remain unperformed gates.
+
+The later [identity batch](./native-identity-batch.md) integrates the separately reviewed history and capture corrections described above; production mounting and live startup remain disabled.

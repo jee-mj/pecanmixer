@@ -63,3 +63,5 @@ Not run: live PipeWire/WirePlumber, hardware/restart/audio or recording acceptan
 physical desktop/Wayland/AT-SPI/Orca workflows, real-time/performance benchmarks,
 crash/power-loss behavior, release packaging or final license audit. No merge,
 release, version bump, JS removal or full-parity claim is included.
+
+The [identity follow-up](./native-identity-batch.md) now supplies registry-backed retained history and selector guards; the owning native shell still needs to deliver witnesses and wire history/controls.

@@ -18,11 +18,11 @@ application is retained; the current native executable is still observational.
 | Back to auto / manual route count (`telHandwerk`, `terugNaarAutoStap`) | Pure reset/count plans | Native action, observed completion, serialized history |
 | Cable create/remove/move, selection/delete/cancel (`src/Patchbay.tsx`, `src/handelingen.ts`) | Read-only native diagram/list; separate actions candidate | Shared ownership/history wiring, independent review and pointer editing parity |
 | Patch module positioning and reconnect behavior (`Plekken`, `ModuleKaart`) | Native observation geometry only | Mutable positions, drag/selection behavior, state persistence policy |
-| Undo/redo queue and keyboard shortcuts (`src/geschiedenis.ts`, `src/handelingen.ts`, `src/App.tsx`) | Pure reducer + native result bridge candidate | Wire one serialized controller to real receipts/graph barriers; deduplicate delayed results and group gestures |
+| Undo/redo queue and keyboard shortcuts (`src/geschiedenis.ts`, `src/handelingen.ts`, `src/App.tsx`) | Generation/selector-guarded reducer, native witnesses and result bridge | Wire one serialized controller to exact native frames/receipts; group gestures and implement UI shortcuts |
 | Add/remove/link buses, Rec gain/mute/arming (`src/bussen.ts`, `Mixer`) | Pure bus layout/state policy | Native bus UI and deliberate command contract; dynamic arming while recording |
 | Record/stop, per-bus start/stop, elapsed time, folder action (`src/Transport.tsx`, `src/api.ts`) | Existing backend preserved; lifecycle completion integrated for legacy tray | Native recording command admission/completion, controls and folder action; recordings not supported by current native intent API |
 | MIDI clock/start-stop, MIDI tabs/route/activity (`src/MidiMixer.tsx`, `src/midi.ts`, `src/MidiMeter.tsx`) | Legacy MIDI feature flag remains disabled | Preserve disabled status; separately define/verify any enabled MIDI parity scope |
-| Meter ballistics/peak hold, per-channel rendering (`src/meters.ts`, `src/Meter.tsx`) | Reviewed isolated meter widget source, not mounted/live | Main-context feed, channel mapping, capture identity correction, animation acceptance and production ownership |
+| Meter ballistics/peak hold, per-channel rendering (`src/meters.ts`, `src/Meter.tsx`) | Reviewed isolated meter widget source, not mounted/live | Main-context feed, channel mapping, availability/generation protocol, animation acceptance and production ownership |
 | Hide/show strips/rows and reconnect names (`src/App.tsx`, `Mixer`) | Validated contract + display-only filtering candidate; full graph retained | Native hide/show menus and production application; transient IDs must not become durable identity |
 | Row height and destination split preferences (`useRijGewichten`, `Greep`, `Deling`) | Saved-weight/width presentation + explicit serialized worker candidate | Native resizing/reset controls, startup adoption and save-trigger wiring |
 | Saved buses, hidden keys, clock preference and layout (`leesBussen`, `leesKlok`, `leesVerborgen`) | Versioned contract + storage and serialized off-UI worker candidate | Native shell effects, user-selected migration/recovery and startup adoption; no profile access performed |
@@ -39,4 +39,6 @@ remain distinct, unperformed gates.
 
 The [display settings candidate](./native-display-settings.md) preserves graph/origin state and applies no audio settings. Its original base focus defect was separately corrected; the combined source reconciliation is cleared while production ownership, history and live-control gates remain.
 
-The [combined native UI source batch](./native-ui-source-batch.md) records constructor reconciliation, the cleared source publication gate and the separately reviewed, unintegrated backend capture-identity correction.
+The [combined native UI source batch](./native-ui-source-batch.md) records constructor reconciliation, the cleared source publication gate and the backend capture-identity correction now integrated in the identity follow-up.
+
+The [identity follow-up](./native-identity-batch.md) closes retained history selector/generation and backend capture-retention source gates. It does not enable native ownership/undo/capture or complete audio/desktop acceptance.
