@@ -9,3 +9,5 @@ pub mod inbox;
 pub mod overview;
 
 pub mod domain;
+
+pub mod settings;
