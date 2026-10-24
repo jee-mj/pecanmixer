@@ -4,6 +4,7 @@
 //! constructs backend-origin tokens or treats admission as completion. The
 //! application keeps its read-only default until a production adapter is wired
 //! and covered by synthetic integration tests.
+mod gesture;
 mod model;
 mod native;
 mod view;

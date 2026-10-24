@@ -51,7 +51,7 @@ impl Adapter for ReadOnly {
 /// prevents a delayed signal from silently adopting a newer object's origin.
 #[derive(Clone)]
 pub struct Binding<S> {
-    snapshot: S,
+    pub(super) snapshot: S,
     pub(super) key: String,
 }
 
