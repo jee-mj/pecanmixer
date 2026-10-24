@@ -109,3 +109,28 @@ complete runtime/build/asset/license closure. Package version consistency and
 not change versions, identity, legacy build policy or deployment permissions.
 Real audio/server restart/recording, desktop login/Wayland/accessibility workflows,
 release packaging, crash durability and performance acceptance remain separate.
+
+## Cloud verification of the scaffold
+
+The validator exited zero from a separate clean Git checkout: 67 core tests,
+134 backend tests, 288 GTK feature tests, three headless fixtures, three controlled
+smoke launches, native build, formatting and Cargo/ELF checks passed. Its 30
+negative/positive controls include rejecting the known legacy graph/runtime
+families, missing ELF libraries, symlink assets, duplicate license display rows
+and a tool that swallows a blocked Node failure. The actual retained legacy Cargo
+tree was also independently rejected without building or running that shell.
+
+Final output has 142 deduplicated native license records, 37 tracked source
+assets/fixtures and no recorded Node-tooling attempts. Local checks used the
+existing cloud Rust 1.99.1 / GTK4 4.18.6 / PipeWire 1.4.2 development environment;
+the source checkout was clean and contained no frontend installation/build output.
+Cargo registry/build dependencies can be cached; the explicit host artifact was
+compiled afresh on the initial run. A GitHub-hosted Ubuntu workflow execution
+has not been observed by this local verification, and is a separate integration
+check. No real audio/server, user profile, login or package installation was used.
+
+PR2's existing aggregate-recording-flag test has a separately reported writer-join
+snapshot race. The deterministic test-only correction `3e48684` is retained in
+the migration review series, outside this CI-only branch. This workflow does not
+retry or suppress a failure; integrate that fixture correction through its
+normal review before treating the CI gate as reliably repeatable under load.
