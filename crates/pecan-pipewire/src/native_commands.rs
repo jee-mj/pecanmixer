@@ -11,8 +11,8 @@ pub(super) const OBSERVATION_LIMIT: Duration = Duration::from_secs(2);
 
 #[derive(Clone)]
 pub(super) struct Origin {
-    graph: Stamped<Arc<Momentopname>>,
-    objects: BTreeMap<u32, u64>,
+    pub(super) graph: Stamped<Arc<Momentopname>>,
+    pub(super) objects: BTreeMap<u32, u64>,
 }
 
 #[derive(Clone, Copy)]
@@ -196,6 +196,7 @@ impl Commands {
                 objects: refs.clone(),
                 native: Some(Tag { id, index }),
                 config: None,
+                start: None,
             });
         }
         let count = intent.commands.len();

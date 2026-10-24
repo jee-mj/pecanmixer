@@ -155,6 +155,21 @@ impl Graaf {
         self.opdrachten.config_snapshot()
     }
 
+    pub fn start_recording(
+        &self,
+        intent: crate::recording::RecordingStart,
+    ) -> Result<crate::recording::RecordingReceipt, crate::recording::RecordingError> {
+        self.opdrachten.enqueue_recording(intent)
+    }
+    /// Stops use stable take/track identity and remain usable while disconnected.
+    /// A returned receipt still needs polling for actual writer finalization/join.
+    pub fn stop_recording(
+        &self,
+        target: crate::recording::RecordingStop,
+    ) -> Result<crate::recording::RecordingStopResult, crate::recording::RecordingError> {
+        self.opdrachten.stop_recording(target)
+    }
+
     /// Obtain registry identity for the exact native inbox graph. Feed this to
     /// history's `Input::NativeGraph` before planning. A copied/evicted origin
     /// fails closed; retain the owned witness, not the origin-cache entry.
@@ -873,11 +888,12 @@ fn sessie(
 
     // De opname: wat er loopt, de klok, en de Rec bus zelf.
     let opnemer: Opnemer = Rc::default();
+    let native_capture: crate::recording::NativeOpnemer = Rc::default();
     let klok: Rc<RefCell<Klok>> = Rc::default();
     let transport = Rc::new(RefCell::new(Transport::new(completion)));
     let bus = Rc::new(
         (!read_only)
-            .then(|| Bus::maak(&core, Rc::clone(&opnemer), 2))
+            .then(|| Bus::maak_native(&core, Rc::clone(&opnemer), 2, Rc::clone(&native_capture)))
             .flatten(),
     );
 
@@ -898,6 +914,7 @@ fn sessie(
         let midi = Rc::clone(&midi);
         let core = core.clone();
         let opnemer = Rc::clone(&opnemer);
+        let native_capture = Rc::clone(&native_capture);
         let klok = Rc::clone(&klok);
         let transport = Rc::clone(&transport);
         let bus = Rc::clone(&bus);
@@ -911,13 +928,15 @@ fn sessie(
             // Start of Stop van de externe klok.
             let verzoek = klok.borrow_mut().verzoek.take();
             match verzoek {
-                Some(true) if opnemer.borrow().is_empty() => begin(
-                    &staat.borrow(),
-                    &mut transport.borrow_mut(),
-                    &opnemer,
-                    bus.as_ref().as_ref().and_then(Bus::knoop_id),
-                    None,
-                ),
+                Some(true) if opnemer.borrow().is_empty() && !opdrachten.recording_owned() => {
+                    begin(
+                        &staat.borrow(),
+                        &mut transport.borrow_mut(),
+                        &opnemer,
+                        bus.as_ref().as_ref().and_then(Bus::knoop_id),
+                        None,
+                    )
+                }
                 Some(false) if !opnemer.borrow().is_empty() => eindig(&opnemer, &klok.borrow()),
                 _ => {}
             }
@@ -988,10 +1007,16 @@ fn sessie(
             if !read_only {
                 opdrachten.refresh_config(
                     bus.as_ref().as_ref().map(Bus::local_readback),
-                    !opnemer.borrow().is_empty(),
+                    !opnemer.borrow().is_empty() || opdrachten.recording_live(),
                     false,
                 );
-                for error in opdrachten.drain_with_config(
+                opdrachten.pump_recording(&native_capture, !opnemer.borrow().is_empty());
+                opdrachten.refresh_config(
+                    bus.as_ref().as_ref().map(Bus::local_readback),
+                    !opnemer.borrow().is_empty() || opdrachten.recording_live(),
+                    false,
+                );
+                for error in opdrachten.drain_with_recording(
                     |o| staat.borrow().geldige_objecten(o),
                     |o| staat.borrow().native_no_op(o),
                     |o| match o {
@@ -1003,6 +1028,13 @@ fn sessie(
                             uitvoeren(o, &core, &registry, &bindingen.borrow(), &gelegd)
                         }
                         o => {
+                            if opdrachten.legacy_recording_blocked(&o) {
+                                transport.borrow_mut().fout = Some(
+                                    "Native recording owns the Rec bus until its writer joins"
+                                        .into(),
+                                );
+                                return LocalExecution::Rejected("native recording active".into());
+                            }
                             let legacy_config =
                                 matches!(&o, Opdracht::ZetBus { .. } | Opdracht::ZetTransport(_));
                             match o {
@@ -1035,15 +1067,19 @@ fn sessie(
                                     bus.as_ref().as_ref().and_then(Bus::knoop_id),
                                     Some(b),
                                 ),
-                                Opdracht::Stop => eindig(&opnemer, &klok.borrow()),
+                                Opdracht::Stop => {
+                                    opdrachten.legacy_recording_stop(None);
+                                    eindig(&opnemer, &klok.borrow());
+                                }
                                 Opdracht::StopBus(naam) => {
+                                    opdrachten.legacy_recording_stop(Some(&naam));
                                     eindig_bus(&opnemer, &klok.borrow(), &naam)
                                 }
                                 _ => unreachable!("graph commands handled above"),
                             };
                             opdrachten.refresh_config(
                                 bus.as_ref().as_ref().map(Bus::local_readback),
-                                !opnemer.borrow().is_empty(),
+                                !opnemer.borrow().is_empty() || opdrachten.recording_live(),
                                 legacy_config,
                             );
                             LocalExecution::Unreported
@@ -1058,8 +1094,18 @@ fn sessie(
                                 opnemer: &opnemer,
                                 klok: &klok,
                                 transport: &transport,
+                                opdrachten: &opdrachten,
                             },
                         )
+                    },
+                    |work| {
+                        let completion = transport.borrow().schrijvers.clone();
+                        opdrachten.start_recording_with(
+                            work,
+                            &completion,
+                            !opnemer.borrow().is_empty(),
+                            opname::tracked_writer,
+                        );
                     },
                 ) {
                     eprintln!("pecanmixer: opdracht geweigerd op worker: {error:?}");
@@ -1097,6 +1143,12 @@ fn sessie(
     drop(timer);
     // Wat nog opnam, netjes afsluiten.
     eindig(&opnemer, &klok.borrow());
+    if let Some(capture) = native_capture.borrow_mut().take() {
+        capture
+            .0
+            .attached
+            .store(false, std::sync::atomic::Ordering::Release);
+    }
     meters.borrow_mut().clear();
     midi.borrow_mut().take();
     Ok(())
@@ -1117,13 +1169,17 @@ struct IdleConfigTarget<'a> {
     opnemer: &'a Opnemer,
     klok: &'a RefCell<Klok>,
     transport: &'a RefCell<Transport>,
+    opdrachten: &'a Commands,
 }
 impl crate::bus_config::ConfigTarget for IdleConfigTarget<'_> {
     fn readback(&self) -> Option<crate::bus_config::BusReadback> {
         self.bus.map(Bus::local_readback)
     }
     fn recording(&self) -> bool {
-        !self.opnemer.borrow().is_empty()
+        !self.opnemer.borrow().is_empty() || self.opdrachten.recording_live()
+    }
+    fn config_locked(&self) -> bool {
+        !self.opnemer.borrow().is_empty() || self.opdrachten.recording_owned()
     }
     fn routed(&self) -> bool {
         let Some(id) = self.bus.and_then(Bus::knoop_id) else {

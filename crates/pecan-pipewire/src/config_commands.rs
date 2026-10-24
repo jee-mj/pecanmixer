@@ -32,6 +32,7 @@ impl Commands {
             objects: vec![],
             native: None,
             config: Some(work),
+            start: None,
         });
         Ok(receipt)
     }
@@ -56,8 +57,8 @@ impl Commands {
             work.applying();
             state.config.snapshot.clone()
         };
-        if target.recording() {
-            self.refresh_config(target.readback(), true, false);
+        if target.config_locked() {
+            self.refresh_config(target.readback(), target.recording(), false);
             self.reject_config(work, ConfigError::RecordingActive);
             return;
         }
@@ -114,10 +115,11 @@ impl Commands {
         if error.is_none() && !target.options_match(&work.options) {
             error = Some(ConfigError::ReadbackMismatch);
         }
+        let recording = target.recording();
         let mut state = self.0.lock().unwrap();
         let changed = after != old.local || error.is_none() || resize.is_complete();
         state.config.snapshot.local = after;
-        state.config.snapshot.recording = target.recording();
+        state.config.snapshot.recording = recording;
         if changed {
             state.config.snapshot.configuration = if error.is_none() {
                 Some(work.intent.configuration.clone())

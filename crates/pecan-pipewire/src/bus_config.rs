@@ -270,10 +270,12 @@ impl Registry {
     }
     pub fn refresh(&mut self, local: Option<BusReadback>, recording: bool, legacy: bool) {
         if legacy || self.snapshot.local != local || self.snapshot.recording != recording {
+            if legacy || self.snapshot.local != local {
+                self.snapshot.configuration = None;
+                self.snapshot.transport = None;
+            }
             self.snapshot.local = local;
             self.snapshot.recording = recording;
-            self.snapshot.configuration = None;
-            self.snapshot.transport = None;
             self.bump();
         }
     }
@@ -282,6 +284,9 @@ impl Registry {
 pub(crate) trait ConfigTarget {
     fn readback(&self) -> Option<BusReadback>;
     fn recording(&self) -> bool;
+    fn config_locked(&self) -> bool {
+        self.recording()
+    }
     fn routed(&self) -> bool;
     fn resize(&mut self, channels: usize) -> ChannelResizeResult;
     fn gains(&mut self, gains: &[f32]);
