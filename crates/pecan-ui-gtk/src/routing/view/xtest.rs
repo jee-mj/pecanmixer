@@ -139,6 +139,7 @@ fn settle(ms: u64) {
 // A fixed delay does not establish that the replacement is ready on every GTK
 // version/runner. Wait for the actual preconditions, then attempt focus ONCE.
 // A stranded ledger or permanently disabled/unmapped control still fails.
+#[track_caller]
 fn focus_fresh(v: &RoutingControls<Rc<()>>, key: &Key) {
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
@@ -193,9 +194,19 @@ fn xtest_held_route_release_replacement_and_return_failure_repeat_require_fresh_
     };
     let owner = owner(&next);
     v.observe(capture(&next, &owner)).unwrap();
+    assert!(v.0.input.held() && v.0.input.blocked());
+    assert!(
+        GtkWindowExt::focus(&window)
+            .is_none_or(|w| { w.root().and_downcast::<gtk::Window>().as_ref() == Some(&window) }),
+        "routing replacement must not retain a detached keyboard focus target"
+    );
     input.point(&button(&v, &Key::Reset), &window);
     input.key(SPACE, false);
     settle(50);
+    assert!(
+        !v.0.input.held() && !v.0.input.blocked(),
+        "physical Space release must reach the window observer"
+    );
     assert!(
         events.borrow().is_empty(),
         "held Space release cannot take the replacement off→on action"
@@ -224,13 +235,52 @@ fn xtest_held_route_release_replacement_and_return_failure_repeat_require_fresh_
         events.borrow().is_empty(),
         "held Return autorepeat cannot create a retry after rejection"
     );
+    assert!(v.0.input.held() && v.0.input.blocked());
     input.key(RETURN, false);
     settle(50);
+    assert!(
+        !v.0.input.held() && !v.0.input.blocked(),
+        "physical Return release must reach the window observer"
+    );
     focus_fresh(&v, &key);
     input.key(RETURN, true);
     input.key(RETURN, false);
     settle(300);
     assert_eq!(events.borrow().len(), 1, "fresh activation recovers");
+    window.close();
+    settle(40);
+}
+
+#[gtk::test]
+fn xtest_routing_refresh_restores_current_focus_and_preserves_external_focus() {
+    let (v, g, owner) = view();
+    v.bind_intents(|_| panic!("focus changes must not dispatch routing intents"));
+    let outside = gtk::Button::with_label("Synthetic external control");
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    content.append(v.widget());
+    content.append(&outside);
+    let window = gtk::Window::builder()
+        .child(&content)
+        .default_width(1000)
+        .default_height(850)
+        .build();
+    window.present();
+    let _input = Input::new(&window);
+    let (source, destination) = first(&v.0.model.borrow());
+    let key = Key::Route(source, destination);
+    focus_fresh(&v, &key);
+    let retired = button(&v, &key);
+    v.observe(capture(&g, &owner)).unwrap();
+    settle(40);
+    let current = button(&v, &key);
+    assert_ne!(current, retired);
+    assert_eq!(GtkWindowExt::focus(&window), Some(current.upcast()));
+    assert!(!v.0.input.held() && !v.0.input.blocked());
+
+    assert!(outside.grab_focus());
+    v.observe(capture(&g, &owner)).unwrap();
+    settle(40);
+    assert_eq!(GtkWindowExt::focus(&window), Some(outside.upcast()));
     window.close();
     settle(40);
 }

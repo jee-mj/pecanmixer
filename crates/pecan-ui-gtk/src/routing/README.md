@@ -156,6 +156,37 @@ restriction until explicit owner reconciliation. The fresh-rejection control
 continues to allow retry. Corrected candidate checks pass 274 default and 274
 accessibility tests, 315 all-feature tests on isolated Xvfb/D-Bus, and native build.
 
+## Focus retirement on GTK 4.14
+
+The combined hosted run at `88fa38b9` exposed a presentation defect, rather than
+a focus-readiness timeout that needed a longer wait. The unchanged routing XTest
+reproduces with Ubuntu GTK 4.14.5 loaded in an isolated cloud directory: its second
+focus checkpoint stalls after Space release following a graph replacement. The
+same source passes with GTK 4.18.6. Both local runtime checks use cloud GLib 2.84.4;
+they do not reproduce the hosted Ubuntu image in full.
+
+GTK 4.14 retains the old focused button in the detached row subtree. Its root is
+absent, and the window observer receives no Space release. GTK's
+[key-event target selection](https://github.com/GNOME/gtk/blob/4.14.5/gtk/gtkmain.c#L1430)
+uses the current focus widget, explaining why that detached target strands the
+held-input ledger. The strengthened regression fails before the correction on
+the detached-focus assertion as well as reproducing the original timeout.
+
+Before unparenting controls, routing now unsets window focus only when it belongs
+to one of the replaced subtrees. It retains the existing focus key for ordinary
+restoration and leaves external focus alone. It does not clear the held ledger:
+the real release must reach the window before a fresh activation is enabled.
+No additional key event, activation retry, longer wait, domain action or dispatch
+path is introduced. Existing stale-release, fixed route intent, Return autorepeat
+and fresh-activation assertions remain; explicit release-ledger and external-focus
+checks strengthen them. Focus timeout reports now identify their call site.
+
+Correction checks pass 345 all-feature tests with each GTK runtime on isolated
+Xvfb/private D-Bus, native build, formatting and whitespace checks. This is source
+and synthetic input evidence; independent review, hosted validation and physical
+desktop/accessibility acceptance remain separate. No backend/core/startup,
+dependency, version or legacy-source change is included.
+
 Cloud validation on 2026-10-24 passed 269 default GTK library tests and 310 with
 all features under isolated Xvfb/D-Bus, including 20 routing controller/widget
 tests and two routing XTest groups. Source-oracle regeneration, native binary

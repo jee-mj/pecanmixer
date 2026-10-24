@@ -243,6 +243,24 @@ impl<O: Clone + 'static> State<O> {
             .find(|(_, b)| b.has_focus())
             .map(|(key, _)| key.clone());
         self.input.retire();
+        // GTK 4.14 can retain a focused descendant of a removed row. Its
+        // keyboard events then miss the window's release observer. Unset only
+        // focus in the subtrees being replaced; the real release still owns
+        // clearing the held ledger before any fresh activation is enabled.
+        if let Some(window) = self.root.root().and_downcast::<gtk::Window>() {
+            if GtkWindowExt::focus(&window).is_some_and(|focused| {
+                [
+                    &self.selections,
+                    &self.tools,
+                    &self.confirmation,
+                    &self.rows,
+                ]
+                .iter()
+                .any(|container| focused.is_ancestor(*container))
+            }) {
+                GtkWindowExt::set_focus(&window, gtk::Widget::NONE);
+            }
+        }
         self.buttons.borrow_mut().clear();
         *self.presentation.borrow_mut() = Rc::new(());
         for container in [
