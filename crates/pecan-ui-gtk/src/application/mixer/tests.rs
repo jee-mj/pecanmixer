@@ -179,17 +179,17 @@ fn retired_rows_cannot_adopt_replacement_and_fresh_input_recovers() {
 fn partial_mute_click_and_discrete_accessibility_gain_wait_for_real_receipt() {
     let (s, d, v, gens, key) = setup();
     let r = row(&v, &key);
-    r.mute.emit_clicked();
+    r.mute().emit_clicked();
     let req = d.take_requests().pop().unwrap();
-    assert!(!r.mute.is_active(), "refresh must retain observed mute");
+    assert!(!r.mute().is_active(), "refresh must retain observed mute");
     assert!(!r.scale.is_sensitive());
     apply(&s, &d, &v, &req, &gens);
-    assert!(r.mute.is_active());
+    assert!(r.mute().is_active());
     r.scale.set_value(0.8);
     let req = d.take_requests().pop().unwrap();
     assert!(s.partial_muted(&key).unwrap());
     apply(&s, &d, &v, &req, &gens);
-    assert!(!r.mute.is_active());
+    assert!(!r.mute().is_active());
     assert!(!s.partial_muted(&key).unwrap());
     assert_eq!(s.history_lengths(), (2, 0));
 }
@@ -232,8 +232,8 @@ fn whole_node_mute_does_not_require_a_gain_parameter_and_replacement_retires_it(
     v.refresh();
     let old = row(&v, &key);
     assert!(!old.scale.is_sensitive());
-    assert!(old.mute.is_sensitive());
-    old.mute.set_active(true);
+    assert!(old.mute().is_sensitive());
+    old.mute().set_active(true);
     let req = d.take_requests().pop().unwrap();
     assert_eq!(
         req.intent.commands,
@@ -253,10 +253,10 @@ fn whole_node_mute_does_not_require_a_gain_parameter_and_replacement_retires_it(
     s.poll();
     v.refresh();
     assert!(!old.live.get());
-    old.mute.set_active(false);
+    old.mute().set_active(false);
     assert!(d.take_requests().is_empty());
     let fresh = row(&v, &key);
-    assert!(fresh.mute.is_sensitive());
+    assert!(fresh.mute().is_sensitive());
     assert!(Arc::ptr_eq(&fresh.origin.borrow().value, &next.value));
 }
 
@@ -301,4 +301,167 @@ fn dropping_view_retires_unsubmitted_and_inflight_input_without_losing_receipt()
         r.pointer_end(false);
         assert_eq!(d.take_requests().len(), 1);
     }
+}
+
+#[gtk::test]
+fn review_regression_stale_mute_activation_cannot_adopt_new_semantics() {
+    let (s, d, v, gens, _) = setup();
+    let key = s
+        .volume_model()
+        .destinations
+        .iter()
+        .find(|strip| strip.node.id == 10)
+        .unwrap()
+        .key
+        .clone();
+    let r = row(&v, &key);
+    let pressed = r.mute().clone();
+    assert!(!pressed.is_active());
+    let mut graph = (*s.graph().unwrap().value).clone();
+    graph.knopen.iter_mut().find(|n| n.id == 10).unwrap().mute = Some(true);
+    d.publish(graph, gens);
+    s.poll();
+    v.refresh();
+    pressed.emit_clicked();
+    assert!(
+        d.take_requests().is_empty(),
+        "retained activation must not unmute the new observation"
+    );
+}
+#[gtk::test]
+fn review_regression_unconfirmed_cancels_held_key_ledger() {
+    let (s, d, v, _, key) = setup();
+    let r = row(&v, &key);
+    assert!(v.0.keyboard.admit(&r, 42));
+    r.key(gdk::Key::Right, false);
+    let req = d.take_requests().pop().unwrap();
+    req.reporter.set(NativeProgress::Unconfirmed {
+        reason: pecan_core::native_command::NativeFailure::ObservationTimedOut,
+        counts: Counts::default(),
+    });
+    s.poll();
+    v.refresh();
+    assert!(
+        !v.0.keyboard.admit(&r, 42),
+        "held key repeat must remain cancelled until release"
+    );
+    assert!(d.take_requests().is_empty());
+}
+#[gtk::test]
+fn review_regression_four_keys_across_refreshes_preserve_latest_desired_position() {
+    let (s, d, v, gens, key) = setup();
+    let r = row(&v, &key);
+    let position = r.scale.value();
+    let initial = s
+        .graph()
+        .unwrap()
+        .value
+        .knopen
+        .iter()
+        .find(|n| n.id == 20)
+        .unwrap()
+        .volume
+        .clone()
+        .unwrap();
+    for _ in 0..4 {
+        r.key(gdk::Key::Right, false);
+        v.poll();
+    }
+    r.end_keys();
+    let first = d.take_requests();
+    assert_eq!(first.len(), 1);
+    apply(&s, &d, &v, &first[0], &gens);
+    let last = d.take_requests().pop().unwrap();
+    let [Opdracht::ZetVolume { volume, .. }] = &last.intent.commands[..] else {
+        panic!()
+    };
+    let expected =
+        pecan_core::domain::levels::db_to_linear(position_to_db((position + 0.04).clamp(0., 1.)));
+    assert!(
+        (volume[0] - expected).abs() < 1e-5,
+        "four increments collapsed to one: {volume:?}"
+    );
+    assert_eq!(&volume[2..], &initial[2..]);
+    apply(&s, &d, &v, &last, &gens);
+    assert_eq!(s.history_lengths(), (1, 0));
+}
+
+#[gtk::test]
+fn mute_control_refresh_preserves_unrelated_active_fader_and_its_history() {
+    let (s, d, v, gens, _) = setup();
+    let mut graph = (*s.graph().unwrap().value).clone();
+    graph.knopen.iter_mut().find(|n| n.id == 20).unwrap().klasse =
+        Some("Stream/Output/Audio".into());
+    d.publish(graph, gens.clone());
+    s.poll();
+    v.refresh();
+    let key = s
+        .volume_model()
+        .apps
+        .iter()
+        .find(|strip| strip.node.id == 20)
+        .unwrap()
+        .key
+        .clone();
+    let r = row(&v, &key);
+    r.scale.allocate(72, 200, -1, None);
+    let old_mute = r.mute();
+    r.pointer_down(100.);
+    r.pointer_move(90., false);
+    let req = d.take_requests().pop().unwrap();
+    let mut graph = (*s.graph().unwrap().value).clone();
+    graph.knopen.iter_mut().find(|n| n.id == 20).unwrap().mute = Some(true);
+    d.publish(graph, gens.clone());
+    s.poll();
+    v.refresh();
+    assert!(Rc::ptr_eq(&r, &row(&v, &key)));
+    assert_ne!(old_mute, r.mute());
+    assert!(r.policy.borrow().dragging());
+    assert!(s.busy());
+    apply(&s, &d, &v, &req, &gens);
+    r.pointer_end(false);
+    assert_eq!(s.history_lengths(), (1, 0));
+    assert!(!s.busy());
+    assert_eq!(
+        s.graph()
+            .unwrap()
+            .value
+            .knopen
+            .iter()
+            .find(|n| n.id == 20)
+            .unwrap()
+            .mute,
+        Some(true)
+    );
+    assert!(d.take_requests().is_empty());
+}
+#[gtk::test]
+fn partial_mute_stale_control_cancels_and_fresh_control_remembers_current_mean() {
+    let (s, d, v, gens, key) = setup();
+    let r = row(&v, &key);
+    let old = r.mute();
+    let mut graph = (*s.graph().unwrap().value).clone();
+    graph.knopen.iter_mut().find(|n| n.id == 20).unwrap().volume = Some(vec![0.3, 0.9, 0.3, 0.7]);
+    d.publish(graph, gens.clone());
+    s.poll();
+    v.refresh();
+    old.emit_clicked();
+    assert!(d.take_requests().is_empty());
+    r.mute().emit_clicked();
+    let req = d.take_requests().pop().unwrap();
+    assert!(
+        matches!(&req.intent.commands[..],[Opdracht::ZetVolume{volume,..}]if *volume==vec![0.,0.,0.3,0.7])
+    );
+    apply(&s, &d, &v, &req, &gens);
+    assert!(s.partial_muted(&key).unwrap());
+    r.mute().emit_clicked();
+    let req = d.take_requests().pop().unwrap();
+    let [Opdracht::ZetVolume { volume, .. }] = &req.intent.commands[..] else {
+        panic!()
+    };
+    assert!((volume[0] - 0.6).abs() < 1e-5);
+    assert_eq!(volume[0], volume[1]);
+    assert_eq!(&volume[2..], &[0.3, 0.7]);
+    apply(&s, &d, &v, &req, &gens);
+    assert_eq!(s.history_lengths(), (2, 0));
 }

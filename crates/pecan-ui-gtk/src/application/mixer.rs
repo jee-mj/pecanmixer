@@ -30,7 +30,7 @@ struct Row {
     title: gtk::Label,
     observed: gtk::Label,
     scale: gtk::Scale,
-    mute: gtk::ToggleButton,
+    mute: RefCell<mute::Control>,
     key: String,
     identity: Option<StripIdentity>,
     node_binding: Option<pecan_core::history_identity::RegistryBinding>,
@@ -42,6 +42,7 @@ struct Row {
     policy: RefCell<Fader<GestureToken>>,
     active: RefCell<Option<(Input, GestureToken)>>,
     keys: RefCell<Vec<gdk::Key>>,
+    key_position: Cell<Option<f64>>,
     owner: Weak<State>,
 }
 struct State {
@@ -55,6 +56,7 @@ struct State {
     status: gtk::Label,
     clock: Instant,
     keyboard: Rc<keyboard::Releases>,
+    mute_input: Rc<super::history_input::HistoryInput>,
 }
 /// Retain this alongside its Session and call poll from the owning application's
 /// clock, including while hidden. Each row captures registry identity; refreshing
@@ -82,8 +84,16 @@ impl CoordinatedMixer {
             error: RefCell::default(),
             clock: Instant::now(),
             keyboard: keyboard::Releases::new(),
+            mute_input: super::history_input::HistoryInput::new(),
         }));
         view.0.keyboard.observe(&view.0.root);
+        view.0.mute_input.observe(&view.0.root);
+        let weak = Rc::downgrade(&view.0);
+        view.0.mute_input.notify(move || {
+            if let Some(state) = weak.upgrade() {
+                state.refresh();
+            }
+        });
         view.refresh();
         view
     }
@@ -165,8 +175,12 @@ impl State {
                     .as_ref()
                     .is_some_and(|(_, t)| !self.session.volume_active(t))
                 {
+                    // The receipt ended/failed, not the physical key. Keep its
+                    // ledger entry cancelled until an actual window release.
+                    self.keyboard.cancel(row);
                     row.active.borrow_mut().take();
                     row.keys.borrow_mut().clear();
+                    row.key_position.set(None);
                     let _ = row.policy.borrow_mut().invalidate();
                 }
                 row.observed.set_text(&match db {
@@ -176,23 +190,17 @@ impl State {
                 });
                 // The thumb is the legacy local relative-drag position. The separate label
                 // always displays the observed graph, never a submitted target as completion.
-                row.scale.set_value(row.policy.borrow().position());
+                row.scale.set_value(
+                    row.key_position
+                        .get()
+                        .unwrap_or_else(|| row.policy.borrow().position()),
+                );
                 row.scale.set_sensitive(
                     db.is_some()
                         && row.identity.is_some()
                         && self.session.volume_input_available(&strip.key),
                 );
-                let muted = if row.partial {
-                    self.session.partial_muted(&row.key).unwrap_or(false)
-                } else {
-                    strip.node.mute.unwrap_or(false)
-                };
-                row.mute.set_active(muted);
-                row.mute.set_sensitive(
-                    self.session.enabled()
-                        && row.node_binding.is_some()
-                        && (!row.partial || row.identity.is_some()),
-                );
+                row.refresh_mute(strip);
                 let lane = PreferenceLayout::lane_index(strip);
                 self.layout
                     .lane(lane)
@@ -234,11 +242,11 @@ impl Row {
         scale.set_size_request(72, 160);
         scale.set_vexpand(true);
         scale.set_hexpand(false);
-        let mute = gtk::ToggleButton::with_label("Mute");
+        let mute = mute::Control::new(strip, &state.session);
         root.append(&title);
         root.append(&observed);
         root.append(&scale);
-        root.append(&mute);
+        root.append(&mute.button);
         state
             .layout
             .lane(PreferenceLayout::lane_index(strip))
@@ -248,7 +256,7 @@ impl Row {
             &format!("Volume for {} · {}", strip.name, strip.subtitle),
         );
         set_name(
-            &mute,
+            &mute.button,
             &format!("Mute for {} · {}", strip.name, strip.subtitle),
         );
         let row = Rc::new(Self {
@@ -256,7 +264,7 @@ impl Row {
             title,
             observed,
             scale,
-            mute,
+            mute: RefCell::new(mute),
             key: strip.key.clone(),
             identity: state.session.strip_identity(&strip.key).ok(),
             node_binding: if strip.bus.is_none() {
@@ -276,9 +284,11 @@ impl Row {
             policy: RefCell::new(Fader::new(mixer::strip_db(strip).unwrap_or(OFF_DB)).unwrap()),
             active: RefCell::default(),
             keys: RefCell::default(),
+            key_position: Cell::new(None),
             owner: Rc::downgrade(state),
         });
         row.connect();
+        row.connect_mute();
         row
     }
     fn state(&self) -> Option<Rc<State>> {
@@ -447,9 +457,15 @@ impl Row {
                         } else {
                             -1.
                         };
-                        (self.scale.value() + sign * if shift { 0.001 } else { 0.01 }).clamp(0., 1.)
+                        (self
+                            .key_position
+                            .get()
+                            .unwrap_or_else(|| self.scale.value())
+                            + sign * if shift { 0.001 } else { 0.01 })
+                        .clamp(0., 1.)
                     }
                 };
+                self.key_position.set(Some(position));
                 if let Some(s) = self.owner.upgrade() {
                     s.applying.set(true);
                     self.scale.set_value(position);
@@ -480,8 +496,10 @@ impl Row {
     }
     fn retire(&self) {
         if self.live.replace(false) {
+            self.mute.borrow().live.set(false);
             if let Some(s) = self.owner.upgrade() {
                 s.keyboard.cancel(self);
+                s.mute_input.retire_control(&self.mute.borrow().live);
             }
             let out = self.policy.borrow_mut().invalidate();
             self.deliver(out);
@@ -626,36 +644,6 @@ impl Row {
                 }
             }
         });
-        let weak = Rc::downgrade(self);
-        self.mute.connect_toggled(move |_| {
-            if let Some(r) = weak.upgrade() {
-                if let Some(s) = r.state() {
-                    if !r.mute.is_sensitive() || r.node_binding != s.session.node_binding(r.node) {
-                        return;
-                    }
-                    let result = if r.partial {
-                        s.session
-                            .toggle_partial_mute(&r.origin.borrow(), &r.key)
-                            .map(|_| ())
-                    } else {
-                        s.session
-                            .execute(
-                                &r.origin.borrow(),
-                                "Mute",
-                                Action::Mute {
-                                    node: r.node,
-                                    muted: r.mute.is_active(),
-                                },
-                            )
-                            .map(|_| ())
-                    };
-                    if let Err(e) = result {
-                        r.error(e);
-                    }
-                    s.refresh();
-                }
-            }
-        });
     }
 }
 #[cfg(test)]
@@ -664,3 +652,5 @@ mod tests;
 mod keyboard;
 #[cfg(all(test, feature = "x11-input-tests"))]
 mod xtest;
+
+mod mute;
