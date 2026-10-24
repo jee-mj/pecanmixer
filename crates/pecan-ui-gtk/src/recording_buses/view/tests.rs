@@ -179,7 +179,7 @@ fn handoff_waits_for_its_real_identity_and_never_optimistically_applies_a_previe
         progress: Progress::Queued,
     });
     view.observe(queued).unwrap();
-    assert!(!view.0.awaiting());
+    assert!(view.0.awaiting());
     assert!(!button(&view, "Add stereo bus").is_sensitive());
     assert!(text(&view).contains("queued; not applied"));
     let mut applied = frame();
@@ -388,7 +388,7 @@ fn reentrant_publication_is_correlated_and_view_drop_releases_callback_owners() 
     });
     view.observe(frame()).unwrap();
     button(&view, "Add stereo bus").emit_clicked();
-    assert!(!view.0.awaiting());
+    assert!(view.0.awaiting());
     assert!(text(&view).contains("queued; not applied"));
     let window = gtk::Window::builder()
         .child(view.widget())
@@ -657,4 +657,233 @@ fn reentrant_selection_publication_keeps_accepted_choice_and_rejection_restores_
     dropdown.set_selected(0);
     assert_eq!(view.selected_output_key(), before);
     assert!(text(&view).contains("Synthetic selection rejection"));
+}
+
+fn operation_frame(request: u64, progress: Progress) -> Snapshot<Rc<()>, u64, u64> {
+    let mut s = frame();
+    s.operation = Some(Operation { request, progress });
+    s
+}
+
+#[gtk::test]
+fn retention_matching_queued_survives_unrelated_snapshot_without_a_second_handoff() {
+    let (view, events) = connected();
+    button(&view, "Add stereo bus").emit_clicked();
+    view.observe(operation_frame(42, Progress::Queued)).unwrap();
+    assert_eq!(view.awaited_request(), Some(42));
+    view.observe(frame()).unwrap();
+    assert_eq!(view.awaited_request(), Some(42));
+    assert!(!button(&view, "Add stereo bus").is_sensitive());
+    button(&view, "Add stereo bus").emit_clicked();
+    assert_eq!(events.borrow().len(), 1);
+}
+
+#[gtk::test]
+fn retention_matching_applying_survives_missing_mismatched_and_reconnect_publications() {
+    let (view, events) = connected();
+    button(&view, "Add stereo bus").emit_clicked();
+    view.observe(operation_frame(42, Progress::Applying))
+        .unwrap();
+    assert_eq!(view.awaited_request(), Some(42));
+    for snapshot in [frame(), operation_frame(41, Progress::AppliedLocally)] {
+        view.observe(snapshot).unwrap();
+        assert_eq!(view.awaited_request(), Some(42));
+        assert!(!button(&view, "Add stereo bus").is_sensitive());
+    }
+    let mut offline = frame();
+    offline.connected = false;
+    view.observe(offline).unwrap();
+    view.observe(frame()).unwrap();
+    assert_eq!(view.awaited_request(), Some(42));
+    button(&view, "Add stereo bus").emit_clicked();
+    assert_eq!(events.borrow().len(), 1);
+}
+
+#[gtk::test]
+fn retention_reentrant_queued_and_applying_reports_do_not_complete_the_handoff() {
+    for progress in [Progress::Queued, Progress::Applying] {
+        let view = View::new(Budget::default());
+        let weak = Rc::downgrade(&view.0);
+        let calls = Rc::new(Cell::new(0));
+        let count = calls.clone();
+        view.bind_intents(move |event| {
+            if matches!(event, Event::Configuration(_)) {
+                count.set(count.get() + 1);
+                BusControls(weak.upgrade().unwrap())
+                    .observe(operation_frame(88, progress.clone()))
+                    .unwrap();
+                Ok(Handoff::Tracked(88))
+            } else {
+                Ok(Handoff::UiOnly)
+            }
+        });
+        view.observe(frame()).unwrap();
+        button(&view, "Add stereo bus").emit_clicked();
+        assert_eq!(view.awaited_request(), Some(88));
+        view.observe(frame()).unwrap();
+        assert!(!button(&view, "Add stereo bus").is_sensitive());
+        button(&view, "Add stereo bus").emit_clicked();
+        assert_eq!(calls.get(), 1);
+    }
+}
+
+#[gtk::test]
+fn retention_only_exact_terminal_results_resolve_and_reconciliation_still_gates_fresh_retry() {
+    for terminal in [
+        Progress::AppliedLocally,
+        Progress::NoOpLocally,
+        Progress::Rejected("Synthetic rejection".into()),
+        Progress::PartiallyApplied("Synthetic incomplete resize".into()),
+        Progress::Unconfirmed("Synthetic missing evidence".into()),
+    ] {
+        let reconcile = matches!(
+            terminal,
+            Progress::PartiallyApplied(_) | Progress::Unconfirmed(_)
+        );
+        let view = View::new(Budget::default());
+        let next = Rc::new(Cell::new(41));
+        let count = next.clone();
+        view.bind_intents(move |event| {
+            Ok(if matches!(event, Event::Configuration(_)) {
+                count.set(count.get() + 1);
+                Handoff::Tracked(count.get())
+            } else {
+                Handoff::UiOnly
+            })
+        });
+        view.observe(frame()).unwrap();
+        let stale = button(&view, "Add stereo bus");
+        stale.emit_clicked();
+        view.observe(operation_frame(41, terminal.clone())).unwrap();
+        assert_eq!(view.awaited_request(), Some(42));
+        view.observe(operation_frame(42, terminal.clone())).unwrap();
+        assert_eq!(view.awaited_request(), None);
+        assert_eq!(button(&view, "Add stereo bus").is_sensitive(), !reconcile);
+        stale.emit_clicked();
+        assert_eq!(next.get(), 42, "retired controls cannot start a retry");
+        if reconcile {
+            button(&view, "Refresh status").emit_clicked();
+            assert_eq!(next.get(), 42, "refresh never retries the write");
+            view.observe(operation_frame(42, terminal)).unwrap();
+            assert!(!button(&view, "Add stereo bus").is_sensitive());
+            // The owner explicitly publishes its reconciled authoritative readback.
+            view.observe(frame()).unwrap();
+        }
+        button(&view, "Add stereo bus").emit_clicked();
+        assert_eq!(view.awaited_request(), Some(43));
+        view.observe(operation_frame(42, Progress::AppliedLocally))
+            .unwrap();
+        assert_eq!(
+            view.awaited_request(),
+            Some(43),
+            "old terminal cannot finish a fresh retry"
+        );
+        assert!(!button(&view, "Add stereo bus").is_sensitive());
+        view.observe(operation_frame(43, Progress::NoOpLocally))
+            .unwrap();
+        assert_eq!(view.awaited_request(), None);
+        assert!(button(&view, "Add stereo bus").is_sensitive());
+    }
+}
+
+#[gtk::test]
+fn retention_invalid_matching_terminal_does_not_release_pending_work() {
+    let (view, _) = connected();
+    button(&view, "Add stereo bus").emit_clicked();
+    for duplicate in [false, true] {
+        let mut invalid = operation_frame(42, Progress::AppliedLocally);
+        if duplicate {
+            invalid.tracks = vec![
+                Track {
+                    identity: 9,
+                    bus_key: "rec-1-2".into(),
+                    phase: TrackPhase::Starting,
+                    elapsed: None
+                };
+                2
+            ];
+        } else {
+            invalid.configuration.as_mut().unwrap().widths = vec![3];
+        }
+        assert!(view.observe(invalid).is_err());
+        assert_eq!(view.awaited_request(), Some(42));
+        view.observe(frame()).unwrap();
+        assert_eq!(view.awaited_request(), Some(42));
+        assert!(!button(&view, "Add stereo bus").is_sensitive());
+    }
+    view.observe(operation_frame(42, Progress::AppliedLocally))
+        .unwrap();
+    assert_eq!(view.awaited_request(), None);
+    assert!(button(&view, "Add stereo bus").is_sensitive());
+}
+
+#[gtk::test]
+fn retention_reentrant_terminal_requires_a_valid_publication() {
+    for invalid in [false, true] {
+        let view = View::new(Budget::default());
+        let weak = Rc::downgrade(&view.0);
+        view.bind_intents(move |event| {
+            if matches!(event, Event::Configuration(_)) {
+                let mut snapshot = operation_frame(88, Progress::NoOpLocally);
+                if invalid {
+                    snapshot.tracks = vec![
+                        Track {
+                            identity: 9,
+                            bus_key: "rec-1-2".into(),
+                            phase: TrackPhase::Starting,
+                            elapsed: None
+                        };
+                        2
+                    ];
+                }
+                let result = BusControls(weak.upgrade().unwrap()).observe(snapshot);
+                assert_eq!(result.is_err(), invalid);
+                Ok(Handoff::Tracked(88))
+            } else {
+                Ok(Handoff::UiOnly)
+            }
+        });
+        view.observe(frame()).unwrap();
+        button(&view, "Add stereo bus").emit_clicked();
+        assert_eq!(view.awaited_request(), invalid.then_some(88));
+        view.observe(frame()).unwrap();
+        assert_eq!(button(&view, "Add stereo bus").is_sensitive(), !invalid);
+        if invalid {
+            view.observe(operation_frame(88, Progress::NoOpLocally))
+                .unwrap();
+            assert_eq!(view.awaited_request(), None);
+        }
+    }
+}
+
+#[gtk::test]
+fn retention_coalesced_pending_frames_require_terminal_republication_if_it_was_replaced() {
+    let (view, events) = connected();
+    button(&view, "Add stereo bus").emit_clicked();
+    for i in 0..1000 {
+        view.offer_snapshot(operation_frame(
+            42,
+            if i % 2 == 0 {
+                Progress::Queued
+            } else {
+                Progress::Applying
+            },
+        ));
+    }
+    settle();
+    assert_eq!(view.awaited_request(), Some(42));
+    view.offer_snapshot(operation_frame(42, Progress::AppliedLocally));
+    view.offer_snapshot(frame());
+    settle();
+    assert_eq!(
+        view.awaited_request(),
+        Some(42),
+        "an unconsumed coalesced result is not completion evidence"
+    );
+    button(&view, "Add stereo bus").emit_clicked();
+    assert_eq!(events.borrow().len(), 1);
+    view.offer_snapshot(operation_frame(42, Progress::AppliedLocally));
+    settle();
+    assert_eq!(view.awaited_request(), None);
+    assert!(button(&view, "Add stereo bus").is_sensitive());
 }
