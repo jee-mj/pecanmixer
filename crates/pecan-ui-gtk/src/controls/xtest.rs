@@ -219,3 +219,79 @@ fn xtest_observed_held_arrow_releases_off_widget_before_fresh_arrow() {
     );
     window.close();
 }
+
+// Release on an unrelated widget, rather than returning focus to the fader
+// before release. The original fader cannot observe these key-up events itself.
+fn observed_arrow_release_elsewhere(release_before_ack: bool) {
+    let (controller, log, mut next) = setup();
+    let key = app_binding(&controller).key;
+    let view = MixerControls::new(controller);
+    let outside = gtk::Entry::new();
+    let root = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    root.append(view.widget());
+    root.append(&outside);
+    let window = gtk::Window::builder()
+        .default_width(950)
+        .default_height(700)
+        .child(&root)
+        .build();
+    window.present();
+    let input = Input::new(&window);
+    let scale = view.0.rows.borrow()[&key].scale.clone();
+    assert!(scale.grab_focus());
+    settle();
+    input.key(RIGHT, true);
+    assert_eq!(log.borrow().calls.len(), 1);
+    assert_eq!(view.phase(), Phase::WaitingForCompletion);
+    if release_before_ack {
+        assert!(outside.grab_focus());
+        settle();
+        input.key(RIGHT, false);
+    }
+    let Opdracht::ZetVolume { knoop, volume } = log.borrow().calls[0].2.clone() else {
+        panic!("volume")
+    };
+    next.graph.stamp.revision += 1;
+    mutate(&mut next, |graph| {
+        graph
+            .knopen
+            .iter_mut()
+            .find(|node| node.id == knoop)
+            .unwrap()
+            .volume = Some(volume)
+    });
+    assert!(view.observed_result(&1, next.graph.stamp));
+    assert!(view.observe(next.clone()));
+    assert_eq!(view.phase(), Phase::Ready);
+    if !release_before_ack {
+        assert!(scale.grab_focus());
+        settle();
+        input.key(RIGHT, true);
+        assert_eq!(
+            log.borrow().calls.len(),
+            1,
+            "held repeat across observation/refocus must remain cancelled"
+        );
+        assert!(outside.grab_focus());
+        settle();
+        input.key(RIGHT, false);
+    }
+    assert!(scale.grab_focus());
+    settle();
+    input.tap(RIGHT);
+    assert_eq!(
+        log.borrow().calls.len(),
+        2,
+        "off-widget release must permit a fresh press after observation"
+    );
+    assert_eq!(log.borrow().calls[1].1, next.graph.stamp);
+    window.close();
+}
+#[gtk::test]
+fn xtest_release_while_disabled_then_observed_ack_recovers() {
+    observed_arrow_release_elsewhere(true);
+}
+#[gtk::test]
+fn xtest_held_repeat_after_observed_ack_then_release_elsewhere_recovers() {
+    observed_arrow_release_elsewhere(false);
+}
