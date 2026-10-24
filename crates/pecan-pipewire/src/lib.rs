@@ -1,6 +1,7 @@
 //! Shared backend; no GUI toolkit or webview dependency.
 //! Legacy modules retain their API during the migration.
 pub mod bus_config;
+pub mod bus_migration;
 mod commands;
 pub mod graaf;
 pub mod meter;

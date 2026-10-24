@@ -35,7 +35,7 @@ enum Stage {
 pub(super) struct Work {
     id: u64,
     source: Stamp,
-    commands: Vec<Opdracht>,
+    pub(super) commands: Vec<Opdracht>,
     objects: Vec<Vec<(u32, Option<u64>)>>,
     stages: Vec<Stage>,
     reporter: NativeReporter,
@@ -198,6 +198,7 @@ impl Commands {
                 config: None,
                 start: None,
                 arming: None,
+                migration: None,
             });
         }
         let count = intent.commands.len();
