@@ -8,7 +8,7 @@ forbidden_package() {
     case "$1" in
         tauri|tauri-*|wry|tao|webkit*|javascriptcore*|serialize-to-javascript*|gtk|gtk-sys|\
         node|nodejs|node-*|nodejs-*|napi|napi-*|v8|rusty_v8|quick-js|quickjs*|\
-        rquickjs*|boa_*|mozjs*|duktape*|mujs*|deno_*|deno-*|js-sys|web-sys|wasm-bindgen*) return 0 ;;
+        rquickjs*|boa_*|mozjs*|duktape*|mujs*|deno_*|deno-*|cef|cef-*|cef_*|electron*|neon|neon-*|js-sys|web-sys|wasm-bindgen*) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -32,7 +32,7 @@ check_packages() {
 
 forbidden_library() {
     case "${1,,}" in
-        libwebkit*|libjavascriptcore*|libnode.*|libv8*|libmozjs*|libquickjs*|libduktape*|libmujs*|libgjs*|libgtk-3.*|libgdk-3.*) return 0 ;;
+        libwebkit*|libjavascriptcore*|libnode.*|libv8*|libmozjs*|libquickjs*|libduktape*|libmujs*|libgjs*|libcef*|libgtk-3.*|libgdk-3.*) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -74,6 +74,15 @@ inventory_source_file() {
     sha256sum -- "$1"
 }
 
+normalize_license_rows() {
+    local root=$1 line
+    while IFS= read -r line; do
+        # Cargo appends this display marker after the license field too.
+        line=${line%' (*)'}
+        printf '%s\n' "${line//"$root"/.}"
+    done | sort -u
+}
+
 main() {
     local mode=${1:-all}
     [[ $# -le 1 ]] || { fail 'usage: scripts/native/check.sh [all|audit]'; return 1; }
@@ -106,14 +115,13 @@ main() {
         --prefix none --format '{p}' --locked > "$report_dir/native-packages.txt"
     check_packages "$report_dir/native-packages.txt"
     timeout 20m cargo tree -p pecan-core -p pecan-pipewire -p pecan-ui-gtk --target "$target" \
+        --features pecan-ui-gtk/a11y-tests,pecan-ui-gtk/x11-input-tests,pecan-ui-gtk/tray-bus-tests \
         --edges normal,build,dev --prefix none --format '{p}' --locked > "$report_dir/test-packages.txt"
     check_packages "$report_dir/test-packages.txt"
     {
         printf '# Cargo license metadata only; manual license/NOTICE review remains required.\n'
         timeout 20m cargo tree -p pecan-ui-gtk --target "$target" --edges normal,build \
-            --prefix none --format '{p}|{l}' --locked | while IFS= read -r line; do
-                printf '%s\n' "${line//"$repo_root"/.}"
-            done | sort -u
+            --prefix none --format '{p}|{l}' --locked | normalize_license_rows "$repo_root"
     } > "$report_dir/native-licenses.txt"
     {
         printf '# Retained source assets and synthetic fixtures; NOT an installed package manifest.\n'

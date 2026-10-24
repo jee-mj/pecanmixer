@@ -10,7 +10,7 @@ reject_packages() { ! check_packages "$1" >/dev/null 2>&1; }
 reject_libraries() { ! check_linked_libraries "$1" >/dev/null 2>&1; }
 printf '%s\n' 'pecan-ui-gtk v0.1.0 (/synthetic/project)' 'serde_json v1.0.0' 'gtk4 v0.11.5' > "$work/cargo"
 check check_packages "$work/cargo"
-for package in tauri-runtime-wry webkit2gtk javascriptcore-rs-sys serialize-to-javascript nodejs-sys napi rquickjs boa_engine wasm-bindgen gtk; do
+for package in tauri-runtime-wry webkit2gtk javascriptcore-rs-sys serialize-to-javascript nodejs-sys napi rquickjs boa_engine cef-sys neon wasm-bindgen gtk; do
     printf '%s v1.0.0\n' "$package" >> "$work/cargo"
     check reject_packages "$work/cargo"
     sed -i '$d' "$work/cargo"
@@ -21,7 +21,7 @@ printf 'not Cargo evidence\n' > "$work/malformed"
 check reject_packages "$work/malformed"
 printf '%s\n' 'libgtk-4.so.1 => /synthetic/libgtk-4.so.1 (0x1)' 'libgio-2.0.so.0 => /synthetic/libgio-2.0.so.0 (0x2)' > "$work/elf"
 check check_linked_libraries "$work/elf"
-for library in libwebkit2gtk-4.1.so libjavascriptcoregtk-4.1.so libnode.so.1 libv8.so libgtk-3.so.0; do
+for library in libwebkit2gtk-4.1.so libjavascriptcoregtk-4.1.so libnode.so.1 libv8.so libcef.so libgtk-3.so.0; do
     printf '%s => /synthetic/%s (0x3)\n' "$library" "$library" >> "$work/elf"
     check reject_libraries "$work/elf"
     sed -i '$d' "$work/elf"
@@ -44,5 +44,29 @@ ln -s asset "$work/asset-link"
 if inventory_source_file "$work/asset-link" > /dev/null 2>&1; then
     fail 'asset inventory followed a symlink'; exit 1
 fi
+count=$((count + 1))
+printf '%s\n' 'demo v1.0.0 (/synthetic/project)|MIT' 'demo v1.0.0 (/synthetic/project)|MIT (*)' > "$work/licenses"
+normalize_license_rows /synthetic/project < "$work/licenses" > "$work/normalized"
+printf 'demo v1.0.0 (.)|MIT\n' > "$work/expected"
+cmp "$work/expected" "$work/normalized"
+count=$((count + 1))
+# A build tool that swallows a blocked Node error must not produce a false pass.
+mkdir "$work/tool-stubs"
+cat > "$work/tool-stubs/cargo" <<'CARGO'
+#!/usr/bin/env bash
+if [[ "$1" == --version ]]; then printf 'cargo synthetic\n'; exit 0; fi
+[[ "$1" == tree ]] || exit 2
+node synthetic-unused-argument >/dev/null 2>&1 || true
+if [[ "$*" == *'{p}|{l}'* ]]; then
+    printf 'pecan-ui-gtk v0.1.0|GPL-3.0-or-later\n'
+else
+    printf 'pecan-ui-gtk v0.1.0\n'
+fi
+CARGO
+chmod +x "$work/tool-stubs/cargo"
+if TMPDIR="$work" PATH="$work/tool-stubs:$PATH" bash "$(dirname -- "${BASH_SOURCE[0]}")/check.sh" audit > "$work/ignored.log" 2>&1; then
+    fail 'ignored Node failure produced a successful audit'; exit 1
+fi
+grep -q 'JavaScript tooling was attempted' "$work/ignored.log"
 count=$((count + 1))
 printf 'PASS: %s native validation negative/positive controls.\n' "$count"

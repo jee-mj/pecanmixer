@@ -38,7 +38,8 @@ fixture executable invocations have 15-second limits.
   inspected native executable is that host's artifact, even if a caller has a
   separate Cargo target directory or inherited cross-target configuration.
 - Both native normal/build dependencies and the three native crates' test
-  dependencies reject known Tauri/Wry/WebKit/JavaScript engines/bindings and GTK3.
+  dependencies with the same enabled fixture features reject known
+  Tauri/Wry/WebKit/JavaScript engines/bindings and GTK3.
   This does not reject Rust JSON serialization or frozen JSON reference data.
 - PATH guards make attempted Node/npm/npx/pnpm/yarn/corepack/bun/deno use fail and
   record command names only. An ignored failure still fails the final check.
