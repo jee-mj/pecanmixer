@@ -34,6 +34,9 @@ pub enum Action {
         node: u32,
         muted: bool,
     },
+    /// Plans each member against the same graph snapshot. Use only for
+    /// independent operations; this is not sequential composition or a backend
+    /// transaction. Connect-then-disconnect of the same pair is unsupported.
     Batch(Vec<Action>),
     /// Captured target used by Back-to-auto undo; not a UI action by itself.
     Target {

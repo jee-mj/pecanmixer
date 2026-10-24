@@ -1,6 +1,6 @@
 # First native connectivity slice (WIP)
 
-This implements the foundation/read-only portion of the [GTK proposal](./pecanmixer-issue-1-native-gtk-proposal.md), on top of the research snapshot `923c7392850dcd335eac8cdde308dd08b77a63fa`. It is related to issue #1; it does not complete the refactor. All application/crate versions remain `0.1.0`.
+This records the original foundation/read-only portion of the [GTK proposal](./pecanmixer-issue-1-native-gtk-proposal.md), on top of the research snapshot `923c7392850dcd335eac8cdde308dd08b77a63fa`. It is related to issue #1; it does not complete the refactor. All application/crate versions remain `0.1.0`.
 
 ## Implemented boundary
 
@@ -62,8 +62,8 @@ The subsequent [Stage 2 audio domain batch](./stage2-domain.md) adds an initial 
 
 ## Deliberately unfinished
 
-This slice is narrower than the proposal's complete first-PR wish list. In particular, `Backend`/stamped-command validation is a core contract exercised with a fake backend; production legacy mutation dispatch is still unstamped. The native preview exposes no mutation API, so it cannot replay old object IDs into a new connection. Routing/volume/recording commands must acquire worker-side epoch validation before exposing them in GTK.
+The initial slice was narrower than the proposal's complete first-PR wish list: `Backend`/stamped-command validation was then only a core contract exercised with a fake backend. The [combined batch](./native-batch-1.md) subsequently adds production epoch/object-generation admission guards. The native preview still exposes no mutation API; intent-origin identity and actual completion integration remain prerequisites for enabling controls.
 
-Full recorder shutdown/finalization acknowledgement, writer joining on app quit, domain-policy ports, mixer/patchbay/faders/meters, settings migration, tray/autostart/folder actions and application parity are unfinished. MIDI remains disabled. The legacy fixed-delay tray quit behavior is unchanged. A synthetic cancellation test is not evidence of recorder finalization or live server recovery.
+Full recorder shutdown/finalization acknowledgement, writer joining on app quit, full domain-policy parity, interactive mixer/patchbay/faders/meters, settings migration, tray/autostart/folder actions and application parity are unfinished. MIDI remains disabled. The legacy fixed-delay tray quit behavior is unchanged. A synthetic cancellation test is not evidence of recorder finalization or live server recovery.
 
 No real PipeWire/WirePlumber session/restart, hardware/audio recording, real-time/latency/CPU/memory benchmark, Wayland session, keyboard/screen-reader acceptance, physical desktop regression, release build, packaging/distribution or final license audit has been performed. The full workspace still contains JavaScript/Node/Tauri/WebKit intentionally. Remove that stack only after parity and cutover acceptance; no merge, version bump or release is part of this slice.

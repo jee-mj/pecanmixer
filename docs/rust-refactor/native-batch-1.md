@@ -14,11 +14,13 @@ The core history reducer's command-result ticket/completion-stamp contract is no
 
 The GTK presentation review found no blocking source issue. Its small GTK accessible-name binding matches the native header signature and preserves the selected default base API; actual runtime validation is against GTK 4.18, not GTK 4.0.
 
-Three backend boundary findings must be resolved before this batch is published to PR2:
+Three backend boundary findings were corrected and independently re-reviewed:
 
-1. A full FIFO rejects `Stop`, and legacy `doe` only logs the failure. The tray's existing fixed-delay quit then continues. Stop-all admission must survive saturation.
-2. Old-epoch entries continue consuming FIFO capacity after disconnect/reconnect until drained. They can reject the one-shot Rec bus/transport replay issued by the frontend on the connected transition. Session invalidation must release stale capacity before fresh admission.
-3. Same-session numeric ID reuse after admission can address a replacement object with a different serial. Admission must bind the referenced identity/generation and execution must compare it, not only test ID existence.
+1. The 256-entry FIFO now reserves its final slot for stop-all (255 ordinary entries). Adjacent duplicate stops coalesce, while intervening work retains FIFO order.
+2. Session epoch invalidation atomically clears stale pending capacity before fresh admission, allowing the connected-transition configuration replay to be admitted.
+3. Commands bind the published object generations at admission and compare them against the live registry immediately before execution, including referenced node owners, ports, links and clock sources. Same-session replacement IDs no longer pass solely because the numeric ID exists.
+
+The corrected boundary passed 21 backend tests and the independent original ID-reuse/capacity regression probes. Cancellation clears queued work; one command already dequeued can still execute or finish. Success remains admission, not PipeWire acknowledgement. Pre-admission stale intent from an already-superseded caller snapshot still requires richer intent identity; legacy IPC is unchanged, and the native UI stays read-only.
 
 No recorder finalization acknowledgement is introduced by this batch. Queue admission, cancellation requests and display tests must not be described as proof of graceful recording shutdown.
 
@@ -26,7 +28,7 @@ No recorder finalization acknowledgement is introduced by this batch. Queue admi
 
 | Combined cloud check | Result |
 |---|---|
-| `cargo test -p pecan-core -p pecan-pipewire --locked` | PASS: 22 core + 16 backend tests |
+| `cargo test -p pecan-core -p pecan-pipewire --locked` | PASS: 24 core + 21 backend tests |
 | `cargo test -p pecanmixer --lib --locked` | PASS: 4 legacy tests |
 | `cargo check -p pecanmixer --examples --locked` | PASS: all five existing examples compile |
 | `cargo build -p pecan-ui-gtk --locked` | PASS |
@@ -35,7 +37,7 @@ No recorder finalization acknowledgement is introduced by this batch. Queue admi
 | Native Cargo tree / linked-library inspection | PASS: GTK4 present, no Tauri/Wry/WebKit/JavaScriptCore path or web-engine linked library |
 | Scoped formatting, diff/fixture/documentation/version checks | PASS; lockfile, legacy JS/IPC and version `0.1.0` retained |
 
-Build/test commands ran with Node/npm absent from `PATH`. The GTK contract checks 120 strips, 300 ports, long names, scrolling, focus/disclosure preservation, reconnect/stale graph handling and allocations at 1400×900, 900×600 and 420×500. These are synthetic assertions, not performance measurements or physical desktop/screen-reader acceptance. The three semantic backend findings above remain open despite the passing checks. This temporary integration is a review baseline, not a cleared PR2 publication.
+Build/test commands ran with Node/npm absent from `PATH`. The GTK contract checks 120 strips, 300 ports, long names, scrolling, focus/disclosure preservation, reconnect/stale graph handling and allocations at 1400×900, 900×600 and 420×500. These are synthetic assertions, not performance measurements or physical desktop/screen-reader acceptance. The three backend review findings above have been corrected and independently cleared. Full parity, command-completion integration and the unrun acceptance gates remain unfinished.
 
 ## Remaining sequence
 

@@ -59,13 +59,27 @@ In the cloud, with Node/npm absent from `PATH`:
 cargo test -p pecan-core --locked
 ```
 
-PASS: **22 tests** (16 new domain tests plus 6 existing connectivity tests),
+PASS: **24 tests** (18 domain tests plus 6 existing connectivity tests),
 0 failed. Scoped `cargo fmt --check`, `git diff --check`, fixture JSON and
 relative documentation-link checks pass. The core dependency tree remains free
 of GTK, Tauri, PipeWire and JavaScript engines; the Cargo lockfile and all
 application/crate versions remain unchanged. A minimum-Rust-version build was
 not run. No native system headers, display or audio server are needed for these
 core tests.
+
+Independent review of the original domain commit additionally reported a matching
+TypeScript fixture, 156 matching route/toggle comparisons and five matching reset
+plans. This is separate review evidence, not a committed cross-language test
+harness. The original 22 tests passed there; two later characterization tests
+cover the following public API limits:
+
+- `Action::Batch` plans all members against one immutable snapshot. It is for
+  independent primitives, not dependent sequential edits or an atomic backend
+  transaction. The generated reset/undo batches satisfy this restriction.
+- Nonempty command plans require actual completion plus a newer graph even when
+  the requested state was already satisfied. A future completion adapter must
+  provide observation progress for confirmed no-ops; queue admission alone does
+  not release the pending history transaction.
 
 ## Remaining parity and sequencing
 

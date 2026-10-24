@@ -730,3 +730,62 @@ fn route_intents_are_idempotent_and_custom_routes_are_not_mutated() {
     assert!(!c.busy());
     assert_eq!(c.lengths(), (1, 0));
 }
+
+#[test]
+fn batch_plans_use_one_snapshot_and_require_independent_operations() {
+    let graph = graph();
+    let commands = pecan_core::domain::history::plan(
+        &Action::Batch(vec![
+            Action::Connect([210, 100]),
+            Action::Disconnect(vec![[210, 100]]),
+        ]),
+        &graph,
+        &config(),
+    )
+    .unwrap();
+    // The disconnect observes the original absent link, not the planned connect.
+    assert_eq!(
+        commands,
+        [Opdracht::Verbind {
+            uit: 210,
+            naar: 100
+        }]
+    );
+    let commands = pecan_core::domain::history::plan(
+        &Action::Batch(vec![
+            Action::Disconnect(vec![[200, 100]]),
+            Action::Connect([200, 100]),
+        ]),
+        &graph,
+        &config(),
+    )
+    .unwrap();
+    assert_eq!(commands, [Opdracht::Ontkoppel { kabel: 1 }]);
+}
+
+#[test]
+fn nonempty_noop_plan_requires_completion_and_new_graph_progress() {
+    let mut c = Controller::default();
+    let graph = graph();
+    assert_eq!(
+        graph.knopen.iter().find(|n| n.id == 20).unwrap().mute,
+        Some(false)
+    );
+    c.reduce(snapshot(graph.clone(), 1, 1)).unwrap();
+    let plan = execute(
+        &mut c,
+        "Unmute",
+        Action::Mute {
+            node: 20,
+            muted: false,
+        },
+    );
+    result(&mut c, plan.ticket, 1, 1);
+    assert!(
+        c.busy(),
+        "admission/old observation cannot complete a history step"
+    );
+    c.reduce(snapshot(graph, 1, 2)).unwrap();
+    assert!(!c.busy());
+    assert_eq!(c.labels(), (Some("Unmute"), None));
+}
