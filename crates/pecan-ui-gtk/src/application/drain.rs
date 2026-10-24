@@ -1,4 +1,5 @@
 //! One off-UI settings drain per quit. No thread joins run on the GTK context.
+use super::preferences::PreferencesState;
 use crate::settings_worker::{SettingsEvent, SettingsWorker};
 use std::{
     sync::{
@@ -18,6 +19,7 @@ pub struct SettingsSummary {
     pub recovery_required: bool,
     pub recovered: u64,
     pub worker_panicked: bool,
+    pub unsaved_preferences: bool,
 }
 impl SettingsSummary {
     pub(super) fn event(&mut self, event: SettingsEvent) {
@@ -42,7 +44,7 @@ impl SettingsSummary {
     pub(super) fn result(&self) -> Result<(), String> {
         if self.worker_panicked {
             Err("Settings worker panicked; its thread was joined.".into())
-        } else if self.failures != 0 {
+        } else if self.failures != 0 || self.unsaved_preferences {
             Err(format!(
                 "{} settings operations failed/blocked; {}",
                 self.failures,
@@ -53,9 +55,13 @@ impl SettingsSummary {
         }
     }
 }
+pub(super) struct DrainResult {
+    pub summary: SettingsSummary,
+    pub preferences: PreferencesState,
+}
 pub(super) struct SettingsDrain {
-    payload: Arc<Mutex<Option<SettingsWorker>>>,
-    receiver: Option<Receiver<SettingsSummary>>,
+    payload: Arc<Mutex<Option<(SettingsWorker, PreferencesState)>>>,
+    receiver: Option<Receiver<DrainResult>>,
     initial: SettingsSummary,
     retry_at: Duration,
     pub warning: Option<String>,
@@ -65,9 +71,14 @@ pub(super) struct SettingsDrain {
     pub fail_next_spawn: bool,
 }
 impl SettingsDrain {
-    pub fn new(worker: SettingsWorker, summary: SettingsSummary) -> Self {
+    pub fn new(
+        worker: SettingsWorker,
+        summary: SettingsSummary,
+        mut preferences: PreferencesState,
+    ) -> Self {
+        preferences.begin_drain();
         Self {
-            payload: Arc::new(Mutex::new(Some(worker))),
+            payload: Arc::new(Mutex::new(Some((worker, preferences)))),
             receiver: None,
             initial: summary,
             retry_at: Duration::ZERO,
@@ -78,7 +89,7 @@ impl SettingsDrain {
             fail_next_spawn: false,
         }
     }
-    pub fn poll(&mut self, now: Duration) -> Option<SettingsSummary> {
+    pub fn poll(&mut self, now: Duration) -> Option<DrainResult> {
         if self.receiver.is_none() && now >= self.retry_at {
             #[cfg(test)]
             if self.fail_next_spawn {
@@ -102,19 +113,58 @@ impl SettingsDrain {
                         let _ = entered.send(thread::current().id());
                         let _ = release.recv();
                     }
-                    let worker = payload
+                    let (mut worker, mut preferences) = payload
                         .lock()
                         .unwrap()
                         .take()
                         .expect("one settings drain helper");
+                    // Keep admission open until the last coalesced document is
+                    // acknowledged, or an explicit error makes saving impossible.
+                    // Results are drained while retrying a full request queue.
+                    loop {
+                        let mut stopped = false;
+                        for _ in 0..32 {
+                            match worker.try_event() {
+                                Ok(event) => {
+                                    preferences.event(&event);
+                                    summary.event(event);
+                                }
+                                Err(TryRecvError::Empty) => break,
+                                Err(TryRecvError::Disconnected) => {
+                                    stopped = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if stopped {
+                            preferences.stopped();
+                            break;
+                        }
+                        preferences.pump(&mut worker);
+                        if !preferences.has_pending() && !preferences.needs_final_admission() {
+                            break;
+                        }
+                        thread::sleep(Duration::from_millis(1));
+                    }
                     let (events, thread) = worker.close();
                     for event in events {
+                        preferences.event(&event);
                         summary.event(event);
                     }
                     // Includes TLS teardown. A result is sent only after the real
                     // settings worker joined, not merely after its result queue emptied.
                     summary.worker_panicked = thread.join().is_err();
-                    let _ = sender.send(summary);
+                    if let Some(error) = preferences.unsaved_error() {
+                        summary.unsaved_preferences = true;
+                        if summary.errors.len() < 32 {
+                            summary.errors.push(error);
+                        }
+                    }
+                    preferences.finish_drain();
+                    let _ = sender.send(DrainResult {
+                        summary,
+                        preferences,
+                    });
                 });
             match spawned {
                 Ok(helper) => {

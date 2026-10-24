@@ -487,3 +487,368 @@ fn an_exited_owner_cannot_be_reinstalled_as_a_new_primary() {
     assert!(app.windows().is_empty());
     assert_eq!(driver.shutdown_requests(), 1);
 }
+
+fn publish_synthetic(shell: &ApplicationShell, d: &FixtureDriver) {
+    let mut graph: pecan_core::graph::Momentopname = serde_json::from_str(include_str!(
+        "../../../../../fixtures/graph/audio-basic.json"
+    ))
+    .unwrap();
+    for n in &mut graph.knopen {
+        n.app = Some("Synthetic source".into());
+        n.media = None;
+    }
+    let gens = graph
+        .knopen
+        .iter()
+        .map(|n| (n.id, n.id as u64))
+        .chain(graph.poorten.iter().map(|p| (p.id, p.id as u64)))
+        .collect();
+    d.publish(graph, gens);
+    shell.tick();
+}
+fn width(width: f64) -> SettingsV1 {
+    let mut p = SettingsV1::default().into_preferences();
+    p.destination_width_px = Some(width);
+    SettingsV1::new(p).unwrap()
+}
+fn widgets(root: &impl IsA<gtk::Widget>) -> Vec<gtk::Widget> {
+    let mut all = vec![root.as_ref().clone()];
+    let mut i = 0;
+    while i < all.len() {
+        let mut child = all[i].first_child();
+        while let Some(w) = child {
+            child = w.next_sibling();
+            all.push(w);
+        }
+        i += 1;
+    }
+    all
+}
+fn prefs_button(s: &ApplicationShell, label: &str) -> gtk::Button {
+    widgets(&s.preference_panel.widget().child().unwrap())
+        .into_iter()
+        .filter_map(|w| w.downcast::<gtk::Button>().ok())
+        .find(|b| b.label().as_deref() == Some(label))
+        .unwrap()
+}
+fn wait_loaded(s: &ApplicationShell) {
+    pump_until(|| {
+        s.tick();
+        s.preferences().editing_allowed()
+    });
+}
+fn finish_settings(s: &ApplicationShell, d: &FixtureDriver) {
+    d.complete_shutdown(ShutdownReport::default());
+    s.request_quit();
+    pump_until(|| {
+        s.tick();
+        s.exit_code().is_some()
+    });
+    assert_eq!(s.exit_code(), Some(0));
+}
+#[gtk::test]
+fn preferences_wait_for_initial_load_and_ui_triggers_never_dispatch_audio() {
+    let (dir, worker) = file();
+    let (events, entered) = mpsc::sync_channel(1);
+    let (release, gate) = mpsc::sync_channel(1);
+    let (events_rx, join) = worker.close();
+    for _ in events_rx {}
+    join.join().unwrap();
+    let worker = SettingsWorker::fixture(
+        SettingsFile::new(dir.join("settings.json")).unwrap(),
+        Some((events, gate)),
+        None,
+        false,
+    )
+    .unwrap();
+    entered.recv_timeout(Duration::from_secs(3)).unwrap();
+    let (s, d) = setup(false, Some(worker));
+    publish_synthetic(&s, &d);
+    assert!(s
+        .edit_display(DisplayEdit::DestinationWidth(Some(240.)))
+        .is_err());
+    assert!(widgets(&s.preference_panel.widget().child().unwrap())
+        .iter()
+        .filter_map(|w| w.clone().downcast::<gtk::CheckButton>().ok())
+        .all(|c| !c.is_sensitive()));
+    release.send(()).unwrap();
+    wait_loaded(&s);
+    let origin = s.session.graph().unwrap();
+    let check = widgets(&s.preference_panel.widget().child().unwrap())
+        .into_iter()
+        .filter_map(|w| w.downcast::<gtk::CheckButton>().ok())
+        .find(|c| c.label().as_deref() == Some("Show Apps"))
+        .unwrap();
+    check.set_active(false);
+    assert!(s
+        .preferences()
+        .document()
+        .preferences()
+        .hidden
+        .iter()
+        .any(|h| h.as_str() == "rij|apps"));
+    assert!(Arc::ptr_eq(
+        &origin.value,
+        &s.session.graph().unwrap().value
+    ));
+    assert!(d.take_requests().is_empty());
+    pump_until(|| {
+        s.tick();
+        !s.preferences().dirty()
+    });
+    assert_eq!(s.settings_summary().last_request, 1);
+    for _ in 0..50 {
+        s.tick();
+    }
+    assert_eq!(
+        s.settings_summary().last_request,
+        1,
+        "programmatic application/allocation does not save again"
+    );
+    finish_settings(&s, &d);
+    fs::remove_dir_all(dir).unwrap();
+}
+#[gtk::test]
+fn reset_buttons_preserve_other_rows_and_full_non_display_document() {
+    let (dir, worker) = file();
+    let (events, join) = worker.close();
+    for _ in events {}
+    join.join().unwrap();
+    let mut p = SettingsV1::default().into_preferences();
+    p.rows = pecan_core::settings::RowWeights {
+        apps: 3.,
+        hardware: 1.,
+        destinations: 2.,
+    };
+    p.destination_width_px = Some(260.);
+    p.clock.start_stop = true;
+    let original = SettingsV1::new(p).unwrap();
+    fs::write(
+        dir.join("settings.json"),
+        serde_json::to_vec(&original).unwrap(),
+    )
+    .unwrap();
+    let worker =
+        SettingsWorker::start(SettingsFile::new(dir.join("settings.json")).unwrap()).unwrap();
+    let (s, d) = setup(false, Some(worker));
+    publish_synthetic(&s, &d);
+    wait_loaded(&s);
+    prefs_button(&s, "Equal Apps / Hardware").emit_clicked();
+    prefs_button(&s, "Fit output width").emit_clicked();
+    let current = s.preferences();
+    assert_eq!(
+        current.document().preferences().rows,
+        pecan_core::settings::RowWeights {
+            apps: 2.,
+            hardware: 2.,
+            destinations: 2.
+        }
+    );
+    assert_eq!(current.document().preferences().destination_width_px, None);
+    assert_eq!(
+        current.document().preferences().buses,
+        original.preferences().buses
+    );
+    assert!(current.document().preferences().clock.start_stop);
+    assert!(d.take_requests().is_empty());
+    finish_settings(&s, &d);
+    fs::remove_dir_all(dir).unwrap();
+}
+#[gtk::test]
+fn queue_full_rapid_edits_and_quit_admit_final_unsent_document_before_join() {
+    let (dir, old) = file();
+    let (events, join) = old.close();
+    for _ in events {}
+    join.join().unwrap();
+    let (entered_tx, entered) = mpsc::sync_channel(1);
+    let (release, gate) = mpsc::sync_channel(1);
+    let worker = SettingsWorker::fixture(
+        SettingsFile::new(dir.join("settings.json")).unwrap(),
+        None,
+        Some((entered_tx, gate)),
+        false,
+    )
+    .unwrap();
+    let (s, d) = setup(false, Some(worker));
+    wait_loaded(&s);
+    s.submit_settings(SettingsOperation::Save(width(200.)))
+        .unwrap();
+    entered.recv_timeout(Duration::from_secs(3)).unwrap();
+    for i in 0..16 {
+        s.submit_settings(SettingsOperation::Save(width(210. + i as f64)))
+            .unwrap();
+    }
+    let error = s
+        .submit_settings(SettingsOperation::Save(width(999.)))
+        .unwrap_err();
+    assert_eq!(error.reason, SubmissionFailure::QueueFull);
+    for i in 0..1_000 {
+        s.edit_display(DisplayEdit::DestinationWidth(Some(300. + (i % 100) as f64)))
+            .unwrap();
+    }
+    s.edit_display(DisplayEdit::DestinationWidth(Some(900.)))
+        .unwrap();
+    assert_eq!(s.preferences().document(), &width(900.));
+    d.complete_shutdown(ShutdownReport::default());
+    let start = Instant::now();
+    s.request_quit();
+    s.tick();
+    assert!(start.elapsed() < Duration::from_millis(200));
+    assert_eq!(s.exit_code(), None);
+    assert!(!s.preferences().editing_allowed());
+    assert!(s.preferences().dirty());
+    release.send(()).unwrap();
+    pump_until(|| {
+        s.tick();
+        s.exit_code().is_some()
+    });
+    assert_eq!(s.exit_code(), Some(0));
+    assert!(!s.preferences().dirty());
+    assert!(!s.settings_summary().unsaved_preferences);
+    assert_eq!(s.settings_summary().last_request, 18);
+    let saved: SettingsV1 =
+        serde_json::from_slice(&fs::read(dir.join("settings.json")).unwrap()).unwrap();
+    assert_eq!(saved, width(900.));
+    assert!(!s.settings_summary().worker_panicked);
+    fs::remove_dir_all(dir).unwrap();
+}
+#[gtk::test]
+fn post_rename_error_reloads_actual_disk_then_requires_explicit_save_confirmation() {
+    let (dir, old) = file();
+    let (events, join) = old.close();
+    for _ in events {}
+    join.join().unwrap();
+    let worker = SettingsWorker::fixture(
+        SettingsFile::new(dir.join("settings.json")).unwrap(),
+        None,
+        None,
+        true,
+    )
+    .unwrap();
+    let (s, d) = setup(false, Some(worker));
+    wait_loaded(&s);
+    s.edit_display(DisplayEdit::DestinationWidth(Some(301.)))
+        .unwrap();
+    pump_until(|| {
+        s.tick();
+        s.settings_summary().failures == 1
+    });
+    assert!(s.preferences().dirty());
+    let published: SettingsV1 =
+        serde_json::from_slice(&fs::read(dir.join("settings.json")).unwrap()).unwrap();
+    assert_eq!(published, width(301.));
+    for _ in 0..50 {
+        s.tick();
+    }
+    assert_eq!(s.settings_summary().last_request, 1);
+    prefs_button(&s, "Reload settings").emit_clicked();
+    pump_until(|| {
+        s.tick();
+        s.settings_summary().last_request == 2
+    });
+    assert!(s.preferences().dirty());
+    assert!(s.preferences().message().contains("Choose Save"));
+    for _ in 0..20 {
+        s.tick();
+    }
+    assert_eq!(s.settings_summary().last_request, 2);
+    prefs_button(&s, "Save local edits").emit_clicked();
+    pump_until(|| {
+        s.tick();
+        !s.preferences().dirty()
+    });
+    assert_eq!(s.settings_summary().last_request, 3);
+    d.complete_shutdown(ShutdownReport::default());
+    s.request_quit();
+    pump_until(|| {
+        s.tick();
+        matches!(s.phase(), QuitPhase::Failed { .. })
+    });
+    assert!(!s.settings_summary().unsaved_preferences);
+    assert_eq!(s.settings_summary().failures, 1);
+    s.error_box
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Button>()
+        .unwrap()
+        .emit_clicked();
+    assert_eq!(s.exit_code(), Some(1));
+    fs::remove_dir_all(dir).unwrap();
+}
+#[gtk::test]
+fn future_input_recovery_is_explicit_reviewed_and_edit_changes_invalidate_review() {
+    let (dir, old) = file();
+    let (events, join) = old.close();
+    for _ in events {}
+    join.join().unwrap();
+    let raw = br#"{"schema_version":99,"future":"synthetic"}"#;
+    fs::write(dir.join("settings.json"), raw).unwrap();
+    let worker =
+        SettingsWorker::start(SettingsFile::new(dir.join("settings.json")).unwrap()).unwrap();
+    let (s, d) = setup(false, Some(worker));
+    wait_loaded(&s);
+    assert!(s.preferences().recovery_required());
+    s.edit_display(DisplayEdit::DestinationWidth(Some(250.)))
+        .unwrap();
+    for _ in 0..10 {
+        s.tick();
+    }
+    assert_eq!(fs::read(dir.join("settings.json")).unwrap(), raw);
+    prefs_button(&s, "Review recovery").emit_clicked();
+    assert!(s.recovery_review.borrow().is_some());
+    s.edit_display(DisplayEdit::DestinationWidth(Some(251.)))
+        .unwrap();
+    prefs_button(&s, "Confirm reviewed recovery").emit_clicked();
+    assert_eq!(fs::read(dir.join("settings.json")).unwrap(), raw);
+    prefs_button(&s, "Review recovery").emit_clicked();
+    prefs_button(&s, "Confirm reviewed recovery").emit_clicked();
+    pump_until(|| {
+        s.tick();
+        !s.preferences().recovery_required()
+    });
+    assert!(!s.preferences().dirty());
+    assert_eq!(s.settings_summary().recovered, 1);
+    let backups: Vec<_> = fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|p| p.file_name() != "settings.json")
+        .collect();
+    assert_eq!(backups.len(), 1);
+    assert_eq!(fs::read(backups[0].path()).unwrap(), raw);
+    finish_settings(&s, &d);
+    fs::remove_dir_all(dir).unwrap();
+}
+#[gtk::test]
+fn dirty_corrupt_input_at_quit_is_preserved_and_unsaved_document_remains_recoverable() {
+    let (dir, old) = file();
+    let (events, join) = old.close();
+    for _ in events {}
+    join.join().unwrap();
+    let raw = b"{synthetic corrupt settings";
+    fs::write(dir.join("settings.json"), raw).unwrap();
+    let worker =
+        SettingsWorker::start(SettingsFile::new(dir.join("settings.json")).unwrap()).unwrap();
+    let (s, d) = setup(false, Some(worker));
+    wait_loaded(&s);
+    s.edit_display(DisplayEdit::DestinationWidth(Some(250.)))
+        .unwrap();
+    d.complete_shutdown(ShutdownReport::default());
+    s.request_quit();
+    pump_until(|| {
+        s.tick();
+        matches!(s.phase(), QuitPhase::Failed { .. })
+    });
+    assert_eq!(s.preferences().document(), &width(250.));
+    assert!(s.preferences().dirty());
+    assert!(s.settings_summary().unsaved_preferences);
+    assert_eq!(fs::read(dir.join("settings.json")).unwrap(), raw);
+    assert!(!s.settings_summary().worker_panicked);
+    s.error_box
+        .first_child()
+        .unwrap()
+        .downcast::<gtk::Button>()
+        .unwrap()
+        .emit_clicked();
+    assert_eq!(s.exit_code(), Some(1));
+    fs::remove_dir_all(dir).unwrap();
+}

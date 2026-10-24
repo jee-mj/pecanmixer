@@ -8,6 +8,7 @@ mod drain;
 mod fixture;
 mod history_input;
 mod mixer;
+mod preferences;
 mod shell;
 mod view;
 
@@ -16,6 +17,7 @@ pub use coordinator::{Request, Session, SessionAdapter, Status};
 pub use drain::SettingsSummary;
 pub use fixture::{FixtureDriver, FixtureRequest};
 pub use mixer::CoordinatedMixer;
+pub use preferences::PreferencesState;
 pub use shell::{ApplicationShell, InstallFailure, ShellOptions};
 pub use view::NativeWorkspace;
 

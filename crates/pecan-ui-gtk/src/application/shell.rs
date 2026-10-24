@@ -3,6 +3,7 @@ use super::{
     drain::SettingsDrain, ApplicationOwner, Mode, NativeWorkspace, Session, SettingsSummary,
 };
 use crate::{
+    display_settings::{DisplayEdit, DisplayPanel, DisplayPreferences, PanelAction},
     lifetime::{
         Completion, Effect, Event, Lifetime, QuitPhase, RequestId, Resources, TrayAvailability,
     },
@@ -12,7 +13,7 @@ use crate::{
 use gtk::{gio, glib, prelude::*};
 use pecan_pipewire::shutdown::{Shutdown, ShutdownReport};
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     io,
     rc::Rc,
     sync::{Arc, Mutex},
@@ -79,6 +80,11 @@ pub struct ApplicationShell {
     settings: RefCell<Option<SettingsWorker>>,
     summary: RefCell<SettingsSummary>,
     drain: RefCell<Option<(RequestId, SettingsDrain)>>,
+    preferences: RefCell<super::preferences::PreferencesState>,
+    preference_panel: DisplayPanel,
+    preferences_applied: Cell<Option<(u64, bool)>>,
+    recovery_review: RefCell<Option<(u64, u64, SettingsOperation)>>,
+    preferences_notice: RefCell<Option<String>>,
     status: gtk::Label,
     retry: gtk::Button,
     error_box: gtk::Box,
@@ -171,9 +177,12 @@ impl ApplicationShell {
         tools.append(&quit);
         tools.append(&retry);
         tools.append(&error_box);
+        let preference_panel = DisplayPanel::new();
+        let preferences = super::preferences::PreferencesState::new(settings.is_some());
         let root = gtk::Box::new(gtk::Orientation::Vertical, 8);
         root.append(&status);
         root.append(&tools);
+        root.append(preference_panel.widget());
         root.append(workspace.widget());
         let window = gtk::ApplicationWindow::builder()
             .application(app)
@@ -201,6 +210,11 @@ impl ApplicationShell {
             settings: RefCell::new(settings),
             summary: RefCell::default(),
             drain: RefCell::new(None),
+            preferences: RefCell::new(preferences),
+            preference_panel,
+            preferences_applied: Cell::new(None),
+            recovery_review: RefCell::new(None),
+            preferences_notice: RefCell::new(None),
             status,
             retry,
             error_box,
@@ -209,6 +223,21 @@ impl ApplicationShell {
             #[cfg(test)]
             offset: std::cell::Cell::new(Duration::ZERO),
         });
+        let weak = Rc::downgrade(&shell);
+        shell.workspace.bind_display_edits(Rc::new(move |edit| {
+            if let Some(s) = weak.upgrade() {
+                if let Err(error) = s.edit_display(edit) {
+                    *s.preferences_notice.borrow_mut() = Some(error);
+                }
+                s.render_preferences();
+            }
+        }));
+        let weak = Rc::downgrade(&shell);
+        shell.preference_panel.bind(Rc::new(move |action| {
+            if let Some(s) = weak.upgrade() {
+                s.preference_action(action);
+            }
+        }));
         *shell.owner.shell.borrow_mut() = Rc::downgrade(&shell);
         *shell.keep_alive.borrow_mut() = Some(shell.clone());
         for (button, event) in [(&quit, Event::Quit), (&shell.retry, Event::RetryQuit)] {
@@ -297,14 +326,112 @@ impl ApplicationShell {
                 operation,
             });
         }
-        match self.settings.borrow_mut().as_mut() {
-            Some(worker) => worker.submit(operation),
+        let result = match self.settings.borrow_mut().as_mut() {
+            Some(worker) => self.preferences.borrow_mut().submit(worker, operation),
             None => Err(SubmissionError {
                 reason: SubmissionFailure::Stopped,
                 operation,
             }),
-        }
+        };
+        self.recovery_review.borrow_mut().take();
+        self.render_preferences();
+        result
     }
+    pub fn preferences(&self) -> super::preferences::PreferencesState {
+        self.preferences.borrow().clone()
+    }
+    pub fn edit_display(&self, edit: DisplayEdit) -> Result<(), String> {
+        if !self.policy.borrow().mutations_allowed() {
+            return Err("Finalization has disabled display editing.".into());
+        }
+        let next = edit.apply(self.preferences.borrow().document())?;
+        self.preferences.borrow_mut().edit(next)?;
+        self.recovery_review.borrow_mut().take();
+        *self.preferences_notice.borrow_mut() = None;
+        self.render_preferences();
+        Ok(())
+    }
+    fn preference_action(&self, action: PanelAction) {
+        if !self.policy.borrow().mutations_allowed() {
+            return;
+        }
+        let result = match action {
+            PanelAction::Edit(edit) => self.edit_display(edit),
+            PanelAction::Reload => {
+                let operation = self.preferences.borrow().reload_operation();
+                self.submit_settings(operation)
+                    .map(|_| ())
+                    .map_err(|e| format!("Reload not admitted: {:?}", e.reason))
+            }
+            PanelAction::Save => self.preferences.borrow_mut().resume(),
+            PanelAction::ReviewRecovery => {
+                let state = self.preferences.borrow();
+                match state.recover_operation() {
+                    Ok(op) => {
+                        *self.recovery_review.borrow_mut() =
+                            Some((state.revision(), state.baseline_revision(), op));
+                        Ok(())
+                    }
+                    Err(error) => Err(error),
+                }
+            }
+            PanelAction::ConfirmRecovery => {
+                let review = self.recovery_review.borrow_mut().take();
+                match review {
+                    Some((edit, baseline, op))
+                        if {
+                            let p = self.preferences.borrow();
+                            p.editing_allowed()
+                                && p.revision() == edit
+                                && p.baseline_revision() == baseline
+                        } =>
+                    {
+                        self.submit_settings(op)
+                            .map(|_| ())
+                            .map_err(|e| format!("Recovery not admitted: {:?}", e.reason))
+                    }
+                    _ => Err("Preferences/input changed; review recovery again.".into()),
+                }
+            }
+        };
+        *self.preferences_notice.borrow_mut() = result.err();
+        self.render_preferences();
+    }
+    fn render_preferences(&self) {
+        self.preference_panel
+            .widget()
+            .set_sensitive(self.policy.borrow().mutations_allowed());
+        let p = self.preferences.borrow();
+        let editable = p.editing_allowed() && self.policy.borrow().mutations_allowed();
+        let key = (p.view_revision(), editable);
+        if self.preferences_applied.get() != Some(key) {
+            self.workspace
+                .apply_display(DisplayPreferences::from(p.document()), editable);
+            self.preferences_applied.set(Some(key));
+        }
+        let reviewed = self
+            .recovery_review
+            .borrow()
+            .as_ref()
+            .is_some_and(|(edit, baseline, _)| {
+                *edit == p.revision() && *baseline == p.baseline_revision()
+            });
+        let message = self
+            .preferences_notice
+            .borrow()
+            .as_ref()
+            .map_or_else(|| p.message(), |e| format!("{} · {e}", p.message()));
+        let review=reviewed.then(||format!("Recovery will preserve the exact reviewed input in a backup and write this document:\n{}",serde_json::to_string_pretty(p.document()).unwrap()));
+        self.preference_panel.update(
+            p.document(),
+            p.view_revision(),
+            &self.session.volume_model(),
+            editable,
+            &message,
+            review.as_deref(),
+        );
+    }
+
     fn event(&self, event: Event) {
         let effects = self.policy.borrow_mut().apply(event, self.now());
         self.effects(effects);
@@ -343,7 +470,11 @@ impl ApplicationShell {
                     if let Some(worker) = self.settings.borrow_mut().take() {
                         *self.drain.borrow_mut() = Some((
                             request,
-                            SettingsDrain::new(worker, self.summary.borrow().clone()),
+                            SettingsDrain::new(worker, self.summary.borrow().clone(), {
+                                let mut p = self.preferences.borrow_mut();
+                                p.begin_drain();
+                                p.clone()
+                            }),
                         ));
                     } // Missing owned resources must remain pending, never fake completion.
                 }
@@ -382,9 +513,21 @@ impl ApplicationShell {
         if let Some(worker) = self.settings.borrow().as_ref() {
             for _ in 0..32 {
                 match worker.try_event() {
-                    Ok(event) => self.summary.borrow_mut().event(event),
-                    Err(_) => break,
+                    Ok(event) => {
+                        self.preferences.borrow_mut().event(&event);
+                        self.summary.borrow_mut().event(event);
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        self.preferences.borrow_mut().stopped();
+                        break;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
                 }
+            }
+        }
+        if self.policy.borrow().mutations_allowed() {
+            if let Some(worker) = self.settings.borrow_mut().as_mut() {
+                self.preferences.borrow_mut().pump(worker);
             }
         }
         let finished = self
@@ -392,9 +535,10 @@ impl ApplicationShell {
             .borrow_mut()
             .as_mut()
             .and_then(|(id, drain)| drain.poll(self.now()).map(|summary| (*id, summary)));
-        if let Some((request, summary)) = finished {
-            let result = summary.result();
-            *self.summary.borrow_mut() = summary;
+        if let Some((request, completion)) = finished {
+            let result = completion.summary.result();
+            *self.summary.borrow_mut() = completion.summary;
+            *self.preferences.borrow_mut() = completion.preferences;
             self.drain.borrow_mut().take();
             let effects = self
                 .policy
@@ -408,6 +552,7 @@ impl ApplicationShell {
         if self.exit_code().is_some() {
             return;
         }
+        self.render_preferences();
         let phase = self.phase();
         let message=match &phase{
             QuitPhase::Idle=>"Native candidate · recording disabled".to_owned(),
