@@ -149,3 +149,110 @@ fn unconfirmed_effects_are_an_error_not_a_false_success_or_rollback_claim() {
     assert!(!history.busy());
     assert_eq!(history.lengths(), (0, 0));
 }
+
+#[test]
+fn delayed_older_receipts_stay_suppressed_after_newer_results() {
+    let source = origin();
+    let mut history = Controller::default();
+    history.reduce(Input::Graph(source.clone())).unwrap();
+    let mut bridge = HistoryResults::default();
+    let mut completed = Vec::new();
+    for label in ["Synthetic first", "Synthetic second"] {
+        let plan = history
+            .reduce(Input::Execute {
+                label: label.into(),
+                action: Action::Mute {
+                    node: 10,
+                    muted: true,
+                },
+            })
+            .unwrap()
+            .unwrap();
+        let result = bridge
+            .admission_rejected(plan.ticket, source.stamp, AdmissionError::QueueFull)
+            .unwrap();
+        assert!(matches!(
+            history.reduce(result),
+            Err(DomainError::Backend(_))
+        ));
+        completed.push(plan.ticket);
+    }
+    let pending = history
+        .reduce(Input::Execute {
+            label: "Synthetic pending".into(),
+            action: Action::Mute {
+                node: 10,
+                muted: true,
+            },
+        })
+        .unwrap()
+        .unwrap();
+    let old = NativeReport {
+        ticket: completed[0],
+        source: source.stamp,
+        command_count: 1,
+        progress: NativeProgress::Rejected {
+            reason: NativeFailure::Stopped,
+            counts: Counts::default(),
+        },
+    };
+    assert!(
+        bridge.terminal(&old).is_none(),
+        "late older receipt was emitted again after a newer result"
+    );
+    assert!(bridge
+        .admission_rejected(completed[0], source.stamp, AdmissionError::Stopped)
+        .is_none());
+    assert!(
+        history.busy(),
+        "late delivery must leave the current operation alone"
+    );
+    let current = bridge
+        .admission_rejected(pending.ticket, source.stamp, AdmissionError::Stopped)
+        .unwrap();
+    assert!(matches!(
+        history.reduce(current),
+        Err(DomainError::Backend(_))
+    ));
+    assert!(!history.busy());
+}
+
+#[test]
+fn result_watermark_rejects_old_sources_and_handles_wrapping_tickets() {
+    let source = origin().stamp;
+    let mut bridge = HistoryResults::default();
+    for ticket in [u64::MAX - 1, u64::MAX, 0, 1] {
+        assert!(bridge
+            .admission_rejected(ticket, source, AdmissionError::QueueFull)
+            .is_some());
+    }
+    assert!(bridge
+        .admission_rejected(u64::MAX, source, AdmissionError::Stopped)
+        .is_none());
+    let newer_source = Stamp {
+        revision: source.revision + 1,
+        ..source
+    };
+    assert!(bridge
+        .admission_rejected(2, newer_source, AdmissionError::Stopped)
+        .is_some());
+    assert!(
+        bridge
+            .admission_rejected(3, source, AdmissionError::Stopped)
+            .is_none(),
+        "new ticket cannot revive an older graph source"
+    );
+    let reconnect = Stamp {
+        epoch: source.epoch + 1,
+        revision: 1,
+    };
+    assert!(bridge
+        .admission_rejected(4, reconnect, AdmissionError::Disconnected)
+        .is_some());
+    assert!(
+        bridge
+            .admission_rejected(5, newer_source, AdmissionError::Stopped)
+            .is_none(),
+        "old-session receipt cannot return after reconnect"
+    );
+}

@@ -523,3 +523,316 @@ fn cancelled_claim_can_finish_but_receipt_remains_explicitly_unconfirmed() {
         }
     ));
 }
+
+#[test]
+fn target_serial_and_name_keep_the_identity_observed_at_origin() {
+    for by_name in [false, true] {
+        let live = graph();
+        let target = if by_name {
+            live.knopen[1].naam.clone()
+        } else {
+            live.knopen[1].serial.unwrap().to_string()
+        };
+        let commands = setup(live.clone());
+        let origin = commands.current();
+        let op = Opdracht::ZetDoel {
+            knoop: 10,
+            doel: Some(target.clone()),
+        };
+        let receipt = commands
+            .enqueue_native(NativeIntent {
+                ticket: 1,
+                origin: origin.clone(),
+                commands: vec![op.clone()],
+            })
+            .unwrap();
+        commands.object_removed(20);
+        commands.object_added(20);
+        let mut replacement = live;
+        replacement.knopen[1].serial = Some(99_999);
+        replacement.knopen[0].doel = Some(target);
+        commands.publish(replacement.clone());
+        assert_eq!(
+            commands
+                .enqueue_native(NativeIntent {
+                    ticket: 2,
+                    origin,
+                    commands: vec![op]
+                })
+                .unwrap_err(),
+            AdmissionError::InvalidObject
+        );
+        drain(&commands, &replacement, |_| {
+            panic!("target replacement must not receive old intent")
+        });
+        assert!(matches!(
+            receipt.report().progress,
+            NativeProgress::Rejected {
+                reason: NativeFailure::InvalidObject,
+                counts: Counts { attempted: 0, .. }
+            }
+        ));
+    }
+}
+
+#[test]
+fn mixed_batch_requires_all_postconditions_in_the_same_fresh_publication() {
+    let live = graph();
+    let commands = setup(live.clone());
+    let receipt = commands
+        .enqueue_native(request(&commands, vec![mute(10, true), mute(20, true)]))
+        .unwrap();
+    drain(&commands, &live, |_| LocalExecution::Submitted);
+    let mut first = live.clone();
+    first.knopen[0].mute = Some(true);
+    commands.publish(first);
+    assert!(!receipt.report().progress.is_terminal());
+    let mut second = live.clone();
+    second.knopen[1].mute = Some(true);
+    commands.publish(second);
+    assert!(
+        !receipt.report().progress.is_terminal(),
+        "observations from incompatible frames must not add up to success"
+    );
+    let mut both = live;
+    for node in &mut both.knopen {
+        node.mute = Some(true);
+    }
+    let observed = commands.publish(both).stamp;
+    assert!(
+        matches!(receipt.report().progress, NativeProgress::Observed { stamp, counts: Counts { submitted: 2, observed: 2, .. } } if stamp == observed)
+    );
+}
+
+#[test]
+fn target_outcome_missing_from_published_mirror_stays_unconfirmed() {
+    let live = graph();
+    let commands = setup(live.clone());
+    let now = Instant::now();
+    // The legacy sentinel may be consumed by policy between graph frames.
+    // This probe supplies only the final frame, not a claimed server trace.
+    let receipt = commands
+        .enqueue_native_at(
+            request(
+                &commands,
+                vec![Opdracht::ZetDoel {
+                    knoop: 10,
+                    doel: Some("-1".into()),
+                }],
+            ),
+            now,
+        )
+        .unwrap();
+    drain(&commands, &live, |_| LocalExecution::Submitted);
+    commands.publish(live);
+    assert!(!receipt.report().progress.is_terminal());
+    commands.expire_native(now + OBSERVATION_LIMIT);
+    assert!(matches!(
+        receipt.report().progress,
+        NativeProgress::Unconfirmed {
+            reason: NativeFailure::ObservationTimedOut,
+            counts: Counts {
+                submitted: 1,
+                observed: 0,
+                ..
+            }
+        }
+    ));
+}
+
+#[test]
+fn retained_receipts_do_not_retain_backend_work_or_evicted_graphs() {
+    let live = graph();
+    let commands = setup(live.clone());
+    let first = commands.current();
+    let released = Arc::downgrade(&first.value);
+    drop(first);
+    let mut retained = Vec::new();
+    for _ in 0..NATIVE_SOURCE_HISTORY + 4 {
+        for _ in 0..MAX_NATIVE_IN_FLIGHT {
+            retained.push(
+                commands
+                    .enqueue_native(request(&commands, vec![mute(10, false)]))
+                    .unwrap(),
+            );
+        }
+        assert_eq!(
+            commands
+                .enqueue_native(request(&commands, vec![mute(10, false)]))
+                .unwrap_err(),
+            AdmissionError::TooManyInFlight
+        );
+        drain(&commands, &live, |_| {
+            panic!("synthetic no-ops must not submit")
+        });
+        assert!(commands.native_needs_barrier());
+        commands.publish(live.clone());
+        let state = commands.0.lock().unwrap();
+        assert!(state.native.is_empty());
+        assert!(state.pending.is_empty());
+        assert!(state.origins.len() <= NATIVE_SOURCE_HISTORY);
+    }
+    assert!(retained
+        .iter()
+        .all(|r| matches!(r.report().progress, NativeProgress::ObservedNoOp { .. })));
+    assert!(
+        released.upgrade().is_none(),
+        "caller-owned receipts must not keep expired source graphs alive"
+    );
+    let first_report = retained[0].report();
+    commands.stop();
+    assert_eq!(
+        retained[0].report(),
+        first_report,
+        "later stop must not rewrite completed receipts"
+    );
+}
+
+#[test]
+fn reconnect_reclaims_native_work_and_new_epoch_no_ops_progress() {
+    let live = graph();
+    let commands = setup(live.clone());
+    let old_origin = commands.current();
+    let old = commands
+        .enqueue_native(request(&commands, vec![mute(10, true)]))
+        .unwrap();
+    commands.publish(Momentopname::default());
+    assert!(matches!(
+        old.report().progress,
+        NativeProgress::Rejected {
+            reason: NativeFailure::Disconnected,
+            ..
+        }
+    ));
+    {
+        let state = commands.0.lock().unwrap();
+        assert!(state.native.is_empty());
+        assert!(state.pending.is_empty());
+    }
+    for id in live
+        .knopen
+        .iter()
+        .map(|n| n.id)
+        .chain(live.poorten.iter().map(|p| p.id))
+    {
+        commands.object_added(id);
+    }
+    commands.publish(live.clone());
+    assert_eq!(
+        commands
+            .enqueue_native(NativeIntent {
+                ticket: 2,
+                origin: old_origin,
+                commands: vec![mute(10, true)]
+            })
+            .unwrap_err(),
+        AdmissionError::StaleEpoch
+    );
+    let new_origin = commands.current();
+    let fresh = commands
+        .enqueue_native(request(&commands, vec![mute(10, false)]))
+        .unwrap();
+    drain(&commands, &live, |_| {
+        panic!("new-epoch no-op is already satisfied")
+    });
+    commands.publish(live);
+    assert!(
+        matches!(fresh.report().progress, NativeProgress::ObservedNoOp { stamp, .. } if stamp.epoch == new_origin.stamp.epoch && stamp.revision > new_origin.stamp.revision)
+    );
+}
+
+#[test]
+fn expired_queued_native_work_never_submits_and_releases_capacity() {
+    let live = graph();
+    let commands = setup(live.clone());
+    let old = Instant::now() - OBSERVATION_LIMIT - std::time::Duration::from_secs(1);
+    let receipt = commands
+        .enqueue_native_at(
+            request(&commands, vec![mute(10, true), mute(20, true)]),
+            old,
+        )
+        .unwrap();
+    drain(&commands, &live, |_| {
+        panic!("expired queue must never execute")
+    });
+    assert!(matches!(
+        receipt.report().progress,
+        NativeProgress::Rejected {
+            reason: NativeFailure::ObservationTimedOut,
+            counts: Counts {
+                attempted: 0,
+                submitted: 0,
+                ..
+            }
+        }
+    ));
+    let state = commands.0.lock().unwrap();
+    assert!(state.native.is_empty());
+    assert!(state.pending.is_empty());
+}
+
+#[test]
+fn native_payload_bounds_reject_oversized_values_without_consuming_capacity() {
+    assert_eq!("synthetic-value-".repeat(256).len(), 4096);
+    let commands = setup(graph());
+    let volume = commands
+        .enqueue_native(request(
+            &commands,
+            vec![Opdracht::ZetVolume {
+                knoop: 10,
+                volume: vec![1.0; 256],
+            }],
+        ))
+        .unwrap();
+    let target = commands
+        .enqueue_native(request(
+            &commands,
+            vec![Opdracht::ZetDoel {
+                knoop: 10,
+                doel: Some("synthetic-value-".repeat(256)),
+            }],
+        ))
+        .unwrap();
+    // The repeated target string is exactly 4096 synthetic bytes.
+    for command in [
+        Opdracht::ZetVolume {
+            knoop: 10,
+            volume: vec![1.0; 257],
+        },
+        Opdracht::ZetVolume {
+            knoop: 10,
+            volume: vec![4.01],
+        },
+        Opdracht::ZetDoel {
+            knoop: 10,
+            doel: Some("synthetic-value-".repeat(256) + "x"),
+        },
+    ] {
+        assert_eq!(
+            commands
+                .enqueue_native(request(&commands, vec![command]))
+                .unwrap_err(),
+            AdmissionError::InvalidInput
+        );
+    }
+    {
+        let state = commands.0.lock().unwrap();
+        assert_eq!(state.native.len(), 2);
+        assert_eq!(state.pending.len(), 2);
+    }
+    commands.stop();
+    assert!(matches!(
+        volume.report().progress,
+        NativeProgress::Rejected {
+            reason: NativeFailure::Stopped,
+            ..
+        }
+    ));
+    assert!(matches!(
+        target.report().progress,
+        NativeProgress::Rejected {
+            reason: NativeFailure::Stopped,
+            ..
+        }
+    ));
+}

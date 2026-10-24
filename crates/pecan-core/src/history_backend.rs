@@ -25,6 +25,10 @@ pub fn bind_history_plan(
 }
 
 /// One bridge per history controller, which has at most one pending ticket.
+/// Keep a constant-size delivery watermark, not a cache of recent receipts:
+/// an arbitrarily delayed older receipt must remain suppressed. Source stamps
+/// advance monotonically; tickets at the same source use wrapping u64 order
+/// (a forward distance below 2^63). Recreate the bridge with a new controller.
 #[derive(Default)]
 pub struct HistoryResults {
     delivered: Option<(u64, Stamp)>,
@@ -56,8 +60,16 @@ impl HistoryResults {
 
     fn once(&mut self, ticket: u64, source: Stamp, result: Result<Stamp, String>) -> Option<Input> {
         let key = (ticket, source);
-        if self.delivered == Some(key) {
-            return None;
+        if let Some((previous_ticket, previous_source)) = self.delivered {
+            if source < previous_source {
+                return None;
+            }
+            if source == previous_source {
+                let forward = ticket.wrapping_sub(previous_ticket);
+                if forward == 0 || forward >= (1u64 << 63) {
+                    return None;
+                }
+            }
         }
         self.delivered = Some(key);
         Some(Input::CommandResult { ticket, result })
