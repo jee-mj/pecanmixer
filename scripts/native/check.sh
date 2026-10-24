@@ -57,6 +57,12 @@ check_linked_libraries() {
             libraries=("$line")
         fi
         for library in "${libraries[@]}"; do
+            # A path containing another mapping delimiter is ambiguous in
+            # ldd's text format. Reject it instead of losing the first name
+            # to the greedy mapping match above.
+            if [[ "$library" =~ $mapping ]]; then
+                fail "ambiguous native ELF dependency mapping: $line"; return 1
+            fi
             library=${library#"${library%%[![:space:]]*}"}
             library=${library%"${library##*[![:space:]]}"}
             [[ -n "$library" ]] || continue

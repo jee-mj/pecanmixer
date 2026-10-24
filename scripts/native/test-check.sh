@@ -57,6 +57,14 @@ printf '/synthetic/with spaces/libgtk-4.so.1 (0x1)' > "$work/no-newline"
 check check_linked_libraries "$work/no-newline"
 printf '%s\n' 'libgio-2.0.so.0 => /synthetic/libgtk-4.so.1-directory/libgio-2.0.so.0 (0x1)' > "$work/no-gtk4"
 check reject_libraries "$work/no-gtk4"
+for row in '/synthetic/libnode.so.1 => /synthetic/directory => child/liballowed.so.1 (0x3)' \
+    $'/synthetic/libgtk-3.so.0\t=>\t/synthetic/directory\t=>\tchild/liballowed.so.1 (0x3)'; do
+    printf '%s\n' "$row" >> "$work/elf"
+    check reject_libraries "$work/elf"
+    sed -i '$d' "$work/elf"
+done
+printf '%s\n' 'libgtk-4.so.1 => /synthetic/arrow=>directory/libgtk-4.so.1 (0x1)' > "$work/unambiguous-arrow"
+check check_linked_libraries "$work/unambiguous-arrow"
 printf 'libgtk-4.so.1 => not found\n' > "$work/missing"
 check reject_libraries "$work/missing"
 check reject_libraries "$work/empty"

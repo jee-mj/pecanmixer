@@ -175,13 +175,15 @@ whole path fields rather than splitting filenames on whitespace. It also reads
 an unterminated final line. It does not load any fixture library or execute a
 JavaScript runtime.
 
-The original 30 controls remain. The expanded 83 controls cover all twelve
+The original 30 controls remain. The expanded 86 controls cover all twelve
 forbidden ELF families as absolute entries, relative requested paths, resolved
 paths and tab-separated mappings; mixed case, spaces, unterminated input, valid
-absolute GTK4 evidence and harmless directory names are included. The expanded
+absolute GTK4 evidence and harmless directory names are included. Ambiguous
+multiple mapping delimiters fail closed, while `=>` inside an otherwise
+unambiguous path component remains valid. The expanded
 suite fails against the preserved old validator and passes with the correction.
-The corrected full cloud validator also exited zero: 67 core, 134 backend and
-288 GTK tests, all 83 controls, native formatting/build, Cargo/ELF inspection,
+The corrected full cloud validator also exited zero: all 86 controls, 67 core,
+134 backend and 288 GTK tests, native formatting/build, Cargo/ELF inspection,
 three headless fixtures and three controlled smoke launches passed, with no
 recorded Node-tooling attempt. The correction changes only the two validation
 scripts and this report. Its independent review and exact hosted-run result
