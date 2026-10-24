@@ -161,6 +161,17 @@ impl Graaf {
     ) -> Result<crate::recording::RecordingReceipt, crate::recording::RecordingError> {
         self.opdrachten.enqueue_recording(intent)
     }
+    pub fn recording_snapshot(&self) -> Option<crate::recording::RecordingSnapshot> {
+        self.opdrachten.recording_snapshot()
+    }
+    /// Start one configured audio bus in its own immutable take. No-op returns
+    /// existing ownership, not capture/audio-arrival or finalization success.
+    pub fn start_recording_bus(
+        &self,
+        intent: crate::recording::RecordingBusStart,
+    ) -> Result<crate::recording::RecordingBusStartResult, crate::recording::RecordingError> {
+        self.opdrachten.enqueue_recording_bus(intent)
+    }
     /// Stops use stable take/track identity and remain usable while disconnected.
     /// A returned receipt still needs polling for actual writer finalization/join.
     pub fn stop_recording(
@@ -1143,7 +1154,7 @@ fn sessie(
     drop(timer);
     // Wat nog opnam, netjes afsluiten.
     eindig(&opnemer, &klok.borrow());
-    if let Some(capture) = native_capture.borrow_mut().take() {
+    for capture in native_capture.borrow_mut().drain(..) {
         capture
             .0
             .attached

@@ -497,7 +497,9 @@ fn finalized_bytes_are_not_joined_completion_while_thread_local_teardown_is_bloc
         48000,
         &owner.completion,
         move |path, spec| {
-            EXIT.with(|slot| *slot.borrow_mut() = exit.take());
+            if let Some(exit) = exit.take() {
+                EXIT.with(|slot| *slot.borrow_mut() = Some(exit));
+            }
             hound::WavWriter::create(path, spec).map_err(std::io::Error::other)
         },
     )
@@ -631,4 +633,126 @@ fn owner_shutdown_drains_tracked_writers_even_while_senders_are_retained() {
         Err(WriterSendError::Closed)
     );
     assert!(owner.finish().is_success());
+}
+
+#[test]
+fn closing_one_of_sixty_four_tracks_releases_open_capacity_while_siblings_keep_recording() {
+    let dir = TestDir::new("tracked-slot-rearm");
+    let mut owner = Owner::new();
+    let writer = tracked_writer(
+        &dir.0,
+        (0..MAX_TRACKED_TRACKS)
+            .map(|i| track(&format!("Synthetic {i}"), 1))
+            .collect(),
+        48000,
+        &owner.completion,
+    )
+    .unwrap();
+    ready(&writer.receipt);
+    audio(&writer, 0, &[0.25]);
+    audio(&writer, 63, &[0.5]);
+    assert!(tracked_writer(&dir.0, vec![track("Extra", 1)], 48000, &owner.completion).is_err());
+    accepted(|| writer.sender.try_close(writer.receipt.track_id(0).unwrap()));
+    let closed = report_when(&writer.receipt, |r| {
+        matches!(r.tracks[0].phase, TrackPhase::Finalized(Ok(())))
+    });
+    assert_eq!(closed.phase, WriterPhase::Ready);
+    assert_eq!(closed.tracks[63].phase, TrackPhase::Open);
+    let replacement =
+        tracked_writer(&dir.0, vec![track("Rearmed", 1)], 48000, &owner.completion).unwrap();
+    ready(&replacement.receipt);
+    audio(&replacement, 0, &[-0.25]);
+    audio(&writer, 63, &[-0.5]);
+    stop(&replacement);
+    stop(&writer);
+    let old = writer.receipt.wait_timeout(Duration::from_secs(2)).unwrap();
+    let new = replacement
+        .receipt
+        .wait_timeout(Duration::from_secs(2))
+        .unwrap();
+    assert_eq!(old.tracks.len(), MAX_TRACKED_TRACKS);
+    assert!(old.is_success() && new.is_success());
+    let path = old.directory.unwrap();
+    assert_wav(&path.join("Synthetic 0.wav"), 1, 48000, &[0.25]);
+    assert_wav(&path.join("Synthetic 63.wav"), 1, 48000, &[0.5, -0.5]);
+    assert_wav(
+        &new.directory.unwrap().join("Rearmed.wav"),
+        1,
+        48000,
+        &[-0.25],
+    );
+    assert_eq!(owner.finish().writers_finalized, 2);
+}
+
+#[test]
+fn close_error_releases_file_capacity_but_never_claims_join_or_success() {
+    let dir = TestDir::new("tracked-slot-error");
+    let mut owner = Owner::new();
+    let bad = Arc::new(Mutex::new(SinkState::default()));
+    let b = bad.clone();
+    let (entered, waiting) = mpsc::channel();
+    let (release, gate) = mpsc::channel();
+    let mut exit = Some(HeldExit {
+        entered,
+        release: gate,
+    });
+    let mut index = 0;
+    let writer = tracked_writer_with(
+        &dir.0,
+        (0..MAX_TRACKED_TRACKS)
+            .map(|i| track(&format!("Synthetic {i}"), 1))
+            .collect(),
+        48000,
+        &owner.completion,
+        move |_, spec| {
+            if let Some(exit) = exit.take() {
+                EXIT.with(|slot| *slot.borrow_mut() = Some(exit));
+            }
+            let sink = if index == 0 {
+                b.clone()
+            } else {
+                Arc::new(Mutex::new(SinkState::default()))
+            };
+            index += 1;
+            hound::WavWriter::new(Sink(sink), spec).map_err(std::io::Error::other)
+        },
+    )
+    .unwrap();
+    ready(&writer.receipt);
+    bad.lock().unwrap().fail = Some(Failure::Seek);
+    accepted(|| writer.sender.try_close(writer.receipt.track_id(0).unwrap()));
+    waiting.recv_timeout(Duration::from_secs(2)).unwrap();
+    let failed = writer.receipt.try_report().unwrap();
+    assert_eq!(failed.phase, WriterPhase::Finished);
+    assert!(matches!(
+        failed.tracks[0].phase,
+        TrackPhase::Finalized(Err(_))
+    ));
+    assert!(writer
+        .receipt
+        .wait_timeout(Duration::from_millis(1))
+        .is_err());
+    let next = tracked_writer(
+        &dir.0,
+        vec![track("After error", 1)],
+        48000,
+        &owner.completion,
+    )
+    .unwrap();
+    ready(&next.receipt);
+    stop(&next);
+    release.send(()).unwrap();
+    assert!(!writer
+        .receipt
+        .wait_timeout(Duration::from_secs(2))
+        .unwrap()
+        .is_success());
+    assert!(next
+        .receipt
+        .wait_timeout(Duration::from_secs(2))
+        .unwrap()
+        .is_success());
+    let done = owner.finish();
+    assert_eq!(done.writers_failed, 1);
+    assert_eq!(done.writers_finalized, 1);
 }

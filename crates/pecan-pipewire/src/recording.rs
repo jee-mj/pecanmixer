@@ -1,6 +1,6 @@
 //! Native audio-only take receipts. No UI adoption or server success contract.
 use crate::{
-    bus_config::ConfigRevision,
+    bus_config::{ConfigRevision, ConfigSnapshot},
     opname::{
         TakeId, TrackId, TrackedWriter, WriterPhase, WriterReport, WriterSendError,
         MAX_WRITER_SAMPLES,
@@ -21,6 +21,33 @@ use std::{
 };
 
 pub const RECENT_TAKES: usize = 16;
+/// Includes queued, opening, active and finalizing requests, not completed history.
+pub const MAX_RECORDING_TAKES: usize = 64;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RecordingRevision {
+    pub owner: u64,
+    pub revision: u64,
+}
+#[derive(Clone, Debug)]
+pub struct RecordingSnapshot {
+    pub revision: RecordingRevision,
+    pub configuration: ConfigSnapshot,
+    /// Retain these receipts independently of future replaceable snapshots.
+    pub takes: Vec<RecordingReceipt>,
+}
+#[derive(Clone, Debug)]
+pub struct RecordingBusStart {
+    pub start: RecordingStart,
+    pub expected_recording: RecordingRevision,
+    pub bus: String,
+}
+#[derive(Debug)]
+pub enum RecordingBusStartResult {
+    Admitted(RecordingReceipt),
+    /// No new writer. The existing request can still be queued/opening; inspect
+    /// its receipt rather than treating this no-op as proof of capture readiness.
+    NoOp(RecordingReceipt),
+}
 #[derive(Clone, Debug)]
 pub struct RecordingStart {
     pub ticket: u64,
@@ -41,6 +68,9 @@ pub enum RecordingError {
     Stopped,
     Disconnected,
     StaleConfig,
+    StaleRecording,
+    RevisionExhausted,
+    Capacity,
     OriginUnavailable,
     InvalidOrigin,
     ConfigurationUnknown,
@@ -111,6 +141,16 @@ impl std::fmt::Debug for RecordingReceipt {
 pub enum RecordingStopResult {
     NoOp,
     Retained(RecordingReceipt),
+    RetainedMany(Vec<RecordingReceipt>),
+}
+impl RecordingStopResult {
+    pub fn receipts(&self) -> &[RecordingReceipt] {
+        match self {
+            Self::NoOp => &[],
+            Self::Retained(receipt) => std::slice::from_ref(receipt),
+            Self::RetainedMany(receipts) => receipts,
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RecordingPending {
@@ -152,6 +192,7 @@ pub(crate) struct TrackSpec {
 pub(crate) struct Context {
     pub source: Stamp,
     pub config: ConfigRevision,
+    pub config_identity: Arc<()>,
     pub ticket: u64,
     pub node: u32,
     pub serial: Option<u64>,
@@ -222,6 +263,21 @@ impl Request {
     pub fn owned(&self) -> bool {
         self.stage.load(Ordering::Acquire) != QUEUED
             && !self.report().is_some_and(|r| r.is_complete())
+    }
+    /// A pending/open track reserves its bus until a stop/close or writer exit.
+    /// Descriptor retention and eventual joining do not reserve it indefinitely.
+    pub fn reserves(&self, index: usize) -> bool {
+        if self.stop.load(Ordering::Acquire)
+            || self.stage.load(Ordering::Acquire) >= REJECTED
+            || self.track_stops.load(Ordering::Acquire) & (1 << index) != 0
+        {
+            return false;
+        }
+        self.installed.get().is_none_or(|i| {
+            !i.writer.receipt.signals.stopping()
+                && !i.writer.receipt.signals.closed.load(Ordering::Acquire)
+                && i.writer.receipt.signals.closing.load(Ordering::Acquire) & (1 << index) == 0
+        })
     }
     pub fn live(&self) -> bool {
         self.attached.load(Ordering::Acquire)
@@ -339,56 +395,117 @@ impl Drop for PreparedStart {
 }
 #[derive(Default)]
 pub(crate) struct Registry {
-    pub active: Option<Arc<Request>>,
+    pub active: Vec<Arc<Request>>,
     pub recent: VecDeque<Arc<Request>>,
+    pub revision: u64,
+    pub exhausted: bool,
+    observed: Vec<Membership>,
+}
+struct Membership {
+    request: Arc<Request>,
+    stage: u8,
+    installed: bool,
+    stop: bool,
+    tracks: u64,
+    attached: bool,
+    closing: u64,
+    closed: bool,
+}
+impl Membership {
+    fn read(request: &Arc<Request>) -> Self {
+        let signals = request.installed.get().map(|i| &i.writer.receipt.signals);
+        Self {
+            request: request.clone(),
+            stage: request.stage.load(Ordering::Acquire),
+            installed: signals.is_some(),
+            stop: request.stop.load(Ordering::Acquire) || signals.is_some_and(|s| s.stopping()),
+            tracks: request.track_stops.load(Ordering::Acquire),
+            attached: request.attached.load(Ordering::Acquire),
+            closing: signals.map_or(0, |s| s.closing.load(Ordering::Acquire)),
+            closed: signals.is_some_and(|s| s.closed.load(Ordering::Acquire)),
+        }
+    }
+    fn same(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.request, &other.request)
+            && self.stage == other.stage
+            && self.installed == other.installed
+            && self.stop == other.stop
+            && self.tracks == other.tracks
+            && self.attached == other.attached
+            && self.closing == other.closing
+            && self.closed == other.closed
+    }
 }
 impl Registry {
-    pub fn reap(&mut self) {
-        if self
-            .active
-            .as_ref()
-            .is_some_and(|r| r.report().is_some_and(|r| r.is_complete()))
+    /// Receipt counters/time do not invalidate membership; actual ownership and
+    /// stop transitions do, even when aggregate ConfigSnapshot.recording stays true.
+    pub fn refresh_revision(&mut self) {
+        let observed: Vec<_> = self.active.iter().map(Membership::read).collect();
+        if observed.len() != self.observed.len()
+            || !observed.iter().zip(&self.observed).all(|(a, b)| a.same(b))
         {
-            self.recent.push_back(self.active.take().unwrap());
-            while self.recent.len() > RECENT_TAKES {
-                self.recent.pop_front();
+            if let Some(next) = self.revision.checked_add(1) {
+                self.revision = next;
+            } else {
+                self.exhausted = true;
+            }
+            self.observed = observed;
+        }
+    }
+    pub fn reap(&mut self) {
+        let mut index = 0;
+        while index < self.active.len() {
+            if self.active[index].report().is_some_and(|r| r.is_complete()) {
+                self.recent.push_back(self.active.remove(index));
+                while self.recent.len() > RECENT_TAKES {
+                    self.recent.pop_front();
+                }
+            } else {
+                index += 1;
             }
         }
+        self.refresh_revision();
     }
     pub fn stop_all(
         &mut self,
         failure: Option<RecordingError>,
         queued: bool,
     ) -> RecordingStopResult {
-        let Some(request) = &self.active else {
-            return RecordingStopResult::NoOp;
-        };
-        if !queued && request.stage.load(Ordering::Acquire) == QUEUED {
-            return RecordingStopResult::NoOp;
-        }
-        if !request.stop.load(Ordering::Acquire) {
-            if let Some(failure) = failure {
-                request.fail(failure);
+        let mut receipts = Vec::new();
+        for request in &self.active {
+            if !queued && request.stage.load(Ordering::Acquire) == QUEUED {
+                continue;
             }
+            if !request.stop.load(Ordering::Acquire) {
+                if let Some(failure) = &failure {
+                    request.fail(failure.clone());
+                }
+            }
+            request.request_stop();
+            if request.stage.load(Ordering::Acquire) == QUEUED {
+                let failure = request
+                    .failure
+                    .lock()
+                    .unwrap()
+                    .clone()
+                    .unwrap_or(RecordingError::CancelledBeforeStart);
+                request.reject(failure);
+            }
+            receipts.push(RecordingReceipt(request.clone()));
         }
-        request.request_stop();
-        if request.stage.load(Ordering::Acquire) == QUEUED {
-            let failure = request
-                .failure
-                .lock()
-                .unwrap()
-                .clone()
-                .unwrap_or(RecordingError::CancelledBeforeStart);
-            request.reject(failure);
+        self.refresh_revision();
+        match receipts.len() {
+            0 => RecordingStopResult::NoOp,
+            1 => RecordingStopResult::Retained(receipts.pop().unwrap()),
+            _ => RecordingStopResult::RetainedMany(receipts),
         }
-        RecordingStopResult::Retained(RecordingReceipt(request.clone()))
     }
 }
 
 /// Worker-loop capture only. It retains the installed immutable take mapping.
 #[derive(Clone)]
 pub(crate) struct Capture(pub Arc<Request>);
-pub(crate) type NativeOpnemer = std::rc::Rc<std::cell::RefCell<Option<Capture>>>;
+pub(crate) type NativeOpnemer = std::rc::Rc<std::cell::RefCell<Vec<Capture>>>;
 impl Capture {
     pub fn accepts(&self, frames: usize, rate_num: u32, rate_denom: u32) -> bool {
         if !self.0.live() {

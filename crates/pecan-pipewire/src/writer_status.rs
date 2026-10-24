@@ -124,7 +124,7 @@ pub struct WriterReceipt {
     pub(crate) signals: Arc<Signals>,
 }
 #[derive(Clone)]
-pub(crate) struct Reporter(WriterReceipt);
+pub(crate) struct Reporter(WriterReceipt, Option<Arc<crate::shutdown::TrackLease>>);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WriterPending {
     Busy,
@@ -224,7 +224,7 @@ pub(crate) fn status(
                 .collect(),
         })),
     };
-    Ok((receipt.clone(), Reporter(receipt)))
+    Ok((receipt.clone(), Reporter(receipt, None)))
 }
 pub(crate) fn error_text(error: &str) -> String {
     let mut end = error.len().min(MAX_WRITER_ERROR_BYTES);
@@ -234,12 +234,19 @@ pub(crate) fn error_text(error: &str) -> String {
     error[..end].to_owned()
 }
 impl Reporter {
+    pub(crate) fn track_lease(&mut self, lease: Arc<crate::shutdown::TrackLease>) {
+        self.1 = Some(lease);
+    }
     pub(crate) fn written(&self, index: usize, samples: u64) {
         if let Some(track) = self.0.state.lock().unwrap().tracks.get_mut(index) {
             track.samples_written = track.samples_written.saturating_add(samples);
         }
     }
     pub(crate) fn finalized(&self, index: usize, result: Result<(), String>) -> Option<String> {
+        // WavWriter::finalize consumed/dropped the file before this report.
+        if let Some(lease) = &self.1 {
+            lease.release(index);
+        }
         let mut state = self.0.state.lock().unwrap();
         if let Some(track) = state.tracks.get_mut(index) {
             let accepted = self.0.signals.accepted[index].load(Ordering::Acquire);
@@ -263,6 +270,11 @@ impl Reporter {
         self.0.state.lock().unwrap().directory = Some(directory);
     }
     pub(crate) fn track(&self, index: usize, phase: TrackPhase) {
+        if matches!(phase, TrackPhase::NotOpened(_)) {
+            if let Some(lease) = &self.1 {
+                lease.release(index);
+            }
+        }
         if let Some(track) = self.0.state.lock().unwrap().tracks.get_mut(index) {
             track.phase = phase;
         }
@@ -286,6 +298,9 @@ impl Reporter {
                 } else {
                     NotOpened::InitializationFailed
                 });
+                if let Some(lease) = &self.1 {
+                    lease.release(track.id.index());
+                }
             } else if matches!(track.phase, TrackPhase::Open | TrackPhase::Closing) {
                 track.phase = TrackPhase::Unconfirmed;
             }

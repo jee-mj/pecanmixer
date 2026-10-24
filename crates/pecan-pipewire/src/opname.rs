@@ -158,8 +158,9 @@ where
         ));
     }
     let lease = completion.reserve_writer(tracks.len())?;
-    let (receipt, reporter) =
+    let (receipt, mut reporter) =
         crate::writer_status::status(&tracks, completion.tracked_stop_signal())?;
+    reporter.track_lease(lease.tracks());
     let (sender, receiver) = crate::writer_queue::channel(&receipt);
     let root = root.to_owned();
     let producer = reporter.clone();
@@ -918,18 +919,13 @@ unsafe extern "C" fn bus_process(data: *mut c_void, positie: *mut spa::sys::spa_
     let op = opnemer.try_borrow().ok();
     let takes = op.as_deref().filter(|t| !t.is_empty());
     let native = native.try_borrow().ok();
-    let native = native
-        .as_deref()
-        .and_then(Option::as_ref)
-        .filter(|capture| capture.0.live());
-    if let Some(capture) = native {
+    let native = native.as_deref().filter(|captures| !captures.is_empty());
+    for capture in native.into_iter().flatten().filter(|c| c.0.live()) {
         // SAFETY: the non-null position was inspected above for n > 0.
         let rate = unsafe { (*positie).clock.rate };
-        if !capture.accepts(n, rate.num, rate.denom) {
-            return;
-        }
+        capture.accepts(n, rate.num, rate.denom);
     }
-    let collecting = takes.is_some() || native.is_some();
+    let collecting = takes.is_some() || native.is_some_and(|c| c.iter().any(|c| c.0.live()));
     // Elk kanaal: gain erop, piek bijhouden, en bewaren als er opgenomen wordt.
     let mut blok: Vec<Vec<f32>> = Vec::new();
     for (i, &poort) in kanalen.iter().enumerate() {
@@ -969,7 +965,7 @@ unsafe extern "C" fn bus_process(data: *mut c_void, positie: *mut spa::sys::spa_
             }
         }
     }
-    if let Some(capture) = native {
+    for capture in native.into_iter().flatten() {
         capture.ingest(&blok, n);
     }
 }

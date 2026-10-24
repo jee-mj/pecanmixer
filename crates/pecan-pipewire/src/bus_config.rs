@@ -229,6 +229,10 @@ impl Drop for Prepared {
 pub(crate) struct Registry {
     pub snapshot: ConfigSnapshot,
     pub exhausted: bool,
+    /// Changes for actual configuration/readback transitions, but not for the
+    /// aggregate recording flag. Kept internal; public CAS revisions still
+    /// advance for both. Pending starts must survive recording-only changes.
+    pub identity: Arc<()>,
 }
 impl Default for Registry {
     fn default() -> Self {
@@ -246,11 +250,13 @@ impl Default for Registry {
                 ..Default::default()
             },
             exhausted: owner == 0,
+            identity: Arc::new(()),
         }
     }
 }
 impl Registry {
     pub fn reset(&mut self, epoch: u64) {
+        self.identity = Arc::new(());
         let owner = self.snapshot.revision.owner;
         self.snapshot = ConfigSnapshot {
             revision: ConfigRevision {
@@ -263,20 +269,29 @@ impl Registry {
         self.exhausted = owner == 0;
     }
     pub fn bump(&mut self) {
+        self.identity = Arc::new(());
+        self.bump_recording();
+    }
+    fn bump_recording(&mut self) {
         match self.snapshot.revision.revision.checked_add(1) {
             Some(revision) => self.snapshot.revision.revision = revision,
             None => self.exhausted = true,
         }
     }
     pub fn refresh(&mut self, local: Option<BusReadback>, recording: bool, legacy: bool) {
-        if legacy || self.snapshot.local != local || self.snapshot.recording != recording {
-            if legacy || self.snapshot.local != local {
+        let configuration_changed = legacy || self.snapshot.local != local;
+        if configuration_changed || self.snapshot.recording != recording {
+            if configuration_changed {
                 self.snapshot.configuration = None;
                 self.snapshot.transport = None;
             }
             self.snapshot.local = local;
             self.snapshot.recording = recording;
-            self.bump();
+            if configuration_changed {
+                self.bump();
+            } else {
+                self.bump_recording();
+            }
         }
     }
 }

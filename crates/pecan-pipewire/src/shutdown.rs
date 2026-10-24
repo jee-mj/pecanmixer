@@ -13,7 +13,7 @@
 //! exits the application or treats timeout as successful finalization.
 
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     mpsc, Arc, Mutex,
 };
 use std::thread::JoinHandle;
@@ -76,14 +76,47 @@ enum JoinTask {
 
 pub(crate) struct WriterLease {
     completion: Shutdown,
-    tracks: usize,
+    tracks: Arc<TrackLease>,
     registered: bool,
+}
+/// Open/reserved file capacity is independent of retained immutable track
+/// metadata and of the writer's eventual join. Only writer-side evidence releases
+/// individual slots; an unconfirmed exit retains them until the actual join.
+pub(crate) struct TrackLease {
+    completion: Shutdown,
+    count: usize,
+    released: AtomicU64,
+}
+impl TrackLease {
+    pub(crate) fn release(&self, index: usize) {
+        if index < self.count {
+            let bit = 1_u64 << index;
+            if self.released.fetch_or(bit, Ordering::AcqRel) & bit == 0 {
+                self.completion.0.lock().unwrap().tracked_tracks -= 1;
+            }
+        }
+    }
+    fn release_all(&self) {
+        let mask = if self.count == 64 {
+            u64::MAX
+        } else {
+            (1_u64 << self.count) - 1
+        };
+        let previous = self.released.fetch_or(mask, Ordering::AcqRel);
+        self.completion.0.lock().unwrap().tracked_tracks -=
+            (mask & !previous).count_ones() as usize;
+    }
+}
+impl WriterLease {
+    pub(crate) fn tracks(&self) -> Arc<TrackLease> {
+        self.tracks.clone()
+    }
 }
 impl Drop for WriterLease {
     fn drop(&mut self) {
+        self.tracks.release_all();
         let mut state = self.completion.0.lock().unwrap();
         state.tracked_writers -= 1;
-        state.tracked_tracks -= self.tracks;
         if !self.registered {
             state.pending_writers -= 1;
         }
@@ -122,7 +155,11 @@ impl Shutdown {
         state.pending_writers += 1;
         Ok(WriterLease {
             completion: self.clone(),
-            tracks,
+            tracks: Arc::new(TrackLease {
+                completion: self.clone(),
+                count: tracks,
+                released: AtomicU64::new(0),
+            }),
             registered: false,
         })
     }
