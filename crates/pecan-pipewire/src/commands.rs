@@ -33,6 +33,7 @@ struct State {
     origins: VecDeque<native::Origin>,
     native: VecDeque<native::Work>,
     next_native_id: u64,
+    history_authority: Arc<()>,
 }
 
 struct QueuedCommand {
@@ -58,6 +59,7 @@ impl Default for Commands {
             origins: VecDeque::new(),
             native: VecDeque::new(),
             next_native_id: 0,
+            history_authority: Arc::new(()),
         }))
     }
 }
@@ -294,3 +296,7 @@ fn referenced_objects(command: &Opdracht, graph: &Momentopname) -> BTreeSet<u32>
 #[cfg(test)]
 #[path = "native_command_tests.rs"]
 mod native_command_tests;
+
+#[cfg(test)]
+#[path = "history_identity_tests.rs"]
+mod history_identity_tests;

@@ -13,4 +13,5 @@ pub mod domain;
 pub mod settings;
 
 pub mod history_backend;
+pub mod history_identity;
 pub mod native_command;

@@ -8,6 +8,7 @@ use super::{
 use crate::{
     backend::{Stamp, Stamped},
     graph::{Momentopname, Opdracht, Soort},
+    history_identity::{Guard, HistoryGraph},
 };
 use std::sync::Arc;
 
@@ -52,6 +53,8 @@ pub enum DomainError {
     InvalidAcknowledgement,
     NonFiniteVolume,
     InvalidBusConfig,
+    /// Replay needs registry generations, not merely serialized numeric IDs.
+    IdentityUnavailable,
     Backend(String),
 }
 
@@ -263,6 +266,7 @@ struct Step {
     label: String,
     forward: Action,
     inverse: Action,
+    identity: Option<Guard>,
 }
 #[derive(Clone, Copy, Debug)]
 enum Direction {
@@ -287,7 +291,11 @@ pub struct CommandPlan {
     pub commands: Vec<Opdracht>,
 }
 pub enum Input {
+    /// Compatibility observation. It cannot authorize Undo/Redo: visible DTO
+    /// properties cannot distinguish identical, coalesced registry replacements.
     Graph(Stamped<Arc<Momentopname>>),
+    /// Production history must use the backend's exact generation witness.
+    NativeGraph(HistoryGraph),
     Execute {
         label: String,
         action: Action,
@@ -310,6 +318,7 @@ pub enum Input {
 #[derive(Default)]
 pub struct Controller {
     graph: Option<Stamped<Arc<Momentopname>>>,
+    identity: Option<HistoryGraph>,
     pub buses: BusConfig,
     undo: Vec<Step>,
     redo: Vec<Step>,
@@ -334,7 +343,12 @@ impl Controller {
     }
     pub fn reduce(&mut self, input: Input) -> Result<Option<CommandPlan>, DomainError> {
         match input {
-            Input::Graph(graph) => {
+            input @ (Input::Graph(_) | Input::NativeGraph(_)) => {
+                let (graph, identity) = match input {
+                    Input::Graph(graph) => (graph, None),
+                    Input::NativeGraph(frame) => (frame.graph().clone(), Some(frame)),
+                    _ => unreachable!(),
+                };
                 if self
                     .graph
                     .as_ref()
@@ -343,6 +357,11 @@ impl Controller {
                     return Ok(None);
                 }
                 if !graph.value.verbonden
+                    || match (&self.identity, &identity) {
+                        (Some(a), Some(b)) => !a.same_owner(b),
+                        (None, None) => false,
+                        _ => true,
+                    }
                     || self
                         .graph
                         .as_ref()
@@ -353,6 +372,19 @@ impl Controller {
                     self.pending = None;
                 }
                 self.graph = Some(graph);
+                self.identity = identity;
+                if let Some(frame) = &self.identity {
+                    let valid = |step: &Step| {
+                        step.identity.as_ref().is_some_and(|guard| {
+                            guard.valid(frame, [&step.forward, &step.inverse], &self.buses)
+                        })
+                    };
+                    self.undo.retain(valid);
+                    self.redo.retain(valid);
+                    if self.pending.as_ref().is_some_and(|p| !valid(&p.step)) {
+                        self.pending = None;
+                    }
+                }
                 self.complete_if_observed();
                 Ok(None)
             }
@@ -406,7 +438,7 @@ impl Controller {
                     {
                         return Ok(None);
                     }
-                    self.record(Step {
+                    let mut step = Step {
                         label: "Volume".into(),
                         forward: Action::Volume {
                             node,
@@ -416,10 +448,13 @@ impl Controller {
                             node,
                             values: before,
                         },
-                    });
+                        identity: None,
+                    };
+                    step.identity = self.capture(&step)?;
+                    self.record(step);
                     return Ok(None);
                 }
-                let (step, direction) = match intent {
+                let (mut step, direction) = match intent {
                     Input::Execute { label, action } => {
                         let inverse = inverse(&action, &graph.value, &self.buses)?;
                         (
@@ -427,6 +462,7 @@ impl Controller {
                                 label,
                                 forward: action,
                                 inverse,
+                                identity: None,
                             },
                             Direction::Record,
                         )
@@ -445,6 +481,15 @@ impl Controller {
                     }
                     _ => unreachable!("graph/results/record-volume handled above"),
                 };
+                if matches!(direction, Direction::Record) {
+                    step.identity = self.capture(&step)?;
+                } else if !self.identity.as_ref().is_some_and(|frame| {
+                    step.identity.as_ref().is_some_and(|guard| {
+                        guard.valid(frame, [&step.forward, &step.inverse], &self.buses)
+                    })
+                }) {
+                    return Err(DomainError::IdentityUnavailable);
+                }
                 let action = if matches!(direction, Direction::Undo) {
                     &step.inverse
                 } else {
@@ -474,6 +519,15 @@ impl Controller {
                 }))
             }
         }
+    }
+    fn capture(&self, step: &Step) -> Result<Option<Guard>, DomainError> {
+        self.identity
+            .as_ref()
+            .map(|frame| {
+                Guard::capture(frame, [&step.forward, &step.inverse], &self.buses)
+                    .ok_or(DomainError::IdentityUnavailable)
+            })
+            .transpose()
     }
     fn record(&mut self, step: Step) {
         self.undo.push(step);

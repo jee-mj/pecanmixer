@@ -93,6 +93,36 @@ impl Work {
 }
 
 impl Commands {
+    /// Copy only node/port generations from the same bounded publication cache
+    /// used by native admission. No live state may replace the caller's origin.
+    pub(crate) fn history_graph(
+        &self,
+        graph: &Stamped<Arc<Momentopname>>,
+    ) -> Result<pecan_core::history_identity::HistoryGraph, AdmissionError> {
+        let state = self.0.lock().unwrap();
+        let origin = state
+            .origins
+            .iter()
+            .find(|origin| {
+                origin.graph.stamp == graph.stamp && Arc::ptr_eq(&origin.graph.value, &graph.value)
+            })
+            .ok_or(AdmissionError::OriginUnavailable)?;
+        let generations = origin
+            .graph
+            .value
+            .knopen
+            .iter()
+            .map(|n| n.id)
+            .chain(origin.graph.value.poorten.iter().map(|p| p.id))
+            .filter_map(|id| origin.objects.get(&id).map(|generation| (id, *generation)))
+            .collect();
+        Ok(pecan_core::history_identity::HistoryGraph::from_registry(
+            origin.graph.clone(),
+            state.history_authority.clone(),
+            generations,
+        ))
+    }
+
     pub(crate) fn enqueue_native(
         &self,
         intent: NativeIntent,
