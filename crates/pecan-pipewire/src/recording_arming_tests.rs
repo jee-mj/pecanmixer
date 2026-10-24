@@ -790,3 +790,256 @@ fn addition_ingress_failure_is_partial_and_never_advances_to_later_additions_or_
     assert!(!old.try_report().unwrap().stop_requested);
     stop(&f);
 }
+
+// A real synthetic WAV writer fails only when the final local accessor releases
+// it. The accessor never calls Commands, and the writer/reaper run independently.
+struct LateWriteFault {
+    file: std::fs::File,
+    fail: Arc<std::sync::atomic::AtomicBool>,
+}
+impl std::io::Write for LateWriteFault {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if self.fail.load(Ordering::Acquire) {
+            return Err(std::io::Error::other("synthetic late WAV write failure"));
+        }
+        std::io::Write::write(&mut self.file, bytes)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        std::io::Write::flush(&mut self.file)
+    }
+}
+impl std::io::Seek for LateWriteFault {
+    fn seek(&mut self, from: std::io::SeekFrom) -> std::io::Result<u64> {
+        std::io::Seek::seek(&mut self.file, from)
+    }
+}
+#[derive(Clone, Copy, PartialEq)]
+enum CommitFaultPoint {
+    BeforeOptions,
+    InOptions,
+    FinalReadback,
+}
+struct CommitFaultTarget<'a> {
+    inner: &'a mut Target,
+    point: CommitFaultPoint,
+    applied: std::cell::Cell<bool>,
+    hook: RefCell<Option<Box<dyn FnOnce()>>>,
+    option_calls: std::cell::Cell<usize>,
+    reject_repair: bool,
+    during_repair: Option<Box<dyn FnOnce()>>,
+}
+impl CommitFaultTarget<'_> {
+    fn fire(&self) {
+        if let Some(hook) = self.hook.borrow_mut().take() {
+            hook();
+        }
+    }
+}
+impl ConfigTarget for CommitFaultTarget<'_> {
+    fn readback(&self) -> Option<bus_config::BusReadback> {
+        if self.point == CommitFaultPoint::BeforeOptions
+            || (self.point == CommitFaultPoint::FinalReadback && self.applied.get())
+        {
+            self.fire();
+        }
+        self.inner.readback()
+    }
+    fn recording(&self) -> bool {
+        false
+    }
+    fn routed(&self) -> bool {
+        false
+    }
+    fn resize(&mut self, _: usize) -> bus_config::ChannelResizeResult {
+        panic!("arming cannot resize")
+    }
+    fn gains(&mut self, _: &[f32]) {
+        panic!("arming cannot change gain")
+    }
+    fn options(&mut self, options: pecan_core::graph::Opties) {
+        self.inner.options(options);
+        self.option_calls.set(self.option_calls.get() + 1);
+        self.applied.set(true);
+        if self.point == CommitFaultPoint::InOptions {
+            self.fire();
+        }
+        if self.option_calls.get() == 2 {
+            if let Some(hook) = self.during_repair.take() {
+                hook();
+            }
+        }
+    }
+    fn options_match(&self, options: &pecan_core::graph::Opties) -> bool {
+        !(self.reject_repair && self.option_calls.get() >= 2) && self.inner.options_match(options)
+    }
+}
+
+fn late_writer_failure_at_commit(point: CommitFaultPoint, another_success: bool) {
+    late_writer_failure_with_repair_fault(point, another_success, false, false);
+}
+fn late_writer_failure_with_repair_fault(
+    point: CommitFaultPoint,
+    another_success: bool,
+    reject_repair: bool,
+    lose_success: bool,
+) {
+    let mut f = fixture(&["rec-1"]);
+    let old = f.start();
+    samples(&f, &[vec![0.1], vec![0.2], vec![0.3], vec![0.4]]);
+    let desired: &[&str] = if another_success {
+        &["rec-2", "rec-3"]
+    } else {
+        &["rec-2"]
+    };
+    let request = arm(&mut f, desired);
+    let failing = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let fault = failing.clone();
+    tick_with(&mut f, |root, tracks, rate, owner| {
+        opname::tracked_writer_with(root, tracks, rate, owner, move |path, spec| {
+            let file = std::fs::File::create(path)?;
+            hound::WavWriter::new(
+                LateWriteFault {
+                    file,
+                    fail: fault.clone(),
+                },
+                spec,
+            )
+            .map_err(std::io::Error::other)
+        })
+    });
+    let addition = request.try_report().unwrap().additions[0].receipt.clone();
+    until(&addition, |r| {
+        f.pump();
+        r.started_once
+    });
+    let successful = if another_success {
+        tick(&mut f);
+        let r = request.try_report().unwrap().additions[1].receipt.clone();
+        until(&r, |r| {
+            f.pump();
+            r.started_once
+        });
+        Some(r)
+    } else {
+        None
+    };
+    assert!(addition.0.live());
+    assert!(!old.try_report().unwrap().stop_requested);
+    let track = addition.try_report().unwrap().tracks[0].id;
+    let observed = addition.clone();
+    let mut target = CommitFaultTarget {
+        inner: &mut f.target,
+        point,
+        applied: std::cell::Cell::new(false),
+        option_calls: std::cell::Cell::new(0),
+        reject_repair,
+        during_repair: if lose_success {
+            let receipt = successful.as_ref().unwrap().clone();
+            Some(Box::new(move || receipt.0.ingress_fault(5)))
+        } else {
+            None
+        },
+        hook: RefCell::new(Some(Box::new(move || {
+            let writer = &observed.0.installed.get().unwrap().writer;
+            failing.store(true, Ordering::Release);
+            writer.sender.try_audio(track, vec![0.5]).unwrap();
+            // Test-only deterministic fault gate, bounded independently of Commands.
+            let end = Instant::now() + Duration::from_secs(2);
+            while !writer.receipt.signals.closed.load(Ordering::Acquire) {
+                assert!(Instant::now() < end, "WAV failure gate timed out");
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            assert!(!observed.0.live());
+            assert!(observed.try_report().unwrap().failure.is_some());
+        }))),
+    };
+    f.commands
+        .drive_arming(&mut target, &f.owner.completion, false, |_, _, _, _| {
+            panic!("no more additions")
+        });
+    let result = request.try_report().unwrap();
+    assert_eq!(
+        result.progress,
+        ArmingProgress::Completed(ArmingOutcome::PartiallyApplied)
+    );
+    if reject_repair {
+        assert_eq!(
+            result.failure,
+            Some(RecordingError::ConfigApply(
+                bus_config::ConfigError::ReadbackMismatch
+            ))
+        );
+    } else {
+        assert!(matches!(result.failure, Some(RecordingError::Writer(_))));
+    }
+    assert!(result.removed.is_empty());
+    assert_eq!(
+        result.withheld,
+        vec![old.try_report().unwrap().tracks[0].id]
+    );
+    assert!(!old.try_report().unwrap().stop_requested);
+    assert_eq!(old.try_report().unwrap().track_stops, 0);
+    if reject_repair || lose_success {
+        assert!(result.configuration.configuration.is_none());
+        assert!(result.configuration.transport.is_none());
+    } else {
+        assert_eq!(
+            armed(&result),
+            if another_success {
+                vec!["rec-1", "rec-3"]
+            } else {
+                vec!["rec-1"]
+            }
+        );
+    }
+    if let Some(successful) = &successful {
+        assert_eq!(successful.0.live(), !lose_success);
+    }
+    samples(&f, &[vec![-0.1], vec![-0.2], vec![-0.3], vec![-0.4]]);
+    stop(&f);
+    let completed = old.wait_timeout(Duration::from_secs(2)).unwrap();
+    assert!(completed.is_success());
+    assert_wav(
+        &completed
+            .writer
+            .unwrap()
+            .directory
+            .unwrap()
+            .join("Rec 1.wav"),
+        1,
+        48000,
+        &[0.1, -0.1],
+    );
+    assert!(addition
+        .wait_timeout(Duration::from_secs(2))
+        .unwrap()
+        .failure
+        .is_some());
+}
+
+#[test]
+fn writer_failure_in_final_precheck_withholds_removals_and_reconciles_old_armed_flags() {
+    late_writer_failure_at_commit(CommitFaultPoint::BeforeOptions, false);
+}
+#[test]
+fn writer_failure_in_options_withholds_removals_and_reconciles_old_armed_flags() {
+    late_writer_failure_at_commit(CommitFaultPoint::InOptions, false);
+}
+#[test]
+fn writer_failure_in_final_readback_withholds_removals_and_reconciles_old_armed_flags() {
+    late_writer_failure_at_commit(CommitFaultPoint::FinalReadback, false);
+}
+#[test]
+fn late_failure_preserves_unchanged_and_other_successfully_added_tracks() {
+    late_writer_failure_at_commit(CommitFaultPoint::InOptions, true);
+}
+
+#[test]
+fn failed_reconciliation_invalidates_logical_metadata_and_preserves_old_recording() {
+    late_writer_failure_with_repair_fault(CommitFaultPoint::InOptions, false, true, false);
+}
+
+#[test]
+fn another_failure_during_reconciliation_cannot_publish_stale_success_flags() {
+    late_writer_failure_with_repair_fault(CommitFaultPoint::InOptions, true, false, true);
+}

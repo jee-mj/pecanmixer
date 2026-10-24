@@ -460,7 +460,7 @@ impl State {
             .iter()
             .any(|a| a.new_take && a.receipt.0.installed.get().is_some());
         let mut error = error;
-        if commit_started && !successful.is_empty() {
+        if commit_started {
             let armed = work
                 .before
                 .buses
@@ -468,7 +468,7 @@ impl State {
                 .expect("validated config")
                 .into_iter()
                 .map(|d| d.key)
-                .chain(successful)
+                .chain(successful.iter().cloned())
                 .collect();
             match self.apply_arming_config(Self::arming_config(&work, &armed), target) {
                 Ok(changed) => partial |= changed,
@@ -476,6 +476,21 @@ impl State {
                     partial = true;
                     error = e;
                 }
+            }
+            // A second failure during reconciliation is not a stable logical
+            // readback. Leave actual captures untouched and require the owner
+            // to reconcile, rather than publish stale successful-addition flags.
+            let still_live: Vec<_> = work
+                .attempted
+                .iter()
+                .filter(|a| a.is_live())
+                .map(|a| a.bus.clone())
+                .collect();
+            if successful != still_live {
+                self.config.snapshot.configuration = None;
+                self.config.snapshot.transport = None;
+                self.config.bump();
+                partial = true;
             }
         }
         self.finish_arming(
@@ -500,6 +515,19 @@ impl State {
                 Vec::new(),
             ),
             Ok(changed) => {
+                // Options/readback accessors run after the earlier Adding
+                // check. A writer can fail on its own thread during them.
+                // Inspect the actual attachment immediately before committing
+                // any old-track stop; readiness/earlier liveness is insufficient.
+                if let Some(addition) = work.attempted.iter().find(|a| !a.is_live()) {
+                    let error = addition
+                        .receipt
+                        .try_report()
+                        .and_then(|r| r.failure)
+                        .unwrap_or(RecordingError::CaptureUnavailable);
+                    self.finish_arming_failure(work, error, true, target);
+                    return;
+                }
                 let removed = work
                     .removals
                     .iter()
