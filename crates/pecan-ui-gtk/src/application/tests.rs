@@ -512,7 +512,8 @@ fn integrated_widgets_mute_patch_and_undo_use_one_coordinator() {
     let frame = d.publish(g, gens);
     observed(&req, frame.stamp, false);
     view.poll();
-    let undo = controls
+    let current_controls = descendants(view.widget());
+    let undo = current_controls
         .iter()
         .filter_map(|w| w.clone().downcast::<gtk::Button>().ok())
         .find(|b| b.label().is_some_and(|s| s.starts_with("Undo ")))
@@ -597,7 +598,14 @@ fn undo_button_retains_presented_origin_until_workspace_refresh() {
     assert!(d.take_requests().is_empty());
     assert_eq!(s.history_lengths(), (1, 0));
     assert!(!s.busy());
-    undo.emit_clicked(); // previous callback refreshed presentation after refusing stale input
+    undo.emit_clicked(); // Retired callbacks cannot adopt the new presentation.
+    assert!(d.take_requests().is_empty());
+    let undo = descendants(view.widget())
+        .into_iter()
+        .filter_map(|w| w.downcast::<gtk::Button>().ok())
+        .find(|b| b.label().is_some_and(|s| s.starts_with("Undo ")))
+        .unwrap();
+    undo.emit_clicked();
     assert_eq!(d.take_requests().len(), 1);
     assert!(s.busy());
 }
@@ -663,4 +671,60 @@ fn idle_polling_preserves_the_patchbay_draft_instructions() {
         view.poll();
     }
     assert_eq!(hint.text(), before);
+}
+
+#[gtk::test]
+fn history_change_without_new_graph_cannot_retarget_an_old_button() {
+    let (_, s, d, origin, gens) = setup();
+    let first = commit_mute(&s, &d, &origin, &gens, true);
+    s.execute(&first, "Connect", Action::Connect([201, 301]))
+        .unwrap();
+    let request = d.take_requests().pop().unwrap();
+    let mut linked = (*first.value).clone();
+    linked.kabels.push(Kabel {
+        id: 900,
+        client: None,
+        uit_knoop: 20,
+        uit_poort: 201,
+        in_knoop: 30,
+        in_poort: 301,
+    });
+    let linked = d.publish(linked, gens.clone());
+    observed(&request, linked.stamp, false);
+    s.poll();
+    let mut external = (*linked.value).clone();
+    external.kabels.retain(|l| l.id != 900);
+    let external = d.publish(external, gens);
+    s.poll();
+    let view = NativeWorkspace::new(s.clone());
+    view.poll();
+    let old = descendants(view.widget())
+        .into_iter()
+        .filter_map(|w| w.downcast::<gtk::Button>().ok())
+        .find(|b| b.label().as_deref() == Some("Undo Connect"))
+        .unwrap();
+    assert!(
+        s.undo(&external).unwrap().is_none(),
+        "already absent link needs no command"
+    );
+    assert_eq!(s.history_lengths(), (1, 1));
+    assert!(Arc::ptr_eq(&s.graph().unwrap().value, &external.value));
+    old.emit_clicked();
+    assert!(
+        d.take_requests().is_empty(),
+        "same graph cannot authorize another history entry"
+    );
+    let fresh = descendants(view.widget())
+        .into_iter()
+        .filter_map(|w| w.downcast::<gtk::Button>().ok())
+        .find(|b| b.label().as_deref() == Some("Undo Mute"))
+        .unwrap();
+    fresh.emit_clicked();
+    assert_eq!(
+        d.take_requests()[0].intent.commands,
+        vec![Opdracht::ZetMute {
+            knoop: 20,
+            mute: false
+        }]
+    );
 }

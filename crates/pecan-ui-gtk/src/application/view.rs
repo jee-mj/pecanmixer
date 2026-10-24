@@ -1,11 +1,20 @@
-use super::{Graph, Session, SessionAdapter, Status};
+use super::{history_input::HistoryInput, Graph, Session, SessionAdapter, Status};
 use crate::{
     controls::{Controller, MixerControls},
     PatchbayOverview,
 };
 use gtk::prelude::*;
-use std::{cell::RefCell, rc::Rc};
-
+use std::{
+    cell::{Cell, RefCell},
+    rc::{Rc, Weak},
+};
+struct HistoryButtons {
+    context: Rc<()>,
+    input_epoch: Rc<()>,
+    undo: gtk::Button,
+    redo: gtk::Button,
+    live: Rc<Cell<bool>>,
+}
 /// Explicit workspace integration for a future owning shell. No worker, timer,
 /// file access, recording, tray or automatic application startup is created.
 /// Keep one workspace for a window; repeated GApplication activation should
@@ -15,12 +24,13 @@ pub struct NativeWorkspace {
     mixer: MixerControls<SessionAdapter>,
     patchbay: RefCell<PatchbayOverview>,
     session: Session,
-    undo: gtk::Button,
-    redo: gtk::Button,
+    history: gtk::Box,
+    buttons: RefCell<Option<HistoryButtons>>,
+    history_input: Rc<HistoryInput>,
     status: gtk::Label,
-    presented: RefCell<Option<Graph>>,
     error: RefCell<Option<String>>,
     patch_gate: RefCell<Option<(bool, Option<String>)>>,
+    weak: Weak<Self>,
 }
 impl NativeWorkspace {
     pub fn new(session: Session) -> Rc<Self> {
@@ -28,16 +38,14 @@ impl NativeWorkspace {
         let patchbay = PatchbayOverview::new();
         let shared = session.clone();
         patchbay.bind_history_actions(move |origin, input| shared.patch(origin, input));
-        let undo = gtk::Button::with_label("Undo");
-        let redo = gtk::Button::with_label("Redo");
         let status = gtk::Label::builder()
             .xalign(0.0)
             .wrap(true)
             .accessible_role(gtk::AccessibleRole::Status)
             .build();
+        let history = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         let tools = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        tools.append(&undo);
-        tools.append(&redo);
+        tools.append(&history);
         tools.append(&status);
         let pages = gtk::Stack::new();
         pages.add_titled(mixer.widget(), Some("mixer"), "Mixer");
@@ -49,34 +57,27 @@ impl NativeWorkspace {
         root.append(&tools);
         root.append(&switcher);
         root.append(&pages);
-        let view = Rc::new(Self {
+        let history_input = HistoryInput::new();
+        history_input.observe(&root);
+        let view = Rc::new_cyclic(|weak| Self {
             root,
             mixer,
             patchbay: RefCell::new(patchbay),
             session,
-            undo,
-            redo,
+            history,
+            buttons: RefCell::new(None),
+            history_input,
             status,
-            presented: RefCell::new(None),
             error: RefCell::new(None),
             patch_gate: RefCell::new(None),
+            weak: weak.clone(),
         });
-        for (button, undo) in [(&view.undo, true), (&view.redo, false)] {
-            let weak = Rc::downgrade(&view);
-            button.connect_clicked(move |_| {
-                let Some(view) = weak.upgrade() else { return };
-                let origin = view.presented.borrow().clone();
-                if let Some(origin) = origin {
-                    let result = if undo {
-                        view.session.undo(&origin)
-                    } else {
-                        view.session.redo(&origin)
-                    };
-                    *view.error.borrow_mut() = result.err();
-                }
+        let weak = Rc::downgrade(&view);
+        view.history_input.notify(move || {
+            if let Some(view) = weak.upgrade() {
                 view.refresh();
-            });
-        }
+            }
+        });
         view.refresh();
         view
     }
@@ -90,9 +91,116 @@ impl NativeWorkspace {
         self.session.poll();
         self.refresh();
     }
+    fn history_button(
+        &self,
+        undo: bool,
+        label: Option<&str>,
+        origin: Option<Graph>,
+        context: Rc<()>,
+        live: Rc<Cell<bool>>,
+    ) -> gtk::Button {
+        let verb = if undo { "Undo" } else { "Redo" };
+        let button =
+            gtk::Button::with_label(&label.map_or_else(|| verb.into(), |s| format!("{verb} {s}")));
+        let input_live = Rc::new(Cell::new(true));
+        self.history_input.capture(&button, input_live.clone());
+        let weak = self.weak.clone();
+        button.connect_clicked(move |button| {
+            let Some(view) = weak.upgrade() else { return };
+            // Immutable per-presentation origin and history authority. Neither
+            // delayed GTK activation nor a retired callback may adopt a new top.
+            if !live.get()
+                || !input_live.get()
+                || !button.is_sensitive()
+                || !Rc::ptr_eq(&context, &view.session.history_context())
+            {
+                *view.error.borrow_mut() =
+                    Some("History changed; start a fresh activation.".into());
+            } else if let Some(origin) = &origin {
+                let result = if undo {
+                    view.session.undo(origin)
+                } else {
+                    view.session.redo(origin)
+                };
+                *view.error.borrow_mut() = result.err();
+            }
+            view.refresh();
+        });
+        button
+    }
+    fn refresh_history(&self) {
+        let context = self.session.history_context();
+        let input_epoch = self.history_input.epoch();
+        let replace = self.buttons.borrow().as_ref().is_none_or(|b| {
+            !b.live.get()
+                || !Rc::ptr_eq(&b.context, &context)
+                || !Rc::ptr_eq(&b.input_epoch, &input_epoch)
+        });
+        let (undo_label, redo_label) = self.session.history_labels();
+        if replace {
+            self.history_input.retire();
+            let old = self.buttons.borrow_mut().take();
+            let focus = old.as_ref().and_then(|b| {
+                if b.undo.has_focus() {
+                    Some(true)
+                } else if b.redo.has_focus() {
+                    Some(false)
+                } else {
+                    None
+                }
+            });
+            if let Some(old) = old {
+                old.live.set(false);
+                self.history.remove(&old.undo);
+                self.history.remove(&old.redo);
+            }
+            let live = Rc::new(Cell::new(true));
+            let origin = self.session.graph();
+            let undo = self.history_button(
+                true,
+                undo_label.as_deref(),
+                origin.clone(),
+                context.clone(),
+                live.clone(),
+            );
+            let redo = self.history_button(
+                false,
+                redo_label.as_deref(),
+                origin,
+                context.clone(),
+                live.clone(),
+            );
+            let enabled = self.session.enabled() && !self.history_input.blocked();
+            undo.set_sensitive(enabled && undo_label.is_some());
+            redo.set_sensitive(enabled && redo_label.is_some());
+            self.history.append(&undo);
+            self.history.append(&redo);
+            if !self.history_input.held() {
+                match focus {
+                    Some(true) if undo.is_sensitive() => {
+                        undo.grab_focus();
+                    }
+                    Some(false) if redo.is_sensitive() => {
+                        redo.grab_focus();
+                    }
+                    _ => {}
+                }
+            }
+            *self.buttons.borrow_mut() = Some(HistoryButtons {
+                context,
+                input_epoch: self.history_input.epoch(),
+                undo,
+                redo,
+                live,
+            });
+        } else if let Some(buttons) = self.buttons.borrow().as_ref() {
+            let enabled = self.session.enabled() && !self.history_input.blocked();
+            buttons.undo.set_sensitive(enabled && undo_label.is_some());
+            buttons.redo.set_sensitive(enabled && redo_label.is_some());
+        }
+    }
     fn refresh(&self) {
         if let Some(graph) = self.session.graph() {
-            *self.presented.borrow_mut() = Some(graph.clone());
             self.mixer.observe(graph.clone());
             self.patchbay.borrow_mut().update_graph(graph);
         }
@@ -105,8 +213,6 @@ impl NativeWorkspace {
             Status::Failed(_) | Status::Unconfirmed(_) | Status::IdentityUnavailable
         )
         .then(|| status.message());
-        // Pending means a real submitted request. A missing witness uses widget
-        // availability plus the coordinator's exact-origin rejection boundary.
         let patchbay = self.patchbay.borrow();
         patchbay
             .widget()
@@ -116,13 +222,7 @@ impl NativeWorkspace {
             patchbay.set_actions_pending(gate.0, gate.1.as_deref());
             *self.patch_gate.borrow_mut() = Some(gate);
         }
-        let (undo, redo) = self.session.history_labels();
-        self.undo
-            .set_label(&undo.as_ref().map_or("Undo".into(), |s| format!("Undo {s}")));
-        self.redo
-            .set_label(&redo.as_ref().map_or("Redo".into(), |s| format!("Redo {s}")));
-        self.undo.set_sensitive(enabled && undo.is_some());
-        self.redo.set_sensitive(enabled && redo.is_some());
+        self.refresh_history();
         self.status
             .set_text(&self.error.borrow().as_ref().map_or_else(
                 || status.message(),

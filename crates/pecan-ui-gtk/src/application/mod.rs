@@ -6,6 +6,7 @@
 mod coordinator;
 mod drain;
 mod fixture;
+mod history_input;
 mod shell;
 mod view;
 
@@ -119,3 +120,6 @@ impl ApplicationOwner {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(all(test, feature = "x11-input-tests"))]
+mod history_xtest;

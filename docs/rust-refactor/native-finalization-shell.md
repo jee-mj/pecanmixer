@@ -125,3 +125,5 @@ policy. Native session/settings editors, complete gestures and channel-pair mute
 independent output/Rec selection, telemetry adoption, buses/recording/transport,
 autostart and migration cutover remain unfinished. No merge, release, version
 bump or JavaScript deletion is included.
+
+The [held history activation correction](./native-held-history-activation.md) addresses the subsequently reproduced Undo/Redo retargeting defect. The finalization implementation is unchanged; the complete corrected owner candidate requires independent re-review.

@@ -66,6 +66,7 @@ struct State {
     status: Status,
     notices: Vec<Notice>,
     admission_closed: bool,
+    history_context: Rc<()>,
 }
 struct Inner {
     inbox: Arc<LatestInbox>,
@@ -90,6 +91,7 @@ impl Session {
                 status: Status::Disconnected,
                 notices: vec![],
                 admission_closed: false,
+                history_context: Rc::new(()),
             }),
         }))
     }
@@ -110,8 +112,15 @@ impl Session {
     /// Irreversible for this owner. Existing receipts continue polling; stopping
     /// new submissions is not cancellation, rollback or shutdown completion.
     pub fn close_admission(&self) {
-        self.0.state.borrow_mut().admission_closed = true;
+        let mut state = self.0.state.borrow_mut();
+        state.admission_closed = true;
+        state.history_context = Rc::new(());
     }
+    /// UI-local presentation authority, not registry or backend command identity.
+    pub(super) fn history_context(&self) -> Rc<()> {
+        self.0.state.borrow().history_context.clone()
+    }
+
     pub fn admission_closed(&self) -> bool {
         self.0.state.borrow().admission_closed
     }
@@ -193,6 +202,7 @@ impl Session {
                 return Ok(None);
             }
         }
+        s.history_context = Rc::new(());
         let Some(plan) = s.history.reduce(input).map_err(|e| format!("{e:?}"))? else {
             // Pure no-command plans have no backend effects to acknowledge.
             // Nonempty commands (including backend no-ops) require fresh graph
@@ -274,6 +284,7 @@ impl Session {
             let witness = self.0.endpoint.witness(&graph).ok().filter(|w| {
                 w.graph().stamp == graph.stamp && Arc::ptr_eq(&w.graph().value, &graph.value)
             });
+            s.history_context = Rc::new(());
             s.witnessed = witness.is_some();
             let input = witness.map_or_else(|| Input::Graph(graph.clone()), Input::NativeGraph);
             let _ = s.history.reduce(input);
@@ -329,6 +340,7 @@ impl State {
                     self.invalidate("Invalid native observation stamp.");
                     return;
                 }
+                self.history_context = Rc::new(());
                 if let Some(input) = self.results.terminal(&report) {
                     let _ = self.history.reduce(input);
                 }
@@ -342,6 +354,7 @@ impl State {
                 self.status = Status::WaitingForGraph;
             }
             NativeProgress::Rejected { .. } | NativeProgress::Unconfirmed { .. } => {
+                self.history_context = Rc::new(());
                 if let Some(input) = self.results.terminal(&report) {
                     let _ = self.history.reduce(input);
                 }
@@ -356,6 +369,7 @@ impl State {
         }
     }
     fn invalidate(&mut self, reason: &str) {
+        self.history_context = Rc::new(());
         if let Some(p) = self.pending.take() {
             let _ = self.history.reduce(Input::CommandResult {
                 ticket: p.ticket,
@@ -381,6 +395,7 @@ impl State {
             return;
         }
         if self.graph.as_ref().is_some_and(|g| g.stamp >= stamp) {
+            self.history_context = Rc::new(());
             let pending = self.pending.take().unwrap();
             *pending.request.0.borrow_mut() = Delivery::Native(pending.receipt.report().progress);
             self.status = Status::Observed { no_op };

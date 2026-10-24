@@ -18,7 +18,7 @@ application is retained; the current native executable is still observational.
 | Back to auto / manual route count (`telHandwerk`, `terugNaarAutoStap`) | Pure reset/count plans | Native action, observed completion, serialized history |
 | Cable create/remove/move, selection/delete/cancel (`src/Patchbay.tsx`, `src/handelingen.ts`) | Reviewed keyboard/pointer libraries attached to coordinator candidate | Independent application review, production adoption and physical-input acceptance |
 | Patch module positioning and reconnect behavior (`Plekken`, `ModuleKaart`) | Native observation geometry only | Mutable positions, drag/selection behavior, state persistence policy |
-| Undo/redo queue and keyboard shortcuts (`src/geschiedenis.ts`, `src/handelingen.ts`, `src/App.tsx`) | Generation/selector-guarded reducer and shared receipt/history UI candidate | Independent application review and production adoption; group gestures and implement shortcuts |
+| Undo/redo queue and keyboard shortcuts (`src/geschiedenis.ts`, `src/handelingen.ts`, `src/App.tsx`) | Generation/selector-guarded reducer, shared receipts and immutable history-button context candidate | Independent application review and production adoption; group gestures and implement shortcuts |
 | Add/remove/link buses, Rec gain/mute/arming (`src/bussen.ts`, `Mixer`) | Pure bus layout/state policy | Native bus UI and deliberate command contract; dynamic arming while recording |
 | Record/stop, per-bus start/stop, elapsed time, folder action (`src/Transport.tsx`, `src/api.ts`) | Existing backend preserved; lifecycle completion integrated for legacy tray | Native recording command admission/completion, controls and folder action; recordings not supported by current native intent API |
 | MIDI clock/start-stop, MIDI tabs/route/activity (`src/MidiMixer.tsx`, `src/midi.ts`, `src/MidiMeter.tsx`) | Legacy MIDI feature flag remains disabled | Preserve disabled status; separately define/verify any enabled MIDI parity scope |
@@ -44,3 +44,5 @@ The [combined native UI source batch](./native-ui-source-batch.md) records const
 The [identity follow-up](./native-identity-batch.md) closes retained history selector/generation and backend capture-retention source gates. It does not enable native ownership/undo/capture or complete audio/desktop acceptance.
 
 The [finalization-aware shell candidate](./native-finalization-shell.md) adds one retained owner/window/clock, shared admission shutdown and real completion/settings-drain wiring on the separate candidate branch. New application logic remains unreviewed and is not installed by main startup.
+
+The [held history activation correction](./native-held-history-activation.md) prevents a held/retired Undo or Redo callback from adopting a newly exposed entry; native-input and same-graph before/after regressions cover the corrected candidate. Independent owner re-review remains a gate.
