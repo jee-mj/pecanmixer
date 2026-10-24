@@ -10,3 +10,6 @@ pub use widgets::{MixerOverview, PatchbayOverview};
 
 /// Synchronous explicit-path I/O; not wired to the preview or startup.
 pub mod settings_storage;
+
+/// Isolated native shell policy; not wired to application startup.
+pub mod lifetime;
