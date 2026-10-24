@@ -8,7 +8,7 @@ use super::{
 use crate::{
     backend::{Stamp, Stamped},
     graph::{Momentopname, Opdracht, Soort},
-    history_identity::{Guard, HistoryGraph},
+    history_identity::{Guard, HistoryGraph, RegistryBinding},
 };
 use std::sync::Arc;
 
@@ -326,6 +326,13 @@ pub struct Controller {
     next_ticket: u64,
 }
 impl Controller {
+    /// Reserve correlation from this controller's single submission sequence.
+    /// A serialized owner can use tickets for observed intermediate samples
+    /// before recording one applied gesture; reservation itself records nothing.
+    pub fn reserve_ticket(&mut self) -> u64 {
+        self.next_ticket = self.next_ticket.wrapping_add(1);
+        self.next_ticket
+    }
     pub fn labels(&self) -> (Option<&str>, Option<&str>) {
         (
             self.undo.last().map(|s| s.label.as_str()),
@@ -340,6 +347,71 @@ impl Controller {
     }
     pub fn graph(&self) -> Option<&Stamped<Arc<Momentopname>>> {
         self.graph.as_ref()
+    }
+    /// Record one already observed native gesture, retaining its original full
+    /// vector's registry dependencies across later undo/redo. This does not
+    /// dispatch or establish completion; the serialized owner supplies that proof.
+    pub fn record_volume_binding(
+        &mut self,
+        node: u32,
+        before: Vec<f32>,
+        after: Vec<f32>,
+        binding: &RegistryBinding,
+    ) -> Result<(), DomainError> {
+        self.record_volume(node, before, after, Some(binding))
+    }
+    fn record_volume(
+        &mut self,
+        node: u32,
+        before: Vec<f32>,
+        after: Vec<f32>,
+        binding: Option<&RegistryBinding>,
+    ) -> Result<(), DomainError> {
+        if self.pending.is_some() {
+            return Err(DomainError::Busy);
+        }
+        self.graph
+            .as_ref()
+            .filter(|g| g.value.verbonden)
+            .ok_or(DomainError::Disconnected)?;
+        if before.iter().chain(&after).any(|v| !v.is_finite()) {
+            return Err(DomainError::NonFiniteVolume);
+        }
+        if let Some(binding) = binding {
+            if !self.identity.as_ref().is_some_and(|f| binding.matches(f)) {
+                return Err(DomainError::IdentityUnavailable);
+            }
+        }
+        // Preserve the legacy RecordVolume comparison; native callers retain a
+        // fixed validated vector shape for the entire gesture.
+        if before
+            .iter()
+            .enumerate()
+            .all(|(i, v)| (v - after.get(i).unwrap_or(v)).abs() < 1e-6)
+        {
+            return Ok(());
+        }
+        let mut step = Step {
+            label: "Volume".into(),
+            forward: Action::Volume {
+                node,
+                values: after,
+            },
+            inverse: Action::Volume {
+                node,
+                values: before,
+            },
+            identity: None,
+        };
+        step.identity = self.capture(&step)?;
+        if let Some(binding) = binding {
+            step.identity
+                .as_mut()
+                .ok_or(DomainError::IdentityUnavailable)?
+                .extend_binding(binding, node, self.identity.as_ref().unwrap());
+        }
+        self.record(step);
+        Ok(())
     }
     pub fn reduce(&mut self, input: Input) -> Result<Option<CommandPlan>, DomainError> {
         match input {
@@ -428,30 +500,7 @@ impl Controller {
                     after,
                 } = intent
                 {
-                    if before.iter().chain(&after).any(|v| !v.is_finite()) {
-                        return Err(DomainError::NonFiniteVolume);
-                    }
-                    if before
-                        .iter()
-                        .enumerate()
-                        .all(|(i, v)| (v - after.get(i).unwrap_or(v)).abs() < 1e-6)
-                    {
-                        return Ok(None);
-                    }
-                    let mut step = Step {
-                        label: "Volume".into(),
-                        forward: Action::Volume {
-                            node,
-                            values: after,
-                        },
-                        inverse: Action::Volume {
-                            node,
-                            values: before,
-                        },
-                        identity: None,
-                    };
-                    step.identity = self.capture(&step)?;
-                    self.record(step);
+                    self.record_volume(node, before, after, None)?;
                     return Ok(None);
                 }
                 let (mut step, direction) = match intent {
@@ -496,9 +545,8 @@ impl Controller {
                     &step.forward
                 };
                 let commands = plan(action, &graph.value, &self.buses)?;
-                self.next_ticket = self.next_ticket.wrapping_add(1);
-                let ticket = self.next_ticket;
                 let source = graph.stamp;
+                let ticket = self.reserve_ticket();
                 self.pending = Some(Pending {
                     step,
                     direction,

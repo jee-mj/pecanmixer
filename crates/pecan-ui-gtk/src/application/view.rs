@@ -1,8 +1,5 @@
-use super::{history_input::HistoryInput, Graph, Session, SessionAdapter, Status};
-use crate::{
-    controls::{Controller, MixerControls},
-    PatchbayOverview,
-};
+use super::{history_input::HistoryInput, Graph, Session, Status};
+use crate::PatchbayOverview;
 use gtk::prelude::*;
 use std::{
     cell::{Cell, RefCell},
@@ -21,7 +18,7 @@ struct HistoryButtons {
 /// present that window, while reusing ApplicationOwner for its whole lifetime.
 pub struct NativeWorkspace {
     root: gtk::Box,
-    mixer: MixerControls<SessionAdapter>,
+    mixer: super::mixer::CoordinatedMixer,
     patchbay: RefCell<PatchbayOverview>,
     session: Session,
     history: gtk::Box,
@@ -34,10 +31,7 @@ pub struct NativeWorkspace {
 }
 impl NativeWorkspace {
     pub fn new(session: Session) -> Rc<Self> {
-        let mixer = MixerControls::new(Controller::new(
-            session.adapter(),
-            super::default_idle_configuration().buses,
-        ));
+        let mixer = super::mixer::CoordinatedMixer::new(session.clone());
         let patchbay = PatchbayOverview::new();
         let shared = session.clone();
         patchbay.bind_history_actions(move |origin, input| shared.patch(origin, input));
@@ -204,12 +198,10 @@ impl NativeWorkspace {
     }
     fn refresh(&self) {
         if let Some(graph) = self.session.graph() {
-            self.mixer.observe(graph.clone());
             self.patchbay.borrow_mut().update_graph(graph);
         }
-        self.mixer.reconcile_request(|c| c.poll_session());
+        self.mixer.poll();
         let enabled = self.session.enabled();
-        self.mixer.widget().set_sensitive(enabled);
         let status = self.session.status();
         let error = matches!(
             status,
@@ -219,8 +211,8 @@ impl NativeWorkspace {
         let patchbay = self.patchbay.borrow();
         patchbay
             .widget()
-            .set_sensitive(enabled || self.session.busy());
-        let gate = (self.session.busy(), error);
+            .set_sensitive(enabled || self.session.has_receipt());
+        let gate = (self.session.has_receipt(), error);
         if self.patch_gate.borrow().as_ref() != Some(&gate) {
             patchbay.set_actions_pending(gate.0, gate.1.as_deref());
             *self.patch_gate.borrow_mut() = Some(gate);

@@ -41,10 +41,57 @@ impl HistoryGraph {
     pub fn graph(&self) -> &Stamped<Arc<Momentopname>> {
         &self.graph
     }
+    /// Bind caller-selected live objects to this authenticated native witness.
+    /// The binding outlives ordinary revisions, not owner/epoch/replacement.
+    pub fn bind_objects(&self, ids: impl IntoIterator<Item = u32>) -> Option<RegistryBinding> {
+        if !self.graph.value.verbonden {
+            return None;
+        }
+        let generations = ids
+            .into_iter()
+            .map(|id| Some((id, *self.generations.get(&id)?)))
+            .collect::<Option<BTreeMap<_, _>>>()?;
+        if generations.is_empty() {
+            return None;
+        }
+        Some(RegistryBinding {
+            authority: self.authority.clone(),
+            epoch: self.graph.stamp.epoch,
+            generations,
+        })
+    }
     pub(crate) fn same_owner(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.authority, &other.authority)
     }
 }
+
+/// Opaque registry authority, not a DTO/serial/name-derived identity. Construct
+/// only from the backend-authenticated HistoryGraph supplied to the controller.
+#[derive(Clone, Debug)]
+pub struct RegistryBinding {
+    authority: Arc<()>,
+    epoch: u64,
+    generations: BTreeMap<u32, u64>,
+}
+impl RegistryBinding {
+    pub fn matches(&self, frame: &HistoryGraph) -> bool {
+        frame.graph.value.verbonden
+            && self.epoch == frame.graph.stamp.epoch
+            && Arc::ptr_eq(&self.authority, &frame.authority)
+            && self
+                .generations
+                .iter()
+                .all(|(id, generation)| frame.generations.get(id) == Some(generation))
+    }
+}
+impl PartialEq for RegistryBinding {
+    fn eq(&self, other: &Self) -> bool {
+        self.epoch == other.epoch
+            && Arc::ptr_eq(&self.authority, &other.authority)
+            && self.generations == other.generations
+    }
+}
+impl Eq for RegistryBinding {}
 
 /// A step retains only its dependencies, not a graph or a bounded origin-cache
 /// entry. Link generations deliberately do not belong here: replay resolves the
@@ -56,8 +103,26 @@ pub(crate) struct Guard {
     generations: BTreeMap<u32, u64>,
     targets: BTreeMap<String, BTreeSet<u32>>,
     routes: RouteBindings,
+    volume_mapping: Option<(u32, VolumeMapping)>,
 }
 impl Guard {
+    /// Caller validated this binding against the same authenticated frame before
+    /// capture. Retain the original vector mapping, not just its numeric node ID.
+    pub(crate) fn extend_binding(
+        &mut self,
+        binding: &RegistryBinding,
+        node: u32,
+        frame: &HistoryGraph,
+    ) {
+        self.volume_mapping = Some((node, volume_mapping(node, &frame.graph.value)));
+        self.generations.extend(
+            binding
+                .generations
+                .iter()
+                .map(|(id, generation)| (*id, *generation)),
+        );
+    }
+
     pub(crate) fn capture(
         frame: &HistoryGraph,
         actions: [&Action; 2],
@@ -78,6 +143,7 @@ impl Guard {
             generations,
             targets,
             routes: route_bindings(actions, &frame.graph.value, buses)?,
+            volume_mapping: None,
         })
     }
     pub(crate) fn valid(
@@ -86,7 +152,10 @@ impl Guard {
         actions: [&Action; 2],
         buses: &BusConfig,
     ) -> bool {
-        self.epoch == frame.graph.stamp.epoch
+        self.volume_mapping
+            .as_ref()
+            .is_none_or(|(node, mapping)| *mapping == volume_mapping(*node, &frame.graph.value))
+            && self.epoch == frame.graph.stamp.epoch
             && Arc::ptr_eq(&self.authority, &frame.authority)
             && self
                 .generations
@@ -97,6 +166,27 @@ impl Guard {
             && target_bindings(actions, &frame.graph.value, buses).as_ref() == Some(&self.targets)
             && route_bindings(actions, &frame.graph.value, buses).as_ref() == Some(&self.routes)
     }
+}
+
+// Only the applied full-vector API retains this mapping. Ordinary labels,
+// connections, mute and gain observations do not change vector authority.
+type VolumeMapping = (Option<usize>, Vec<(u32, bool, Option<u32>, Option<String>)>);
+fn volume_mapping(node: u32, graph: &Momentopname) -> VolumeMapping {
+    let mut ports: Vec<_> = graph
+        .poorten
+        .iter()
+        .filter(|p| p.knoop == node && p.soort == crate::graph::Soort::Audio && !p.monitor)
+        .map(|p| (p.id, p.ingang, p.volgnummer, p.kanaal.clone()))
+        .collect();
+    ports.sort();
+    (
+        graph
+            .knopen
+            .iter()
+            .find(|n| n.id == node)
+            .and_then(|n| n.volume.as_ref().map(Vec::len)),
+        ports,
+    )
 }
 
 type RouteBindings = BTreeMap<(bool, String), (u32, Vec<u32>, Vec<usize>)>;

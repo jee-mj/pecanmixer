@@ -107,7 +107,7 @@ impl<A: Adapter + 'static> MixerControls<A> {
         self.0.refresh();
     }
     /// Main-context coordinator hook; refresh after actual request progress.
-    pub(crate) fn reconcile_request(&self, update: impl FnOnce(&mut Controller<A>) -> bool) {
+    pub fn reconcile_request(&self, update: impl FnOnce(&mut Controller<A>) -> bool) {
         let changed = update(&mut self.0.controller.borrow_mut());
         if changed {
             self.0.refresh();
