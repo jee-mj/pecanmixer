@@ -28,6 +28,7 @@ struct State {
     drawing: glib::WeakRef<gtk::DrawingArea>,
     draft: RefCell<Option<Draft>>,
     retired: Cell<bool>,
+    session_cancel: RefCell<Option<Box<dyn Fn()>>>,
 }
 #[derive(Clone)]
 pub(super) struct Pointer(Rc<State>);
@@ -44,6 +45,7 @@ impl Pointer {
             drawing: drawing.downgrade(),
             draft: RefCell::new(None),
             retired: Cell::new(false),
+            session_cancel: RefCell::new(None),
         }));
         let weak = Rc::downgrade(&pointer.0);
         let changed = Rc::downgrade(&pointer.0);
@@ -274,6 +276,9 @@ impl Pointer {
                 .message("Only available audio ports can be patched.");
             return false;
         };
+        if let Some(cancel) = self.0.session_cancel.borrow().as_ref() {
+            cancel();
+        }
         self.0.controls.clear_choices();
         *self.0.draft.borrow_mut() = Some(draft);
         self.feedback();
@@ -365,7 +370,13 @@ impl Pointer {
     }
     // Retain this cancelled input until its end. A repeated begin from the held
     // sequence must never capture a newer presentation.
-    fn cancel(&self) {
+    pub fn watch_session(&self, cancel: impl Fn() + 'static) {
+        *self.0.session_cancel.borrow_mut() = Some(Box::new(cancel));
+    }
+    pub fn cancel(&self) {
+        if let Some(cancel) = self.0.session_cancel.borrow().as_ref() {
+            cancel();
+        }
         if let Some(draft) = self.0.draft.borrow_mut().as_mut() {
             draft.cancelled = true;
         }

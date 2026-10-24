@@ -34,6 +34,7 @@ pub(super) struct Point {
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Module {
     pub node: u32,
+    pub key: String,
     pub input: bool,
     pub origin: Point,
     pub height: f64,
@@ -42,6 +43,8 @@ pub(super) struct Module {
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Cable {
     pub id: u32,
+    pub from_port: u32,
+    pub to_port: u32,
     pub from: Point,
     pub to: Point,
     pub control_from: Point,
@@ -50,6 +53,7 @@ pub(super) struct Cable {
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Port {
     pub id: u32,
+    pub node: u32,
     pub input: bool,
     pub point: Point,
     left: f64,
@@ -76,6 +80,7 @@ impl Layout {
             return layout;
         }
         let mut endpoints = BTreeMap::new();
+        let mut occurrences = BTreeMap::<String, usize>::new();
         for input in [false, true] {
             let mut y = MARGIN;
             let x = MARGIN + if input { WIDTH + LANE } else { 0.0 };
@@ -91,6 +96,7 @@ impl Layout {
                     };
                     layout.ports.push(Port {
                         id: port.id,
+                        node: node.id,
                         input,
                         point,
                         left: x,
@@ -100,8 +106,17 @@ impl Layout {
                     endpoints.insert(port.id, (node.id, input, point));
                 }
                 let height = metrics.header() + metrics.row() * ports.len() as f64 + 13.0;
+                let stem = format!("{}{}", node.name, if input { "<" } else { ">" });
+                let occurrence = occurrences.entry(stem.clone()).or_default();
+                let key = if *occurrence == 0 {
+                    stem
+                } else {
+                    format!("{stem}#{occurrence}")
+                };
+                *occurrence += 1;
                 layout.modules.push(Module {
                     node: node.id,
+                    key,
                     input,
                     origin: Point { x, y },
                     height,
@@ -122,6 +137,8 @@ impl Layout {
                 {
                     layout.cables.push(Cable {
                         id: link.id,
+                        from_port: link.uit_poort,
+                        to_port: link.in_poort,
                         from: *from,
                         to: *to,
                         control_from: Point {
@@ -139,15 +156,122 @@ impl Layout {
         }
         layout
     }
+    /// Apply session positions to a fresh default layout. No graph DTO or
+    /// routing state changes. The active preview pins its captured module even
+    /// when viewport resizing moves untouched default modules.
+    pub fn positioned(
+        &self,
+        positions: &BTreeMap<String, Point>,
+        preview: Option<(&str, Point)>,
+        front: &[String],
+        viewport: f64,
+    ) -> Self {
+        let mut layout = self.clone();
+        let minimum = 2.0 * MARGIN + 2.0 * WIDTH + LANE;
+        let viewport = if viewport.is_finite() {
+            viewport.max(minimum)
+        } else {
+            minimum
+        };
+        let right = (viewport - MARGIN - WIDTH).max(MARGIN + WIDTH + LANE);
+        layout.width = viewport;
+        layout.height = 2.0 * MARGIN;
+        for module in &mut layout.modules {
+            let default = Point {
+                x: if module.input { right } else { MARGIN },
+                y: module.origin.y,
+            };
+            let origin = preview
+                .filter(|(key, _)| *key == module.key)
+                .map(|(_, point)| point)
+                .or_else(|| positions.get(&module.key).copied())
+                .filter(|point| point.x.is_finite() && point.y.is_finite())
+                .map(|point| Point {
+                    x: point.x.max(0.0),
+                    y: point.y.max(0.0),
+                })
+                .unwrap_or(default);
+            let dx = origin.x - module.origin.x;
+            let dy = origin.y - module.origin.y;
+            for port in layout
+                .ports
+                .iter_mut()
+                .filter(|p| p.node == module.node && p.input == module.input)
+            {
+                port.point.x += dx;
+                port.point.y += dy;
+                port.left += dx;
+                port.top += dy;
+            }
+            module.origin = origin;
+            layout.width = layout.width.max(origin.x + WIDTH + MARGIN);
+            layout.height = layout.height.max(origin.y + module.height + MARGIN);
+        }
+        // Unraised modules retain their core/projection order. Raised modules
+        // follow in touch order, matching native child stacking and hit testing.
+        layout.modules.sort_by_key(|m| {
+            front
+                .iter()
+                .position(|key| key == &m.key)
+                .map(|i| i + 1)
+                .unwrap_or(0)
+        });
+        let endpoints = layout
+            .ports
+            .iter()
+            .map(|p| (p.id, p.point))
+            .collect::<BTreeMap<_, _>>();
+        for cable in &mut layout.cables {
+            if let (Some(from), Some(to)) = (
+                endpoints.get(&cable.from_port),
+                endpoints.get(&cable.to_port),
+            ) {
+                cable.from = *from;
+                cable.to = *to;
+                let bend = ((to.x - from.x).abs() * 0.5).max(60.0);
+                cable.control_from = Point {
+                    x: from.x + bend,
+                    y: from.y,
+                };
+                cable.control_to = Point {
+                    x: to.x - bend,
+                    y: to.y,
+                };
+            }
+        }
+        layout
+    }
+    pub fn module_at(&self, point: Point) -> Option<&Module> {
+        self.modules.iter().rev().find(|m| {
+            point.x >= m.origin.x
+                && point.x <= m.origin.x + WIDTH
+                && point.y >= m.origin.y
+                && point.y < m.origin.y + m.height
+        })
+    }
+    pub fn header_at(&self, point: Point) -> Option<&Module> {
+        self.module_at(point).filter(|m| {
+            !self
+                .ports
+                .iter()
+                .any(|p| p.node == m.node && p.input == m.input && point.y >= p.top)
+        })
+    }
     pub fn port_at(&self, point: Point) -> Option<&Port> {
+        let module = self.module_at(point)?;
         self.ports.iter().find(|port| {
-            point.x >= port.left
+            port.node == module.node
+                && port.input == module.input
+                && point.x >= port.left
                 && point.x <= port.left + WIDTH
                 && point.y >= port.top
                 && point.y < port.top + port.height
         })
     }
     pub fn cable_at(&self, point: Point) -> Option<u32> {
+        if self.module_at(point).is_some() {
+            return None;
+        }
         // Fixed work per cable; reverse paint order resolves overlapping paths.
         self.cables.iter().rev().find_map(|cable| {
             let mut previous = cable.from;
@@ -325,5 +449,81 @@ mod tests {
         let point = overlap.point(0.5);
         layout.cables.push(overlap);
         assert_eq!(layout.cable_at(point), Some(900));
+    }
+
+    #[test]
+    fn positioned_defaults_follow_viewport_and_dragged_curves_follow_crossed_columns() {
+        let graph = graph();
+        let base = Layout::build(&project(&graph), &graph.kabels, Metrics::default());
+        let output = base
+            .modules
+            .iter()
+            .find(|m| m.node == 20 && !m.input)
+            .unwrap();
+        let input = base
+            .modules
+            .iter()
+            .find(|m| m.node == 10 && m.input)
+            .unwrap();
+        let positions = BTreeMap::from([
+            (output.key.clone(), Point { x: 1000.0, y: 40.0 }),
+            (input.key.clone(), Point { x: 50.0, y: 80.0 }),
+        ]);
+        let moved = base.positioned(&positions, None, &[], 900.0);
+        let cable = moved.cables.iter().find(|c| c.id == 500).unwrap();
+        assert_eq!(cable.from.x, 1000.0 + WIDTH);
+        assert_eq!(cable.to.x, 50.0);
+        let bend = (cable.to.x - cable.from.x).abs() / 2.0;
+        assert_eq!(cable.control_from.x, cable.from.x + bend);
+        assert_eq!(cable.control_to.x, cable.to.x - bend);
+        assert_eq!(moved.cable_at(cable.point(0.5)), Some(500));
+        let only_output = BTreeMap::from([(output.key.clone(), Point { x: 1000.0, y: 40.0 })]);
+        for viewport in [800.0, 1200.0] {
+            let layout = base.positioned(&only_output, None, &[], viewport);
+            assert_eq!(
+                layout
+                    .modules
+                    .iter()
+                    .find(|m| m.node == 10)
+                    .unwrap()
+                    .origin
+                    .x,
+                viewport - MARGIN - WIDTH
+            );
+            assert_eq!(
+                layout
+                    .modules
+                    .iter()
+                    .find(|m| m.node == 20)
+                    .unwrap()
+                    .origin
+                    .x,
+                1000.0
+            );
+            assert!(layout.width >= 1000.0 + WIDTH + MARGIN);
+        }
+        assert_eq!(
+            base,
+            Layout::build(&project(&graph), &graph.kabels, Metrics::default())
+        );
+    }
+    #[test]
+    fn invalid_positions_are_inert_and_negative_positions_clamp_at_the_canvas_edge() {
+        let graph = graph();
+        let base = Layout::build(&project(&graph), &graph.kabels, Metrics::default());
+        let key = base.modules[0].key.clone();
+        let positions = BTreeMap::from([(key.clone(), Point { x: -30.0, y: -50.0 })]);
+        assert_eq!(
+            base.positioned(&positions, None, &[], 0.0).modules[0].origin,
+            Point { x: 0.0, y: 0.0 }
+        );
+        let invalid = BTreeMap::from([(
+            key,
+            Point {
+                x: f64::NAN,
+                y: f64::INFINITY,
+            },
+        )]);
+        assert_eq!(base.positioned(&invalid, None, &[], f64::INFINITY), base);
     }
 }
