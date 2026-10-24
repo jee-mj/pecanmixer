@@ -428,7 +428,28 @@ fn action_dependencies(
                 }
             }
         }
-        Action::BackToAuto => {} // Concrete planner dependencies are added above.
+        Action::BackToAuto => {
+            // Clearing manual targets can expose a detached stream before
+            // policy reconnects its default ports. A later graph may therefore
+            // plan restores absent from the initial target-only plan. Capture
+            // those potential endpoints from the ORIGINAL graph/generations;
+            // this projection is policy math, never a new native origin.
+            let definitions = buses.definitions().ok()?;
+            let original = Mixer::build(graph, &definitions);
+            let mut projected = graph.clone();
+            projected
+                .kabels
+                .retain(|l| !original.manual.links.contains(&l.id));
+            for node in &mut projected.knopen {
+                if original.manual.targets.contains(&node.id) {
+                    node.doel = None;
+                }
+            }
+            let restored = Mixer::build(&projected, &definitions);
+            for ports in restored.manual.restore {
+                pair(ports, graph, ids)?;
+            }
+        }
     }
     Some(())
 }
