@@ -2,6 +2,8 @@
 
 This batch advances the [remaining Stage 2–6 sequence](./pecanmixer-issue-1-native-gtk-proposal.md#staged-coexistence-and-cutover) after the first native connectivity slice. It combines initial pure audio policy, production backend admission/epoch hardening, and a read-only GTK presentation. It does not complete any remaining stage or activate native mixer mutations. Application/crate versions remain `0.1.0`; the legacy application remains supported.
 
+This records the first published batch. See [batch 2](./native-batch-2.md) for the later read-only patchbay and pure settings-contract increment.
+
 ## Scope and integration boundary
 
 - **Pure policy:** [the domain batch](./stage2-domain.md) supplies audio grouping/strips, channel pairing, route classification and plans, bus layout edits, level math and serialized undo/redo. It has no dispatch or toolkit side effects and does not change shared DTOs.

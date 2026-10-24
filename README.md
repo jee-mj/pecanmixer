@@ -88,7 +88,8 @@ npm run tauri dev
 The existing React/Tauri application remains the supported UI. An experimental,
 non-installed Rust/GTK4 binary now shares the extracted PipeWire backend. It
 shows connection state, sample rate, quantum, and reflowing read-only node strips
-with grouped input/output ports. It has no routing,
+with grouped input/output ports, plus an observation-only patchbay with a native
+connection list. It has no routing,
 faders, recording, settings or tray controls. Its live observer creates no Rec
 bus, meter streams or links.
 
@@ -102,11 +103,12 @@ cargo run -p pecan-ui-gtk --locked
 ```
 
 For display-free fixture output, append `--headless` to the fixture command.
+Append `--patchbay` to open the observation patchbay directly.
 `cargo test --locked` defaults to the toolkit-independent core. The workspace
 lockfile and build output now live at the repository root; the existing npm/Tauri
 commands remain available.
 
-See [current batch status and checks](docs/rust-refactor/native-batch-1.md) and the
+See [current batch status and checks](docs/rust-refactor/native-batch-2.md) and the
 [original connectivity slice](docs/rust-refactor/native-slice.md).
 This preview has no JavaScript runtime; removing the legacy web stack and proving
 feature parity, desktop behavior and performance remain later migration work.
