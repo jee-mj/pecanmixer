@@ -65,7 +65,7 @@ quiescence/recovery contract is still required for complete parity.
 
 ## Checks and remaining scope
 
-Twelve injected controller/workspace cases cover actual shared admission and graph
+Twelve injected controller/workspace cases plus a reducer-only regression cover shared admission and graph
 barriers, one-step undo/redo and observed no-op progress, routing while recording,
 authenticated bus-definition adoption and independent shared choices, busy/stale
 preflight, reports after disconnect/invalidation, terminal in-progress gating,
@@ -74,18 +74,27 @@ in the existing workspace. They control synthetic reports/postconditions, not
 actual PipeWire behavior. Fixture definitions use the existing pure coupling
 policy and the public owned-Rec-node name; no user hardware fixture is imported.
 
-Latest full checks are **not green**: 314/315 default GTK and 355/356
-all-feature tests pass; the one failing reset-history reproduction below is
-preserved and not ignored. Native build, formatting and scope/whitespace checks
-pass. Connected headless projection and controlled smoke passed before the
-additional shared uncertainty hold; their final rerun is recorded separately.
-Early bridge-only tests passed before adding reset coverage and the stronger
-Session hold; those earlier counts are not the final candidate gate. Core/backend/legacy suites and examples are not repeated for this GTK-only
-delta; their preceding integration receipts remain baseline evidence.
+Final locked local checks pass: **72 core, 192 backend, 10 legacy, 316 default
+GTK and 357 all-feature GTK tests**, including all 13 focused routing-owner cases.
+Native build and changed-file formatting pass. Earlier 314/315 default and
+355/356 all-feature GTK results failed the reset case before the private
+correction below. No assertion was removed or ignored. These local GTK results
+use the existing isolated GTK 4.18/Xvfb environment; they do not resolve the
+hosted GTK 4.14 held-input failure.
 
-This candidate does not include the separate XTest focus-readiness candidate or
-resolve the hosted synthetic arming WAV-length failure reported after `bf799a9`.
-Those CI follow-ups and this new owner logic have independent review gates.
+All five retained Rust examples compile via the legacy manifest. The connected
+headless output matches its committed expected JSON, and the controlled connected
+fixture smoke passes after the final core correction. Privacy, scope, unchanged
+versions/lockfile/dependencies and whitespace audits pass. The aggregate CI
+validator, other fixture smokes and hardware acceptance were not repeated for
+this candidate; prior public-head receipts are separate evidence.
+
+This candidate branches from `bf799a9` and excludes the CI fixture follow-ups
+published separately on PR2 at `88fa38b`. That head's hosted run 40142214920
+passed 86 validator, 67 core and 192 backend checks, but failed one held-release
+test (343/344 GTK): `held=true, blocked=true` after its deadline. The independent
+held-input investigation owns those test/input files; this candidate does not
+change them or claim to resolve that hosted failure.
 
 Larger resets remain rejected above 32 commands. Dynamic arming, staged idle
 migration UI, active-recording structural policy, bus-edit history, saved audio
@@ -104,24 +113,29 @@ this bridge adds no recorder operation. No active-recording structural decision,
 merge, release, version bump, new runtime dependency or JavaScript removal.
 
 
-## Blocking reset-history reproduction
+## Reset-history reproduction and private correction
 
 The new end-to-end `reset_cancel_and_confirmation_use_one_real_shared_history_request`
-case fails in both modes: expected one undo step, observed zero. Cancel correctly
+case originally failed in both modes: expected one undo step, observed zero. Cancel correctly
 submits nothing; confirming sends one shared native history request. The controlled
 native report and graph satisfy the actual command postconditions, but the core
-history step disappears. Shared core source is deliberately unchanged pending a
-separate correction/review. This candidate must not be promoted until resolved.
+history step disappeared. The unchanged reducer-only reproduction confirmed the
+same failure without Session or GTK. Both assertions now pass with the private
+core correction and still require independent review before promotion.
 
 The minimal scenario is a stream with an explicit target serial `"10"`, no links,
 and default output serial 10. `BackToAuto` plans target clearing. After an actual
 Observed report and same-owner/generation graph with target None and still no
 links, history lengths are `(0, 0)` instead of `(1, 0)`. This is the intermediate
 window before WirePlumber restores its links; no causal transaction acknowledgement
-is assumed. The source/port identities are unchanged. The likely dependency is
-revalidation of dynamically generated reset selectors/restoration scope; that
-cause is an inference from source inspection, not yet an independently cleared
-core diagnosis. The failing integration assertion remains intact.
+is assumed. The source/port identities are unchanged. Reset planning after target
+clearing can include default-port restoration absent from the initial target-only
+plan. Its dependency set therefore grew outside the original history witness and
+pruned the pending step. The guard now captures those potential endpoints from
+the original graph and original registry generations. A pure policy projection
+removes the already-planned manual links/targets to identify that restoration
+scope; it never supplies a new backend origin, graph stamp or generation.
+Existing generation, selector, scope-expansion and authority guards remain.
 
 Final connected headless comparison and controlled fixture smoke pass with the
 shared uncertainty hold included. No actual native backend was started.
@@ -130,11 +144,12 @@ shared uncertainty hold included. No actual native backend was started.
 ### Reducer-only confirmation
 
 A second reproduction, `pure_core_reset_target_clear_before_auto_restore_preserves_history`,
-uses only the unchanged core Controller/HistoryGraph and runs without GTK,
+uses only the core Controller/HistoryGraph and runs without GTK,
 Session, routing widgets, display or session bus. It confirms the exact plan is
 one target-clear command, supplies its completion stamp and the same-identity
-post-command graph, then fails the same `(1, 0)` history assertion with `(0, 0)`.
-This independently isolates the dependency from the new owner wiring.
+post-command graph, then asserts the expected `(1, 0)` history. It failed with
+`(0, 0)` before the correction and now passes, isolating the dependency from new
+owner wiring.
 
 Run it with:
 
@@ -142,7 +157,11 @@ Run it with:
 cargo test -p pecan-ui-gtk --locked pure_core_reset_target_clear_before_auto_restore_preserves_history -- --test-threads=1
 ```
 
-Result: 0 passed, 1 failed. The full-mode counts above precede this additional
-reducer-only test; production code is identical to `0fbe4ba`. Both reset
-reproductions remain unignored and block promotion. No shared core production
-source or interface was changed to conceal or bypass the failure.
+Five additional pure core tests cover target-clear undo/redo, potential default
+port replacement, ordinary gain/label observations, newly introduced manual
+streams and changed defaults to an uncaptured existing destination. All pass;
+replacement and expanded replay scope still prune history. There is no public
+core DTO/API change, dependency, planner-command change or input-handling edit.
+The correction is isolated in `7b866268643a87b16c73b7c4093f5932c2f1ffb2`
+after the reducer-only reproduction commit `0967dd8271a0aa841fc333d5b1a233431a470a68`.
+Both the new owner integration and this core guard delta need independent review.
