@@ -17,5 +17,5 @@ serde.workspace = true
 # default build continues to use the base GTK 4 API.
 a11y-tests = ["gtk/v4_10"]
 
-# Opt-in synthetic X11 keyboard regressions; no production dependency/API change.
+# Opt-in synthetic X11 keyboard/pointer regressions; no production dependency.
 x11-input-tests = []

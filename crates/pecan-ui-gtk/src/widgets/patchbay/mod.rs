@@ -1,8 +1,9 @@
-//! Observed graph plus isolated keyboard patch intents. Canvas cables remain
-//! decorative. No backend sender or live mutation is attached by preview startup.
+//! Observed graph and isolated native patch intents. No backend sender or live
+//! mutation is attached by preview startup.
 mod actions;
 mod controls;
 mod layout;
+mod pointer;
 
 use super::accessibility::set_name;
 use gtk::prelude::*;
@@ -18,6 +19,7 @@ use std::{cell::RefCell, collections::BTreeMap, rc::Rc, sync::Arc};
 pub struct PatchbayOverview {
     root: gtk::Box,
     actions: controls::Controls,
+    pointer: pointer::Pointer,
     status: gtk::Label,
     notices: gtk::Label,
     scope: gtk::Label,
@@ -80,6 +82,7 @@ impl PatchbayOverview {
         let canvas = gtk::Overlay::new();
         canvas.set_child(Some(&drawing));
         canvas.add_overlay(&modules);
+        set_name(&canvas, "Observed patchbay graph");
         let canvas_scroll = gtk::ScrolledWindow::builder()
             .hexpand(true)
             .vexpand(true)
@@ -90,37 +93,6 @@ impl PatchbayOverview {
             "Observed patchbay graph; outputs left, inputs right",
         );
         let geometry = Rc::new(RefCell::new(Layout::default()));
-        let draw_geometry = Rc::clone(&geometry);
-        drawing.set_draw_func(move |area, context, _, _| {
-            // This theme-color API preserves the default GTK 4.0 floor;
-            // gtk_widget_get_color requires 4.10.
-            #[allow(deprecated)]
-            let color = area.style_context().color();
-            context.set_source_rgba(
-                f64::from(color.red()),
-                f64::from(color.green()),
-                f64::from(color.blue()),
-                0.55,
-            );
-            context.set_line_width(1.5);
-            let geometry = draw_geometry.borrow();
-            for cable in &geometry.cables {
-                context.move_to(cable.from.x, cable.from.y);
-                context.curve_to(
-                    cable.control_from.x,
-                    cable.control_from.y,
-                    cable.control_to.x,
-                    cable.control_to.y,
-                    cable.to.x,
-                    cable.to.y,
-                );
-                let _ = context.stroke();
-                for point in [cable.from, cable.to] {
-                    context.arc(point.x, point.y, 3.0, 0.0, std::f64::consts::TAU);
-                    let _ = context.fill();
-                }
-            }
-        });
         let connection_title = text("Connections · 0", true);
         connection_title.add_css_class("heading");
         let connections = gtk::ListBox::new();
@@ -146,6 +118,7 @@ impl PatchbayOverview {
         set_name(&connection_scroll, "Connection list");
         let actions = controls::Controls::new();
         actions.attach(&connections);
+        let pointer = pointer::Pointer::new(&actions, &geometry, &canvas, &drawing);
         let list = gtk::Box::new(gtk::Orientation::Vertical, 8);
         list.append(actions.widget());
         list.append(&connection_title);
@@ -168,6 +141,7 @@ impl PatchbayOverview {
         let mut view = Self {
             root,
             actions,
+            pointer,
             status,
             notices,
             scope,
@@ -203,7 +177,9 @@ impl PatchbayOverview {
         &self,
         handler: impl Fn(Stamped<Arc<Momentopname>>, Input) -> Result<(), String> + 'static,
     ) {
-        self.scope.set_text("Choose an audio output and input, or select connections below. Pointer patch editing is unavailable.");
+        self.scope.set_text("Drag an audio port to connect. Drag a connected input to move its selected or sole cable; release elsewhere to disconnect. Escape cancels. The controls and connection list also support keyboard editing.");
+        set_name(&self.canvas, "Patchbay audio connections; drag ports to patch, Escape cancels, Delete disconnects selected cables");
+        set_name(&self.connections, "Connections; arrows inspect rows, Shift extends selection, Delete disconnects selected cables");
         self.connections
             .set_selection_mode(gtk::SelectionMode::Multiple);
         self.actions.bind(handler);
@@ -218,7 +194,7 @@ impl PatchbayOverview {
         if !self.actions.update(graph.clone()) {
             return false;
         }
-        self.update(
+        self.render(
             &pecan_core::overview::project(&graph.value),
             &graph.value.kabels,
         );
@@ -229,9 +205,15 @@ impl PatchbayOverview {
         self.notices.set_text(message);
         self.notices.set_visible(!message.is_empty());
     }
-    /// No accumulating snapshot history. Only structural changes replace these
-    /// widgets; level/transport updates never reach this presentation boundary.
+    /// Read-only projections cannot retain an editable full-graph origin. Use
+    /// update_graph exclusively when binding actions; a newer accepted full
+    /// snapshot is required to resume editing after this method.
     pub fn update(&mut self, overview: &Overview, links: &[Kabel]) -> bool {
+        self.actions.suspend_origin();
+        self.render(overview, links)
+    }
+    /// Only structural changes replace widgets; motion/levels never rebuild.
+    fn render(&mut self, overview: &Overview, links: &[Kabel]) -> bool {
         let links = if overview.connected {
             links.to_vec()
         } else {
@@ -448,3 +430,12 @@ fn text(value: &str, wrap: bool) -> gtk::Label {
 
 #[cfg(test)]
 mod tests;
+
+impl Drop for PatchbayOverview {
+    fn drop(&mut self) {
+        self.pointer.retire();
+    }
+}
+
+#[cfg(all(test, feature = "x11-input-tests"))]
+mod xtest;
