@@ -8,6 +8,8 @@ use pecan_core::backend::{
 };
 use pecan_core::graph::{Momentopname, Opdracht};
 
+#[path = "config_commands.rs"]
+mod config;
 #[path = "native_commands.rs"]
 mod native;
 pub(crate) use native::LocalExecution;
@@ -34,6 +36,7 @@ struct State {
     native: VecDeque<native::Work>,
     next_native_id: u64,
     history_authority: Arc<()>,
+    config: crate::bus_config::Registry,
 }
 
 struct QueuedCommand {
@@ -41,6 +44,7 @@ struct QueuedCommand {
     /// Captured under the admission lock; never rebound during execution.
     objects: Vec<(u32, Option<u64>)>,
     native: Option<native::Tag>,
+    config: Option<crate::bus_config::Prepared>,
 }
 
 impl Default for Commands {
@@ -60,6 +64,7 @@ impl Default for Commands {
             native: VecDeque::new(),
             next_native_id: 0,
             history_authority: Arc::new(()),
+            config: Default::default(),
         }))
     }
 }
@@ -86,6 +91,8 @@ impl Commands {
             // Invalidate admission state and release old capacity under the
             // same lock. No producer can enqueue against a half-transition.
             state.fail_all_native(NativeFailure::Disconnected);
+            state.config.reset(graph.stamp.epoch);
+            state.fail_all_config(crate::bus_config::ConfigError::Disconnected);
             state.pending.clear();
         }
         if !graph.value.verbonden {
@@ -93,6 +100,7 @@ impl Commands {
         }
         state.published_objects = state.objects.clone();
         state.graph = graph.clone();
+        state.config.snapshot.connected = graph.value.verbonden && !state.stopped;
         state.remember_origin();
         state.observe_native();
         graph
@@ -126,7 +134,9 @@ impl Commands {
     pub(crate) fn stop(&self) {
         let mut state = self.0.lock().unwrap();
         state.stopped = true;
+        state.config.snapshot.connected = false;
         state.fail_all_native(NativeFailure::Stopped);
+        state.fail_all_config(crate::bus_config::ConfigError::Stopped);
         state.pending.clear();
     }
 
@@ -152,11 +162,24 @@ impl Commands {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn drain_with(
+        &self,
+        valid_objects: impl FnMut(&Opdracht) -> bool,
+        no_op: impl FnMut(&Opdracht) -> bool,
+        execute: impl FnMut(Opdracht) -> LocalExecution,
+    ) -> Vec<DispatchError> {
+        self.drain_with_config(valid_objects, no_op, execute, |work| {
+            self.reject_config(work, crate::bus_config::ConfigError::Unavailable);
+        })
+    }
+
+    pub(crate) fn drain_with_config(
         &self,
         mut valid_objects: impl FnMut(&Opdracht) -> bool,
         mut no_op: impl FnMut(&Opdracht) -> bool,
         mut execute: impl FnMut(Opdracht) -> LocalExecution,
+        mut configure: impl FnMut(crate::bus_config::Prepared),
     ) -> Vec<DispatchError> {
         let mut rejected = Vec::new();
         for _ in 0..PER_TICK {
@@ -177,7 +200,9 @@ impl Commands {
                     })
                 };
                 if validation.is_err() || !identity_ok {
-                    if let Some(tag) = queued.native {
+                    if let Some(work) = queued.config {
+                        state.reject_config(work, crate::bus_config::ConfigError::Disconnected);
+                    } else if let Some(tag) = queued.native {
                         state.fail_native(
                             tag.id,
                             if validation.is_err() {
@@ -198,6 +223,10 @@ impl Commands {
                 }
                 queued
             };
+            if let Some(work) = queued.config {
+                configure(work);
+                continue;
+            }
             let confirmed_no_op = queued.native.is_some() && no_op(&queued.command.command);
             let already_disconnected_link =
                 confirmed_no_op && matches!(&queued.command.command, Opdracht::Ontkoppel { .. });
@@ -251,6 +280,7 @@ impl State {
             command,
             objects,
             native: None,
+            config: None,
         });
         Ok(())
     }

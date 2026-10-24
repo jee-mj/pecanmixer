@@ -195,6 +195,7 @@ impl Commands {
                 },
                 objects: refs.clone(),
                 native: Some(Tag { id, index }),
+                config: None,
             });
         }
         let count = intent.commands.len();
