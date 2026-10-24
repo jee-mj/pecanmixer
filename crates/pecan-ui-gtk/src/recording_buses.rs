@@ -150,6 +150,7 @@ pub enum Unavailable {
     MissingBus,
     LastBus,
     WrongCoupling,
+    RowBudget,
     Adapter(String),
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -369,6 +370,11 @@ impl<O: Clone, R, T: Clone> Model<O, R, T> {
                 }
                 _ => {}
             }
+        }
+        if matches!(action, Action::AddStereo | Action::Split { .. })
+            && definitions.len() >= self.budget.buses
+        {
+            return Ok(Off(Unavailable::RowBudget));
         }
         let base = support(&s.capabilities.idle_configuration);
         if base != Available {
