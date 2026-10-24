@@ -1,20 +1,26 @@
-//! Observation only. Canvas cables are decorative; native connection rows carry
-//! the complete text equivalent. No command sender, hit testing or patch action.
+//! Observed graph plus isolated keyboard patch intents. Canvas cables remain
+//! decorative. No backend sender or live mutation is attached by preview startup.
+mod actions;
+mod controls;
 mod layout;
 
 use super::accessibility::set_name;
 use gtk::prelude::*;
 use layout::{Layout, Metrics, WIDTH};
 use pecan_core::{
-    graph::{Kabel, Soort},
+    backend::Stamped,
+    domain::history::Input,
+    graph::{Kabel, Momentopname, Soort},
     overview::Overview,
 };
-use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
+use std::{cell::RefCell, collections::BTreeMap, rc::Rc, sync::Arc};
 
 pub struct PatchbayOverview {
     root: gtk::Box,
+    actions: controls::Controls,
     status: gtk::Label,
     notices: gtk::Label,
+    scope: gtk::Label,
     empty: gtk::Label,
     paned: gtk::Paned,
     canvas: gtk::Overlay,
@@ -42,9 +48,12 @@ impl PatchbayOverview {
         root.set_margin_bottom(16);
         root.set_margin_start(16);
         root.set_margin_end(16);
-        let title = text("Patchbay · read-only", false);
+        let title = text("Patchbay", false);
         title.add_css_class("title-1");
-        let scope=text("Observed ports and links only. Connect, disconnect and rearrange controls are unavailable.",true);
+        let scope = text(
+            "Editing is unavailable in this preview. Observed connections are listed below.",
+            true,
+        );
         scope.add_css_class("dim-label");
         let status = gtk::Label::builder()
             .xalign(0.0)
@@ -135,7 +144,10 @@ impl PatchbayOverview {
             .child(&connections)
             .build();
         set_name(&connection_scroll, "Connection list");
+        let actions = controls::Controls::new();
+        actions.attach(&connections);
         let list = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        list.append(actions.widget());
         list.append(&connection_title);
         list.append(&connection_scroll);
         let paned = gtk::Paned::builder()
@@ -155,8 +167,10 @@ impl PatchbayOverview {
         root.append(&paned);
         let mut view = Self {
             root,
+            actions,
             status,
             notices,
+            scope,
             empty,
             paned,
             canvas,
@@ -178,6 +192,39 @@ impl PatchbayOverview {
     pub fn widget(&self) -> &gtk::Box {
         &self.root
     }
+    /// Attach the shared application's history-intent handler, not a backend
+    /// dispatcher. `Ok(())` acknowledges handoff only. The application must use
+    /// the reviewed origin-bound API and drive `set_actions_pending` from real
+    /// completion plus graph observation; this widget creates no request ticket.
+    /// Match this exact snapshot to the backend’s retained opaque origin; do not mint
+    /// identity from its numeric IDs. Reject handoff if the origin is unavailable.
+    /// No handler is attached by the current preview startup.
+    pub fn bind_history_actions(
+        &self,
+        handler: impl Fn(Stamped<Arc<Momentopname>>, Input) -> Result<(), String> + 'static,
+    ) {
+        self.scope.set_text("Choose an audio output and input, or select connections below. Pointer patch editing is unavailable.");
+        self.connections
+            .set_selection_mode(gtk::SelectionMode::Multiple);
+        self.actions.bind(handler);
+    }
+    pub fn set_actions_pending(&self, pending: bool, error: Option<&str>) {
+        self.actions.set_pending(pending, error);
+    }
+    /// Editing requires the exact accepted full snapshot, not Overview alone.
+    /// New stamps cancel local drafts/selections; submitted work stays pending
+    /// until the application resolves it. Older/equal stamps are ignored.
+    pub fn update_graph(&mut self, graph: Stamped<Arc<Momentopname>>) -> bool {
+        if !self.actions.update(graph.clone()) {
+            return false;
+        }
+        self.update(
+            &pecan_core::overview::project(&graph.value),
+            &graph.value.kabels,
+        );
+        self.connections.unselect_all();
+        true
+    }
     pub fn show_message(&self, message: &str) {
         self.notices.set_text(message);
         self.notices.set_visible(!message.is_empty());
@@ -197,10 +244,12 @@ impl PatchbayOverview {
         {
             return false;
         }
-        let selected = self
+        let selected: Vec<_> = self
             .connections
-            .selected_row()
-            .and_then(|row| row.widget_name().parse::<u32>().ok());
+            .selected_rows()
+            .iter()
+            .filter_map(|row| row.widget_name().parse::<u32>().ok())
+            .collect();
         let focused = self
             .root
             .root()
@@ -366,8 +415,13 @@ impl PatchbayOverview {
                 .build();
             self.connections.append(&row);
         }
-        if let Some(row) = selected
-            .and_then(|id| self.rows.get(&id))
+        let kept: Vec<_> = selected.iter().filter_map(|id| self.rows.get(id)).collect();
+        for row in &kept {
+            self.connections.select_row(Some(*row));
+        }
+        if let Some(row) = kept
+            .first()
+            .copied()
             .or_else(|| self.rows.first_key_value().map(|(_, r)| r))
         {
             self.connections.select_row(Some(row));
