@@ -5,6 +5,7 @@
 //! application keeps its read-only default until a production adapter is wired
 //! and covered by synthetic integration tests.
 mod gesture;
+mod keyboard;
 mod model;
 mod native;
 mod view;

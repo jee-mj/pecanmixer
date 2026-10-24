@@ -49,16 +49,54 @@ history parity. Physical pointer/touch/keyboard, accessibility action and
 screen-reader acceptance are still untested. Synthetic input-lifetime and GTK
 signal regressions establish source behavior, not those desktop outcomes.
 
+## Focus-return recovery correction
+
+Independent synthetic input probes reproduced three failures in the previous
+candidate: Tab release on mute stranded a fader, a released-off-widget Shift
+stranded a fresh arrow after refresh, and release/refocus after an observed held
+Right request prevented a second request. All three were reproduced here using
+XTest events delivered through Xvfb/GDK/GTK before the correction (0/1, 0/1 and
+1/2 submissions respectively).
+
+The correction captures only a control's value/activation keys. Tab and modifier
+keys never become fader gestures. A containing-window capture observer delivers
+key releases to the original control even after focus moves or pending controls
+are disabled. Focus loss still cancels rather than rearming an active gesture.
+Held-key ownership cannot migrate to another/replacement control; a retired or
+dropped origin remains blocked until release. Only a fresh press can then bind
+the latest presentation. Original graph/acknowledgement/reconnect cancellation
+and retired-callback guards remain in place.
+
 ## Focused cloud checks
 
-The resumed candidate passes 40 core, 45 backend and 10 legacy tests, native GTK
-build and all five example checks. The GTK package passes 39 tests in each
-default/`a11y-tests` mode under Xvfb/session bus with fatal criticals. This includes
-17 pure control/origin/adapter tests, five control widget tests, earlier
-presentation/patchbay tests and 11 display-free storage tests. The earlier parked
-no-display GTK failures and ambiguous compatibility-wrapper status were resolved
-by these properly configured reruns. All input graphs/settings are synthetic;
-no audio server, device, user profile or physical desktop was exercised.
+The UI-only correction passes 42 GTK-package tests in each default/`a11y-tests`
+mode and 45 with `a11y-tests,x11-input-tests`, under Xvfb/session bus with fatal
+criticals. The opt-in XTest feature adds three real synthetic keyboard regressions;
+the observed-held-Right test also verifies that repeat before release/refocus
+cannot resume against a new origin. Three display-free keyboard-lifetime tests
+cover release routing, held/replacement ownership and excluded modifier/navigation
+keys. Native GTK builds and scoped format/whitespace checks pass.
+
+XTest uses already-installed X11/XTest libraries only in the opt-in test binary.
+There is no production dependency, lockfile, version or main-startup change. To
+run against a deliberately started Xvfb fixture, select `GDK_BACKEND=x11` and set
+`PECAN_XTEST_FIXTURE_DISPLAY` to that fixture's `DISPLAY`, then run:
+
+```sh
+cargo test -p pecan-ui-gtk --lib --locked --features a11y-tests,x11-input-tests -- --test-threads=1
+```
+
+The earlier candidate passed 40 core, 45 backend and 10 legacy tests; those suites
+were not repeated for this UI-only correction. All graphs/settings are synthetic.
+No audio server, device, user profile or physical desktop was exercised. These
+window-contained synthetic keyboard checks do not establish physical input,
+Wayland, cross-application focus, assistive-technology or performance acceptance.
+
+The display-settings descendant `4e3115544a62b8b3756d83f9edcb421983242b10` remains
+immutable and has not received this correction. After independent clearance,
+cherry-pick the correction onto a descendant and push normally. Preserve both
+`PreferenceLayout` and the shared keyboard release observer if their constructor
+edits overlap; do not rebase/force-push either published review candidate.
 
 ## Unfinished parity and review gates
 

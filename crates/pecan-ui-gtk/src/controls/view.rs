@@ -1,4 +1,5 @@
 use super::gesture::{GestureOrigin, Input};
+use super::keyboard::{KeyboardControl, KeyboardRelease};
 use super::{Adapter, Binding, ControlError, Controller, Phase, ReadOnly};
 use crate::widgets::accessibility::set_name;
 use gtk::prelude::*;
@@ -30,6 +31,7 @@ struct State<A: Adapter> {
     content: gtk::Box,
     rows: RefCell<BTreeMap<String, Row<A>>>,
     applying: Cell<bool>,
+    keyboard: Rc<KeyboardRelease<A>>,
     error: RefCell<Option<ControlError>>,
 }
 /// Volume/mute controls driven by an adapter's owned snapshot and request types.
@@ -59,6 +61,8 @@ impl<A: Adapter + 'static> MixerControls<A> {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 12);
         root.append(&status);
         root.append(&scroll);
+        let keyboard = Rc::new(KeyboardRelease::new());
+        keyboard.observe_window(&root);
         let view = Self(Rc::new(State {
             controller: RefCell::new(controller),
             root,
@@ -66,6 +70,7 @@ impl<A: Adapter + 'static> MixerControls<A> {
             content,
             rows: RefCell::new(BTreeMap::new()),
             applying: Cell::new(false),
+            keyboard,
             error: RefCell::new(None),
         }));
         view.0.refresh();
@@ -190,8 +195,13 @@ impl<A: Adapter + 'static> State<A> {
         root.append(&observed);
         root.append(&line);
         self.content.append(&root);
-        capture_input(&scale, &volume_origin);
-        capture_input(&mute, &mute_origin);
+        capture_input(
+            &scale,
+            &volume_origin,
+            &self.keyboard,
+            KeyboardControl::Fader,
+        );
+        capture_input(&mute, &mute_origin, &self.keyboard, KeyboardControl::Mute);
         let weak = Rc::downgrade(self);
         let scale_origin = volume_origin.clone();
         scale.connect_value_changed(move |scale| {
@@ -251,10 +261,13 @@ fn identity(strip: &mixer::Strip) -> (u32, Option<u64>, Vec<usize>, Vec<u32>) {
 fn capture_input<A: Adapter + 'static>(
     widget: &impl IsA<gtk::Widget>,
     origin: &Rc<RefCell<GestureOrigin<A>>>,
+    keyboard: &Rc<KeyboardRelease<A>>,
+    control: KeyboardControl,
 ) {
     let events = gtk::EventControllerLegacy::new();
     events.set_propagation_phase(gtk::PropagationPhase::Capture);
     let input_origin = origin.clone();
+    let keyboard = keyboard.clone();
     events.connect_event(move |_, event| {
         use gtk::gdk::{EventType, ScrollDirection};
         let mut origin = input_origin.borrow_mut();
@@ -278,11 +291,16 @@ fn capture_input<A: Adapter + 'static>(
             EventType::GrabBroken => origin.cancel_pointer(),
             EventType::KeyPress | EventType::KeyRelease => {
                 if let Some(key) = event.downcast_ref::<gtk::gdk::KeyEvent>() {
-                    let source = Input::Key(key.keycode());
-                    if event.event_type() == EventType::KeyPress {
-                        origin.begin(source);
-                    } else {
-                        origin.end(&source);
+                    if control.accepts(key.keyval()) {
+                        // The shared window observer may already have ended a
+                        // released key. Never hold this cell while notifying it.
+                        drop(origin);
+                        if event.event_type() == EventType::KeyPress {
+                            keyboard.begin(key.keycode(), &input_origin);
+                        } else {
+                            keyboard.end(key.keycode());
+                        }
+                        return gtk::glib::Propagation::Proceed;
                     }
                 }
             }
@@ -550,3 +568,7 @@ impl MixerControls<crate::native_backend::NativeClient> {
         changed
     }
 }
+
+#[cfg(all(test, feature = "x11-input-tests"))]
+#[path = "xtest.rs"]
+mod xtest;
