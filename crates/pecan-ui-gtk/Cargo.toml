@@ -11,6 +11,9 @@ pecan-pipewire = { path = "../pecan-pipewire" }
 gtk = { package = "gtk4", version = "0.11", default-features = false }
 serde_json.workspace = true
 serde.workspace = true
+ksni = { version = "0.3", features = ["blocking"] }
+async-channel.workspace = true
+zbus = { version = "5", default-features = false, features = ["blocking-api", "tokio"] }
 
 [features]
 # Only the optional accessibility assertions need GTK >= 4.10. The preview's
@@ -19,3 +22,5 @@ a11y-tests = ["gtk/v4_10"]
 
 # Opt-in synthetic X11 keyboard/pointer regressions; no production dependency.
 x11-input-tests = []
+# Explicit isolated D-Bus fixtures; never exercise the ambient desktop bus.
+tray-bus-tests = []

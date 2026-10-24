@@ -29,3 +29,5 @@ pub mod meters;
 pub mod application;
 /// Isolated native shell policy; not wired to application startup.
 pub mod lifetime;
+/// Explicit GTK-free tray adapter; not started by the preview.
+pub mod tray;
