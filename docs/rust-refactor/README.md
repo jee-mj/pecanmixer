@@ -41,3 +41,8 @@ The [combined native UI source batch](./native-ui-source-batch.md) reconciles re
 The [history/capture identity batch](./native-identity-batch.md) integrates registry-backed retained history, generated/potential selector witnesses and capture retention guards. Production startup and live functionality remain separate gates.
 
 - [Reviewed native source integration](./reviewed-native-source-batch.md): owning-shell/library composition, writer/configuration prerequisites and still-unfinished runtime/parity gates.
+
+- [Native CI and executable validation](./native-ci-validation.md): additive Linux
+  native build/synthetic-test checks, known Cargo/ELF runtime regression gates and
+  scoped source/license metadata. This does not establish full functional parity,
+  a complete installed payload/license audit or hardware/performance acceptance.

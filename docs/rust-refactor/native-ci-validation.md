@@ -192,3 +192,40 @@ Unknown/renamed engines, `dlopen` plugins and future installed payloads still
 require separate review; this remains a known-filename regression gate, not a
 general binary attestation. No hardware/audio, real desktop, performance,
 packaging or crash-durability acceptance is established.
+
+
+## Independent correction clearance and PR2 integration
+
+The complete corrected candidate is
+`ed2472c338e0d091ef4ca1cf0d7d87467beb4e8a`, including both `c577452` and
+`ed2472c` after the earlier `9699e85` driver. Independent review reproduced the
+original two absolute-path bypasses on the old validator and confirmed rejection
+with the corrected source. All 86 validator controls plus 39 independent
+before/after, negative and benign-path probes pass. The real built native
+loader closure is also accepted. The independent metadata audit verifies 142
+unique declared-license rows, 37 selected source hashes and zero Node-tool attempts.
+
+Exact hosted run
+[`40137874890`](https://github.com/jee-mj/pecanmixer/actions/runs/40137874890)
+completed successfully at `ed2472c338e0d091ef4ca1cf0d7d87467beb4e8a`.
+Its logs verify 86 validator controls, 67 core, 134 backend and 288 GTK tests,
+format/build/closure checks, three headless fixtures and three controlled smokes.
+These are hosted results, distinct from the independent focused checks above.
+The workflow and stopped-writer test fixture match the prior reviewed driver;
+no test retry, exclusion, assertion removal or production API change was added.
+
+PR2 integration takes this existing descendant of reviewed startup `20e9f90c`
+without rebasing or copying unrelated candidates. Bus owner, dynamic arming,
+idle migration and routing follow-ups remain excluded from this CI publication.
+The known-filename and packaging/license limitations above remain unchanged.
+The native aggregate validator is rerun on the integration checkout before push;
+its final receipt is recorded below.
+
+The integration-checkout aggregate `bash scripts/native/check.sh` exits zero:
+86 validator controls, 67 core, 134 backend and 288 GTK tests pass, together with
+native formatting/build, Cargo/ELF checks, all three headless fixtures and three
+controlled smoke launches. Source asset hashes match and Node-attempt evidence is
+empty. No final failure or environment/dependency blocker remains. The separate
+legacy Tauri suite, default-only GTK test modes and examples were not repeated
+for this CI-only follow-up; their prior results remain baseline evidence. No live
+audio/hardware, physical desktop, performance or packaging acceptance was run.
