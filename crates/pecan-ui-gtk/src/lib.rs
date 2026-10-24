@@ -31,3 +31,6 @@ pub mod application;
 pub mod lifetime;
 /// Explicit GTK-free tray adapter; not started by the preview.
 pub mod tray;
+
+/// Pure recording-bus presentation/intents; no runtime adoption.
+pub mod recording_buses;
