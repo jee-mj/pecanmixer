@@ -8,7 +8,10 @@ subsequent owner adapter, corrected dynamic-arming and idle-migration libraries,
 their independent gates and exact cloud checks. "Candidate" means independently
 reviewable source exists, not completed live acceptance. The corrected bus owner
 has independently cleared its original probes; this reviewed batch preserves the
-existing CI driver and keeps production routing/arming/migration wiring separate.
+existing CI driver. The [routing owner follow-up](./native-routing-owner-candidate.md)
+now mounts routing through the same Session and BusOwner, with independently
+cleared receipt retention and reset-witness correction. Arming/migration UI
+adapters and complete configuration-driven reconciliation remain separate.
 
 | Original behavior and source | Rust/native state | Remaining gate |
 |---|---|---|
@@ -18,16 +21,16 @@ existing CI driver and keeps production routing/arming/migration wiring separate
 | Whole-node mute (`Kaart`, `muteStap`) | Reviewed immutable mute action/registry identity and canceled held-activation source | Audio/input acceptance |
 | Partial-pair mute and restore prior gain (`voorMute`, `Kaart`) | Reviewed policy plus serialized receipt/graph memory commit and complete-vector undo | Audio/input acceptance |
 | Drag/fine drag, wheel grouping, rounding, double-click reset (`Fader`) | Reviewed policy and owner coordinator; ordinary refresh preserves desired keyboard position; unconfirmed held input requires release | Physical input acceptance |
-| Independent output destination and Rec-bus selections (`bewerkt`, `bewerkteBus`, `kiesBewerkt` in `src/App.tsx`) | Bus owner mounts independent Output/Rec choices without audio commands | Main mixer Rec-model/configuration adoption; reconnect/layout acceptance |
-| Normal/manual/custom route states and green/R toggles (`BronStrip`, `schakel`, `schakelRoute`) | Reviewed pure policy and isolated routing/controller surface | Production mounting, shared-owner report/selection integration and reset batches over 32 commands |
-| Back to auto / manual route count (`telHandwerk`, `terugNaarAutoStap`) | Reviewed reset/count plans and isolated confirmation/report surface | Production owner integration, observed completion/history and reset batches over 32 commands |
+| Independent output destination and Rec-bus selections (`bewerkt`, `bewerkteBus`, `kiesBewerkt` in `src/App.tsx`) | Bus owner and routing page share independent choices without audio commands; Session adopts authenticated bus definitions | Configuration-driven meter/history reconciliation; reconnect/layout acceptance |
+| Normal/manual/custom route states and green/R toggles (`BronStrip`, `schakel`, `schakelRoute`) | Mounted routing page shares BusOwner selections/configuration, Session tickets/history and actual NativeReports; custom routes open the existing patchbay | Partial/unconfirmed recovery needs owner quiescence evidence; audio/input acceptance |
+| Back to auto / manual route count (`telHandwerk`, `terugNaarAutoStap`) | Mounted count/confirmation uses the shared observed-history path; original-generation restore witnesses survive target-clear transitions | Reset batches over 32 commands, partial/quiescence recovery and audio/input acceptance |
 | Cable create/remove/move, selection/delete/cancel (`src/Patchbay.tsx`, `src/handelingen.ts`) | Reviewed keyboard/pointer libraries attached to reviewed coordinator source | Physical-input acceptance |
 | Patch module positioning and reconnect behavior (`Plekken`, `ModuleKaart`) | Reviewed session movement/rearrange and reconnect aliases on retained view | Session-layout and physical-input acceptance |
 | Undo/redo queue and keyboard shortcuts (`src/geschiedenis.ts`, `src/handelingen.ts`, `src/App.tsx`) | Reviewed generation/selector guards, shared receipts, immutable history activation and one-step observed gesture history | Queued input, complete shortcuts and audio/input acceptance |
-| Add/remove/link buses, Rec gain/mute/arming (`src/bussen.ts`, `Mixer`) | Bus owner mounts typed idle config/readback and correlated controls; corrected arming and staged idle migration are backend libraries | Editable bus gain/mute, main Rec-model/routing and saved config adoption; arming/migration owner adapters and observed-port acceptance; active structural edits remain a user-decision gate |
+| Add/remove/link buses, Rec gain/mute/arming (`src/bussen.ts`, `Mixer`) | Bus owner mounts typed idle config/readback and correlated controls; Session/routing adopt authenticated definitions; corrected arming and staged idle migration are backend libraries | Editable bus gain/mute, saved config effects and configuration-driven meter/history reconciliation; arming/migration owner adapters and observed-port acceptance; active structural edits remain a user-decision gate |
 | Record/stop, per-bus start/stop, elapsed time, folder action (`src/Transport.tsx`, `src/api.ts`) | Bus owner adds explicit-root all-armed/per-bus start, captured stable stop IDs, retained receipts and quit diagnostics | Directory picker/folder action, elapsed/alignment, dynamic-arming owner adoption and live recording acceptance; all-armed membership is preflight only, not atomic CAS |
 | MIDI clock/start-stop, MIDI tabs/route/activity (`src/MidiMixer.tsx`, `src/midi.ts`, `src/MidiMeter.tsx`) | Legacy MIDI feature flag remains disabled | Preserve disabled status; separately define/verify any enabled MIDI parity scope |
-| Meter ballistics/peak hold, per-channel rendering (`src/meters.ts`, `src/Meter.tsx`) | Reviewed retained widget/accepted-batch adapter, exact graph before peaks and explicit authority/visibility resets | Entrypoint mounts authenticated node/port witnesses and viewport gating; capture freshness protocol and live/animation acceptance remain |
+| Meter ballistics/peak hold, per-channel rendering (`src/meters.ts`, `src/Meter.tsx`) | Entrypoint mounts retained accepted-batch telemetry with node/port witnesses and visibility gating | Reprojection after bus-definition changes, capture freshness protocol and live/animation acceptance remain |
 | Hide/show strips/rows and reconnect names (`src/App.tsx`, `Mixer`) | Reviewed display panel/filter/save bridge; full graph/origin/history retained | Transient IDs must not become durable identity; reconnect/desktop acceptance |
 | Row height and destination split preferences (`useRijGewichten`, `Greep`, `Deling`) | Reviewed adjacent-pair/split resize/reset input and request-aware save triggers | Physical input acceptance |
 | Saved buses, hidden keys, clock preference and layout (`leesBussen`, `leesKlok`, `leesVerborgen`) | Versioned contract/storage plus display result bridge and final unsent-document drain | Explicit path/memory selection is implemented; migration and audio settings effects remain; no profile access performed |
@@ -65,8 +68,11 @@ The [native entrypoint adoption candidate](./native-startup-adoption.md) wires o
 The [bus/configuration/recording owner candidate](./native-bus-owner-adapter.md) adds a shared ticket/admission lease, exact edited revision handoffs, retained native receipts and common-quit diagnostic audit. Its original busy-Refresh finding is corrected at `cb24a2ba`; independent re-review clears all nine original probes and three additional recovery/authentication probes. Active arming and idle migration are backend libraries; their native owner/UI adapters remain unavailable. Structural edits during recording/finalization remain gated pending the user's product decision. Module positions match the original session-only behavior; durable persistence is not required for parity.
 
 The [routing surface](../../crates/pecan-ui-gtk/src/routing/README.md) and correction
-`8240f71b` are reviewed library source. They retain configuration uncertainty across
-zero-effect route rejection. They are not mounted in production by this batch.
-The next owner bridge must share BusOwner selection/configuration, Session history
-and actual NativeReport delivery; nonzero in-progress terminal status cannot be
-treated as quiescence.
+`8240f71b` retain configuration uncertainty across zero-effect route rejection.
+The [reviewed routing owner](./native-routing-owner-candidate.md) mounts them with
+shared selection/history, exact configuration/graph preflight and retained real
+reports. It preserves the separately reviewed focus correction `37a79f6c` and
+both CI fixture corrections. Replacement/disconnect cannot erase unfinished work;
+terminal nonzero in-progress counts cannot prove quiescence. Reset plans above
+32 commands remain rejected without truncation. No real backend/audio acceptance
+or active-recording structural-policy decision is implied by source publication.

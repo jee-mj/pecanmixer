@@ -1,8 +1,14 @@
-# Native routing owner candidate
+# Reviewed native routing owner integration
 
-This separate descendant of reviewed source `bf799a9` mounts the reviewed routing
-surface in the existing native workspace. It is a new application integration
-candidate and requires independent review before PR2 publication. The legacy
+Candidate `4db58f2c4114086eb602967e6dc2b20cff4aa36e`, descended from `bf799a9`,
+mounts the reviewed routing surface in the existing native workspace. Independent
+review clears the complete owner bridge and private reset-witness correction:
+72 core and 116 application tests plus eight additional probes pass, including
+recreated links, replacement generations, Rec preservation, configuration/foreign
+authority rejection, reentrant preflight and retained report/recovery cases.
+Integration takes its five commits onto focus checkpoint `37a79f6c` without any
+source conflict or new reconciliation logic. Both CI fixture corrections and
+the reviewed focus correction remain byte-for-byte unchanged. The legacy
 application remains available. No live backend/audio/recording session, user
 profile, real tray, device or workstation was used for this implementation.
 
@@ -65,6 +71,18 @@ quiescence/recovery contract is still required for complete parity.
 
 ## Checks and remaining scope
 
+The combined integration onto `37a79f6c` passes the locked native aggregate:
+**86 validator controls, 72 core, 192 backend and 358 all-feature GTK tests**,
+native formatting/build, Cargo/ELF closure checks, three display-free fixtures
+and three controlled smokes. It records zero Node-tool attempts. Additional
+checks pass **316 default GTK tests, 10 legacy tests and all five retained Rust
+example compilations**. Accessibility-only mode was not separately repeated;
+the all-feature run includes those assertions. No final local check fails.
+The 12 reviewed source files match `4db58f2c` byte-for-byte; the backend WAV and
+routing-focus corrections match the integration base exactly. Scope/privacy,
+whitespace, unchanged versions/lockfile/dependencies and source checks pass.
+Hosted validation of the eventual published head is a separate final gate.
+
 Twelve injected controller/workspace cases plus a reducer-only regression cover shared admission and graph
 barriers, one-step undo/redo and observed no-op progress, routing while recording,
 authenticated bus-definition adoption and independent shared choices, busy/stale
@@ -74,7 +92,7 @@ in the existing workspace. They control synthetic reports/postconditions, not
 actual PipeWire behavior. Fixture definitions use the existing pure coupling
 policy and the public owned-Rec-node name; no user hardware fixture is imported.
 
-Final locked local checks pass: **72 core, 192 backend, 10 legacy, 316 default
+Original candidate locked local checks pass: **72 core, 192 backend, 10 legacy, 316 default
 GTK and 357 all-feature GTK tests**, including all 13 focused routing-owner cases.
 Native build and changed-file formatting pass. Earlier 314/315 default and
 355/356 all-feature GTK results failed the reset case before the private
@@ -89,12 +107,14 @@ versions/lockfile/dependencies and whitespace audits pass. The aggregate CI
 validator, other fixture smokes and hardware acceptance were not repeated for
 this candidate; prior public-head receipts are separate evidence.
 
-This candidate branches from `bf799a9` and excludes the CI fixture follow-ups
-published separately on PR2 at `88fa38b`. That head's hosted run 40142214920
+That original candidate branched from `bf799a9` and excluded the CI fixture
+follow-ups published separately on PR2 at `88fa38b`. That head's hosted run 40142214920
 passed 86 validator, 67 core and 192 backend checks, but failed one held-release
 test (343/344 GTK): `held=true, blocked=true` after its deadline. The independent
 held-input investigation owns those test/input files; this candidate does not
-change them or claim to resolve that hosted failure.
+change them or claim to resolve that hosted failure. The integration base now
+includes the separately reviewed correction `37a79f6c`; its exact-head PR run
+40143901152 and branch run 40143897496 succeed with 345 all-feature GTK tests.
 
 Larger resets remain rejected above 32 commands. Dynamic arming, staged idle
 migration UI, active-recording structural policy, bus-edit history, saved audio
@@ -121,7 +141,7 @@ submits nothing; confirming sends one shared native history request. The control
 native report and graph satisfy the actual command postconditions, but the core
 history step disappeared. The unchanged reducer-only reproduction confirmed the
 same failure without Session or GTK. Both assertions now pass with the private
-core correction and still require independent review before promotion.
+core correction and have independently cleared before source integration.
 
 The minimal scenario is a stream with an explicit target serial `"10"`, no links,
 and default output serial 10. `BackToAuto` plans target clearing. After an actual
@@ -164,4 +184,5 @@ replacement and expanded replay scope still prune history. There is no public
 core DTO/API change, dependency, planner-command change or input-handling edit.
 The correction is isolated in `7b866268643a87b16c73b7c4093f5932c2f1ffb2`
 after the reducer-only reproduction commit `0967dd8271a0aa841fc333d5b1a233431a470a68`.
-Both the new owner integration and this core guard delta need independent review.
+Independent review clears both the new owner integration and this core guard
+delta; hardware/audio acceptance remains separate.

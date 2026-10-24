@@ -5,6 +5,15 @@ This follow-up starts at reviewed CI/startup head
 source without adding the separate production routing/arming/migration bridge.
 Full functional Rust/GTK parity remains the goal; legacy React/Tauri is retained.
 
+This is the earlier bus/backend/library batch record. The subsequent
+[reviewed routing-owner follow-up](./native-routing-owner-candidate.md) now
+mounts ordinary routing, shared selections, custom-patch navigation and bounded
+reset confirmation through the same Session, retaining actual reports and
+uncertainty barriers. It also adopts authenticated bus definitions in Session.
+The historical batch checks and then-unmounted routing status below are preserved
+as provenance. Arming/migration adapters, configuration-driven meter/history
+reconciliation and resets above 32 commands remain unfinished.
+
 ## Reviewed dependencies and reconciliation
 
 | Slice | Original source and correction | Independent gate |
