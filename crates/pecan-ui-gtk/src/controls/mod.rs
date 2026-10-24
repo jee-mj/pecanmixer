@@ -8,6 +8,8 @@ mod gesture;
 mod keyboard;
 mod model;
 mod native;
+/// Pure partial-strip gain memory; no dispatch or history adoption.
+pub mod partial_mute;
 mod view;
 pub use model::{Adapter, Binding, ControlError, Controller, Phase, ReadOnly};
 pub use view::MixerControls;
