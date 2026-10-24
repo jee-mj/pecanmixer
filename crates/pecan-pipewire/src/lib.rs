@@ -5,3 +5,6 @@ pub mod graaf;
 pub mod meter;
 pub mod midimeter;
 pub mod opname;
+pub mod shutdown;
+#[cfg(test)]
+mod test_support;

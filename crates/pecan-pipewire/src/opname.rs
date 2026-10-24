@@ -20,6 +20,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, VecDeque};
 use std::ffi::{c_void, CString};
+use std::io::{Seek, Write};
 use std::path::{Path, PathBuf};
 use std::ptr;
 use std::rc::Rc;
@@ -93,61 +94,114 @@ pub type Schrijver = (
 );
 
 /// Start de schrijfdraad met één WAV per spoor in `map`. Geeft het kanaal
-/// en de draad terug; de draad eindigt na [`Bericht::Stop`].
+/// en de draad terug; de draad eindigt na [`Bericht::Stop`] of kanaalsluiting.
+/// `Ok(())` uit de draad betekent dat alle WAV-koppen en buffers expliciet
+/// afgerond zijn, en een eventueel MIDI-bestand geschreven is. Geen fsync.
+/// WAV/MIDI-bestandsfouten komen via het draadresultaat. Ongeldige formaten,
+/// het maken van de map en een spawn-fout komen direct terug, zoals voorheen.
 pub fn schrijver(map: &Path, sporen: Vec<Spoor>, rate: u32) -> std::io::Result<Schrijver> {
+    if (!sporen.is_empty() && rate == 0) || sporen.iter().any(|s| s.kanalen == 0) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "zero WAV channels or sample rate",
+        ));
+    }
+    // Reserve the take directory before the graph selects another take name.
+    // Moving this existing non-RT setup to the writer would allow two rapid
+    // starts to pick the same timestamp path before either writer creates it.
     std::fs::create_dir_all(map)?;
     let (tx, rx) = mpsc::channel::<Bericht>();
     let map = map.to_owned();
     let draad = std::thread::Builder::new()
         .name("pecanmixer-schrijver".into())
         .spawn(move || {
-            let mut wav: Vec<Option<(hound::WavWriter<_>, u64)>> = Vec::new();
-            for s in &sporen {
-                let spec = hound::WavSpec {
-                    channels: s.kanalen,
-                    sample_rate: rate,
-                    bits_per_sample: 32,
-                    sample_format: hound::SampleFormat::Float,
-                };
-                let pad = map.join(format!("{}.wav", veilig(&s.naam)));
-                wav.push(Some((
-                    hound::WavWriter::create(pad, spec).map_err(|e| e.to_string())?,
-                    0u64,
-                )));
+            schrijf_take(&map, &sporen, rate, rx).map_err(|e| format!("{}: {e}", map.display()))
+        })?;
+    Ok((tx, draad))
+}
+
+fn schrijf_take(
+    map: &Path,
+    sporen: &[Spoor],
+    rate: u32,
+    rx: mpsc::Receiver<Bericht>,
+) -> Result<(), String> {
+    let mut wav = Vec::new();
+    for s in sporen {
+        let spec = hound::WavSpec {
+            channels: s.kanalen,
+            sample_rate: rate,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        let pad = map.join(format!("{}.wav", veilig(&s.naam)));
+        match hound::WavWriter::create(&pad, spec) {
+            Ok(writer) => wav.push(Some(writer)),
+            Err(error) => {
+                let mut errors = vec![format!("{}: {error}", pad.display())];
+                errors.extend(finaliseer(&mut wav));
+                return Err(errors.join("; "));
             }
-            let mut midi = None;
-            for b in rx {
-                match b {
-                    Bericht::Audio(i, samples) => {
-                        if let Some(Some((w, n))) = wav.get_mut(i) {
-                            for s in &samples {
-                                w.write_sample(*s).map_err(|e| e.to_string())?;
-                            }
-                            *n += samples.len() as u64 / u64::from(sporen[i].kanalen.max(1));
+        }
+    }
+    if let Some(midi) = verwerk(wav, rx)? {
+        schrijf_midi(&map.join("midi.mid"), &midi)?;
+    }
+    Ok(())
+}
+
+/// Always attempt to finalize every open track, including after another
+/// track's write/close fails. Relying on WavWriter's Drop would hide errors.
+fn finaliseer<W: Write + Seek>(wav: &mut [Option<hound::WavWriter<W>>]) -> Vec<String> {
+    let mut errors = Vec::new();
+    for (i, writer) in wav.iter_mut().enumerate() {
+        if let Some(writer) = writer.take() {
+            if let Err(error) = writer.finalize() {
+                errors.push(format!("track {i} finalization: {error}"));
+            }
+        }
+    }
+    errors
+}
+
+fn verwerk<W: Write + Seek>(
+    mut wav: Vec<Option<hound::WavWriter<W>>>,
+    berichten: impl IntoIterator<Item = Bericht>,
+) -> Result<Option<MidiBestand>, String> {
+    let mut midi = None;
+    let mut errors = Vec::new();
+    'messages: for bericht in berichten {
+        match bericht {
+            Bericht::Audio(i, samples) => {
+                if let Some(Some(writer)) = wav.get_mut(i) {
+                    for sample in samples {
+                        if let Err(error) = writer.write_sample(sample) {
+                            errors.push(format!("track {i} write: {error}"));
+                            break 'messages;
                         }
                     }
-                    Bericht::Sluit(i) => {
-                        if let Some((w, _)) = wav.get_mut(i).and_then(Option::take) {
-                            w.finalize().map_err(|e| e.to_string())?;
-                        }
-                    }
-                    Bericht::Stop(m) => {
-                        midi = m;
+                }
+            }
+            Bericht::Sluit(i) => {
+                if let Some(writer) = wav.get_mut(i).and_then(Option::take) {
+                    if let Err(error) = writer.finalize() {
+                        errors.push(format!("track {i} close: {error}"));
                         break;
                     }
                 }
             }
-            // Wat samen liep, kwam uit dezelfde process-rondes en is dus even
-            // lang; wat eerder stopte, is eerder gesloten.
-            for (w, _) in wav.into_iter().flatten() {
-                w.finalize().map_err(|e| e.to_string())?;
+            Bericht::Stop(value) => {
+                midi = value;
+                break;
             }
-            if let Some(m) = midi {
-                schrijf_midi(&map.join("midi.mid"), &m)?;
-            }
-            Ok(())
-        })?;
-    Ok((tx, draad))
+        }
+    }
+    errors.extend(finaliseer(&mut wav));
+    if errors.is_empty() {
+        Ok(midi)
+    } else {
+        Err(errors.join("; "))
+    }
 }
 
 /// Een bestandsnaam zonder slash en dergelijke.
@@ -700,3 +754,7 @@ mod tests {
         std::fs::remove_dir_all(map).unwrap();
     }
 }
+
+#[cfg(test)]
+#[path = "writer_tests.rs"]
+mod writer_tests;
