@@ -24,3 +24,6 @@ pub mod settings_worker;
 
 /// Latest-frame meter widgets; not connected to preview startup.
 pub mod meters;
+
+/// Explicit application owner/coordinator; not adopted by main startup.
+pub mod application;

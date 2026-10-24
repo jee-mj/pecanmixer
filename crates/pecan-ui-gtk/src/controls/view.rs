@@ -106,6 +106,13 @@ impl<A: Adapter + 'static> MixerControls<A> {
         *self.0.display.borrow_mut() = preferences;
         self.0.refresh();
     }
+    /// Main-context coordinator hook; refresh after actual request progress.
+    pub(crate) fn reconcile_request(&self, update: impl FnOnce(&mut Controller<A>) -> bool) {
+        let changed = update(&mut self.0.controller.borrow_mut());
+        if changed {
+            self.0.refresh();
+        }
+    }
     pub fn phase(&self) -> Phase {
         self.0.controller.borrow().phase()
     }
