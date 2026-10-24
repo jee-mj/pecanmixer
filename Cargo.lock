@@ -2936,6 +2936,7 @@ dependencies = [
  "gtk4",
  "pecan-core",
  "pecan-pipewire",
+ "serde",
  "serde_json",
 ]
 

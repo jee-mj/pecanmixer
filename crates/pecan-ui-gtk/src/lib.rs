@@ -5,3 +5,6 @@
 mod widgets;
 
 pub use widgets::MixerOverview;
+
+/// Synchronous explicit-path I/O; not wired to the preview or startup.
+pub mod settings_storage;
