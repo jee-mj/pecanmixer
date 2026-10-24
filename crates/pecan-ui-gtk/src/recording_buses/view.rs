@@ -274,6 +274,11 @@ impl<O: Clone + 'static, R: Clone + Eq + 'static, T: Clone + Ord + 'static> BusC
             self.0.render();
         }
     }
+    /// Includes the synchronous handoff before its real request ID is returned.
+    /// Companion surfaces must not infer idleness from awaited_request()==None.
+    pub fn configuration_pending(&self) -> bool {
+        self.0.awaiting()
+    }
     pub fn selected_output_key(&self) -> Option<String> {
         if self.0.invalid.borrow().is_some() || self.0.offered.borrow().is_some() {
             return None;
@@ -289,6 +294,35 @@ impl<O: Clone + 'static, R: Clone + Eq + 'static, T: Clone + Ord + 'static> BusC
             return None;
         }
         self.0.model.borrow().selected_rec().map(|s| s.key.clone())
+    }
+    /// Synchronous read-only projection for another presentation surface. The
+    /// closure must not reenter this view. No model/selection store is cloned.
+    /// A queued publication or invalid view cannot authorize another surface.
+    pub fn inspect_model<U>(
+        &self,
+        inspect: impl FnOnce(&Model<O, R, T>) -> U,
+    ) -> Result<U, ViewError> {
+        if let Some(error) = self.0.invalid.borrow().clone() {
+            return Err(error);
+        }
+        if self.0.applying.get() || self.0.offered.borrow().is_some() {
+            return Err(ViewError::Model(Error::NoSnapshot));
+        }
+        Ok(inspect(&self.0.model.borrow()))
+    }
+    /// Owner-mediated local Output/Rec choice from a companion routing surface.
+    /// Uses this view's exact binding and sole model; sends no configuration or
+    /// recording request and never releases awaited configuration ownership.
+    pub fn select_destination(&self, binding: &Binding<O>, key: &str) -> Result<(), ViewError> {
+        self.inspect_model(|_| ())?;
+        self.0
+            .model
+            .borrow_mut()
+            .select_destination(binding, key)
+            .map_err(ViewError::Model)?;
+        self.0.retire();
+        self.0.render();
+        Ok(())
     }
 }
 impl<O: Clone + 'static, R: Clone + Eq + 'static, T: Clone + Ord + 'static> State<O, R, T> {
