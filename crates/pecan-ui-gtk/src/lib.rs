@@ -37,3 +37,6 @@ pub mod recording_buses;
 
 /// Explicit owner/shell executable adoption; no implicit settings discovery.
 pub mod startup;
+
+/// Isolated routing selection/reset intents and widgets; no startup adoption.
+pub mod routing;

@@ -18,7 +18,7 @@ struct Held {
     owner: Weak<Cell<bool>>,
     cancelled: bool,
 }
-pub(super) struct ActivationInput {
+pub(crate) struct ActivationInput {
     held: RefCell<Vec<Held>>,
     epoch: RefCell<Rc<()>>,
     controller: RefCell<Option<gtk::EventControllerLegacy>>,

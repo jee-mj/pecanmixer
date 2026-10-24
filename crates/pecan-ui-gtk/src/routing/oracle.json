@@ -1,0 +1,4546 @@
+{
+  "synthetic": true,
+  "hashes": {
+    "api.ts": "b098cc93fef85185295da6b4e2e8977f9efe0ec81bf87f9af645c11dc18a9397",
+    "indeling.ts": "a4692737e784fe3c9b916942d5f595452d549007f7fcf769d3b14a19c9bcebd7",
+    "bussen.ts": "94a44101cf93f7a47f0dc4a1a17c232e2d434f6b3afed431ec7e2c22ae94ad32",
+    "mixer.ts": "84a3cfbe551f8a64edc958fe157ae460824e3b446843fff83903cd9f7e2bb58d",
+    "App.tsx": "6c9741ade5d9390295db0822b7204b2f1029fc5f6e13471df7d6f46913c6b5d4"
+  },
+  "scenarios": [
+    {
+      "name": "baseline",
+      "graph": {
+        "verbonden": true,
+        "rate": 48000,
+        "quantum": 128,
+        "standaard_sink": "synthetic.output.default",
+        "standaard_bron": "synthetic.capture.default",
+        "wireplumber": [
+          77
+        ],
+        "knopen": [
+          {
+            "id": 10,
+            "serial": 10001,
+            "naam": "synthetic.player",
+            "klasse": "Stream/Output/Audio",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 11,
+            "serial": 11001,
+            "naam": "synthetic.player.custom",
+            "klasse": "Stream/Output/Audio",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 20,
+            "serial": 20001,
+            "naam": "synthetic.output.default",
+            "klasse": "Audio/Sink",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 21,
+            "serial": 21001,
+            "naam": "synthetic.output.other",
+            "klasse": "Audio/Sink",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 30,
+            "serial": 30001,
+            "naam": "pecanmixer-opname",
+            "klasse": "Audio/Sink",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 40,
+            "serial": 40001,
+            "naam": "synthetic.capture.default",
+            "klasse": "Audio/Source",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 41,
+            "serial": 41001,
+            "naam": "synthetic.capture.other",
+            "klasse": "Audio/Source",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 50,
+            "serial": 50001,
+            "naam": "synthetic.input.app",
+            "klasse": "Stream/Input/Audio",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          }
+        ],
+        "poorten": [
+          {
+            "id": 110,
+            "knoop": 10,
+            "naam": "synthetic.output_FL",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 111,
+            "knoop": 10,
+            "naam": "synthetic.output_FR",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 120,
+            "knoop": 11,
+            "naam": "synthetic.output_FL",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 121,
+            "knoop": 11,
+            "naam": "synthetic.output_FR",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 210,
+            "knoop": 20,
+            "naam": "synthetic.input_FL",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 211,
+            "knoop": 20,
+            "naam": "synthetic.input_FR",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 220,
+            "knoop": 21,
+            "naam": "synthetic.input_FL",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 221,
+            "knoop": 21,
+            "naam": "synthetic.input_FR",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 410,
+            "knoop": 40,
+            "naam": "synthetic.output_FL",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 411,
+            "knoop": 40,
+            "naam": "synthetic.output_FR",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 420,
+            "knoop": 41,
+            "naam": "synthetic.output_FL",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 421,
+            "knoop": 41,
+            "naam": "synthetic.output_FR",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 510,
+            "knoop": 50,
+            "naam": "synthetic.input_FL",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 511,
+            "knoop": 50,
+            "naam": "synthetic.input_FR",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 310,
+            "knoop": 30,
+            "naam": "rec_1",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "AUX0",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 311,
+            "knoop": 30,
+            "naam": "rec_2",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "AUX1",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 312,
+            "knoop": 30,
+            "naam": "rec_3",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "AUX2",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 2
+          },
+          {
+            "id": 313,
+            "knoop": 30,
+            "naam": "rec_4",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "AUX3",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 3
+          }
+        ],
+        "kabels": [
+          {
+            "id": 1000,
+            "uit_knoop": 10,
+            "uit_poort": 110,
+            "in_knoop": 20,
+            "in_poort": 210,
+            "client": 77
+          },
+          {
+            "id": 1001,
+            "uit_knoop": 10,
+            "uit_poort": 111,
+            "in_knoop": 20,
+            "in_poort": 211,
+            "client": 77
+          },
+          {
+            "id": 1010,
+            "uit_knoop": 10,
+            "uit_poort": 110,
+            "in_knoop": 30,
+            "in_poort": 310,
+            "client": null
+          },
+          {
+            "id": 1011,
+            "uit_knoop": 10,
+            "uit_poort": 111,
+            "in_knoop": 30,
+            "in_poort": 311,
+            "client": null
+          },
+          {
+            "id": 1020,
+            "uit_knoop": 40,
+            "uit_poort": 410,
+            "in_knoop": 21,
+            "in_poort": 220,
+            "client": 999
+          },
+          {
+            "id": 1021,
+            "uit_knoop": 40,
+            "uit_poort": 411,
+            "in_knoop": 21,
+            "in_poort": 221,
+            "client": 999
+          },
+          {
+            "id": 1030,
+            "uit_knoop": 11,
+            "uit_poort": 120,
+            "in_knoop": 21,
+            "in_poort": 220,
+            "client": 999
+          }
+        ]
+      },
+      "routes": [
+        {
+          "source": "synthetic.player|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "on",
+            "manual": false
+          },
+          "commands": [
+            {
+              "kind": "disconnect",
+              "id": 1000
+            },
+            {
+              "kind": "disconnect",
+              "id": 1001
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 110,
+              "to": 220
+            },
+            {
+              "kind": "connect",
+              "from": 111,
+              "to": 221
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-1-2",
+          "state": {
+            "kind": "on",
+            "manual": false
+          },
+          "commands": [
+            {
+              "kind": "disconnect",
+              "id": 1010
+            },
+            {
+              "kind": "disconnect",
+              "id": 1011
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-3-4",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 110,
+              "to": 312
+            },
+            {
+              "kind": "connect",
+              "from": 111,
+              "to": 313
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "target",
+              "node": 50,
+              "target": "10001"
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player.custom|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 120,
+              "to": 210
+            },
+            {
+              "kind": "connect",
+              "from": 121,
+              "to": 211
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player.custom|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "custom",
+            "explanation": "only FL → FL"
+          },
+          "commands": []
+        },
+        {
+          "source": "synthetic.player.custom|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-1-2",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 120,
+              "to": 310
+            },
+            {
+              "kind": "connect",
+              "from": 121,
+              "to": 311
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player.custom|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-3-4",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 120,
+              "to": 312
+            },
+            {
+              "kind": "connect",
+              "from": 121,
+              "to": 313
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player.custom|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "target",
+              "node": 50,
+              "target": "11001"
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.default|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 410,
+              "to": 210
+            },
+            {
+              "kind": "connect",
+              "from": 411,
+              "to": 211
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.default|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "on",
+            "manual": true
+          },
+          "commands": [
+            {
+              "kind": "disconnect",
+              "id": 1020
+            },
+            {
+              "kind": "disconnect",
+              "id": 1021
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.default|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-1-2",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 410,
+              "to": 310
+            },
+            {
+              "kind": "connect",
+              "from": 411,
+              "to": 311
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.default|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-3-4",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 410,
+              "to": 312
+            },
+            {
+              "kind": "connect",
+              "from": 411,
+              "to": 313
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.default|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 410,
+              "to": 510
+            },
+            {
+              "kind": "connect",
+              "from": 411,
+              "to": 511
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.other|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 420,
+              "to": 210
+            },
+            {
+              "kind": "connect",
+              "from": 421,
+              "to": 211
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.other|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 420,
+              "to": 220
+            },
+            {
+              "kind": "connect",
+              "from": 421,
+              "to": 221
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.other|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-1-2",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 420,
+              "to": 310
+            },
+            {
+              "kind": "connect",
+              "from": 421,
+              "to": 311
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.other|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-3-4",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 420,
+              "to": 312
+            },
+            {
+              "kind": "connect",
+              "from": 421,
+              "to": 313
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.other|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "target",
+              "node": 50,
+              "target": "41001"
+            }
+          ]
+        }
+      ],
+      "selections": [
+        {
+          "output": null,
+          "rec": null,
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": null,
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": null,
+          "rec": "bus|rec-1-2",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": null,
+          "rec": "bus|rec-3-4",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-3-4"
+          }
+        },
+        {
+          "output": "missing",
+          "rec": null,
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "missing",
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "missing",
+          "rec": "bus|rec-1-2",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "missing",
+          "rec": "bus|rec-3-4",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-3-4"
+          }
+        },
+        {
+          "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": null,
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-1-2",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-3-4",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-3-4"
+          }
+        },
+        {
+          "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": null,
+          "expected": {
+            "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-1-2",
+          "expected": {
+            "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-3-4",
+          "expected": {
+            "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-3-4"
+          }
+        },
+        {
+          "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": null,
+          "expected": {
+            "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-1-2",
+          "expected": {
+            "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-3-4",
+          "expected": {
+            "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-3-4"
+          }
+        }
+      ],
+      "reset": {
+        "counts": {
+          "links": 3,
+          "targets": 0,
+          "detached": 2
+        },
+        "total": 5,
+        "commands": [
+          {
+            "kind": "disconnect",
+            "id": 1020
+          },
+          {
+            "kind": "disconnect",
+            "id": 1021
+          },
+          {
+            "kind": "disconnect",
+            "id": 1030
+          },
+          {
+            "kind": "connect",
+            "from": 120,
+            "to": 210
+          },
+          {
+            "kind": "connect",
+            "from": 121,
+            "to": 211
+          },
+          {
+            "kind": "connect",
+            "from": 410,
+            "to": 510
+          },
+          {
+            "kind": "connect",
+            "from": 411,
+            "to": 511
+          }
+        ]
+      }
+    },
+    {
+      "name": "detached_player_with_rec_routes",
+      "graph": {
+        "verbonden": true,
+        "rate": 48000,
+        "quantum": 128,
+        "standaard_sink": "synthetic.output.default",
+        "standaard_bron": "synthetic.capture.default",
+        "wireplumber": [
+          77
+        ],
+        "knopen": [
+          {
+            "id": 10,
+            "serial": 10001,
+            "naam": "synthetic.player",
+            "klasse": "Stream/Output/Audio",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 11,
+            "serial": 11001,
+            "naam": "synthetic.player.custom",
+            "klasse": "Stream/Output/Audio",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 20,
+            "serial": 20001,
+            "naam": "synthetic.output.default",
+            "klasse": "Audio/Sink",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 21,
+            "serial": 21001,
+            "naam": "synthetic.output.other",
+            "klasse": "Audio/Sink",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 30,
+            "serial": 30001,
+            "naam": "pecanmixer-opname",
+            "klasse": "Audio/Sink",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 40,
+            "serial": 40001,
+            "naam": "synthetic.capture.default",
+            "klasse": "Audio/Source",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 41,
+            "serial": 41001,
+            "naam": "synthetic.capture.other",
+            "klasse": "Audio/Source",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 50,
+            "serial": 50001,
+            "naam": "synthetic.input.app",
+            "klasse": "Stream/Input/Audio",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          }
+        ],
+        "poorten": [
+          {
+            "id": 110,
+            "knoop": 10,
+            "naam": "synthetic.output_FL",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 111,
+            "knoop": 10,
+            "naam": "synthetic.output_FR",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 120,
+            "knoop": 11,
+            "naam": "synthetic.output_FL",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 121,
+            "knoop": 11,
+            "naam": "synthetic.output_FR",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 210,
+            "knoop": 20,
+            "naam": "synthetic.input_FL",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 211,
+            "knoop": 20,
+            "naam": "synthetic.input_FR",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 220,
+            "knoop": 21,
+            "naam": "synthetic.input_FL",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 221,
+            "knoop": 21,
+            "naam": "synthetic.input_FR",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 410,
+            "knoop": 40,
+            "naam": "synthetic.output_FL",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 411,
+            "knoop": 40,
+            "naam": "synthetic.output_FR",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 420,
+            "knoop": 41,
+            "naam": "synthetic.output_FL",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 421,
+            "knoop": 41,
+            "naam": "synthetic.output_FR",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 510,
+            "knoop": 50,
+            "naam": "synthetic.input_FL",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 511,
+            "knoop": 50,
+            "naam": "synthetic.input_FR",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 310,
+            "knoop": 30,
+            "naam": "rec_1",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "AUX0",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 311,
+            "knoop": 30,
+            "naam": "rec_2",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "AUX1",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 312,
+            "knoop": 30,
+            "naam": "rec_3",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "AUX2",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 2
+          },
+          {
+            "id": 313,
+            "knoop": 30,
+            "naam": "rec_4",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "AUX3",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 3
+          }
+        ],
+        "kabels": [
+          {
+            "id": 1010,
+            "uit_knoop": 10,
+            "uit_poort": 110,
+            "in_knoop": 30,
+            "in_poort": 310,
+            "client": null
+          },
+          {
+            "id": 1011,
+            "uit_knoop": 10,
+            "uit_poort": 111,
+            "in_knoop": 30,
+            "in_poort": 311,
+            "client": null
+          },
+          {
+            "id": 1020,
+            "uit_knoop": 40,
+            "uit_poort": 410,
+            "in_knoop": 21,
+            "in_poort": 220,
+            "client": 999
+          },
+          {
+            "id": 1021,
+            "uit_knoop": 40,
+            "uit_poort": 411,
+            "in_knoop": 21,
+            "in_poort": 221,
+            "client": 999
+          },
+          {
+            "id": 1030,
+            "uit_knoop": 11,
+            "uit_poort": 120,
+            "in_knoop": 21,
+            "in_poort": 220,
+            "client": 999
+          }
+        ]
+      },
+      "routes": [
+        {
+          "source": "synthetic.player|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 110,
+              "to": 210
+            },
+            {
+              "kind": "connect",
+              "from": 111,
+              "to": 211
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "target",
+              "node": 10,
+              "target": "21001"
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-1-2",
+          "state": {
+            "kind": "on",
+            "manual": false
+          },
+          "commands": [
+            {
+              "kind": "disconnect",
+              "id": 1010
+            },
+            {
+              "kind": "disconnect",
+              "id": 1011
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-3-4",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 110,
+              "to": 312
+            },
+            {
+              "kind": "connect",
+              "from": 111,
+              "to": 313
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "target",
+              "node": 10,
+              "target": "50001"
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player.custom|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 120,
+              "to": 210
+            },
+            {
+              "kind": "connect",
+              "from": 121,
+              "to": 211
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player.custom|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "custom",
+            "explanation": "only FL → FL"
+          },
+          "commands": []
+        },
+        {
+          "source": "synthetic.player.custom|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-1-2",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 120,
+              "to": 310
+            },
+            {
+              "kind": "connect",
+              "from": 121,
+              "to": 311
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player.custom|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-3-4",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 120,
+              "to": 312
+            },
+            {
+              "kind": "connect",
+              "from": 121,
+              "to": 313
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player.custom|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "target",
+              "node": 50,
+              "target": "11001"
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.default|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 410,
+              "to": 210
+            },
+            {
+              "kind": "connect",
+              "from": 411,
+              "to": 211
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.default|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "on",
+            "manual": true
+          },
+          "commands": [
+            {
+              "kind": "disconnect",
+              "id": 1020
+            },
+            {
+              "kind": "disconnect",
+              "id": 1021
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.default|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-1-2",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 410,
+              "to": 310
+            },
+            {
+              "kind": "connect",
+              "from": 411,
+              "to": 311
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.default|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-3-4",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 410,
+              "to": 312
+            },
+            {
+              "kind": "connect",
+              "from": 411,
+              "to": 313
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.default|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 410,
+              "to": 510
+            },
+            {
+              "kind": "connect",
+              "from": 411,
+              "to": 511
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.other|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 420,
+              "to": 210
+            },
+            {
+              "kind": "connect",
+              "from": 421,
+              "to": 211
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.other|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 420,
+              "to": 220
+            },
+            {
+              "kind": "connect",
+              "from": 421,
+              "to": 221
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.other|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-1-2",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 420,
+              "to": 310
+            },
+            {
+              "kind": "connect",
+              "from": 421,
+              "to": 311
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.other|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-3-4",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 420,
+              "to": 312
+            },
+            {
+              "kind": "connect",
+              "from": 421,
+              "to": 313
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.other|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "target",
+              "node": 50,
+              "target": "41001"
+            }
+          ]
+        }
+      ],
+      "selections": [
+        {
+          "output": null,
+          "rec": null,
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": null,
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": null,
+          "rec": "bus|rec-1-2",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": null,
+          "rec": "bus|rec-3-4",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-3-4"
+          }
+        },
+        {
+          "output": "missing",
+          "rec": null,
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "missing",
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "missing",
+          "rec": "bus|rec-1-2",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "missing",
+          "rec": "bus|rec-3-4",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-3-4"
+          }
+        },
+        {
+          "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": null,
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-1-2",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-3-4",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-3-4"
+          }
+        },
+        {
+          "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": null,
+          "expected": {
+            "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-1-2",
+          "expected": {
+            "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-3-4",
+          "expected": {
+            "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-3-4"
+          }
+        },
+        {
+          "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": null,
+          "expected": {
+            "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-1-2",
+          "expected": {
+            "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-3-4",
+          "expected": {
+            "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-3-4"
+          }
+        }
+      ],
+      "reset": {
+        "counts": {
+          "links": 3,
+          "targets": 0,
+          "detached": 3
+        },
+        "total": 6,
+        "commands": [
+          {
+            "kind": "disconnect",
+            "id": 1020
+          },
+          {
+            "kind": "disconnect",
+            "id": 1021
+          },
+          {
+            "kind": "disconnect",
+            "id": 1030
+          },
+          {
+            "kind": "connect",
+            "from": 110,
+            "to": 210
+          },
+          {
+            "kind": "connect",
+            "from": 111,
+            "to": 211
+          },
+          {
+            "kind": "connect",
+            "from": 120,
+            "to": 210
+          },
+          {
+            "kind": "connect",
+            "from": 121,
+            "to": 211
+          },
+          {
+            "kind": "connect",
+            "from": 410,
+            "to": 510
+          },
+          {
+            "kind": "connect",
+            "from": 411,
+            "to": 511
+          }
+        ]
+      }
+    },
+    {
+      "name": "target_override",
+      "graph": {
+        "verbonden": true,
+        "rate": 48000,
+        "quantum": 128,
+        "standaard_sink": "synthetic.output.default",
+        "standaard_bron": "synthetic.capture.default",
+        "wireplumber": [
+          77
+        ],
+        "knopen": [
+          {
+            "id": 10,
+            "serial": 10001,
+            "naam": "synthetic.player",
+            "klasse": "Stream/Output/Audio",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": "21001",
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 11,
+            "serial": 11001,
+            "naam": "synthetic.player.custom",
+            "klasse": "Stream/Output/Audio",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 20,
+            "serial": 20001,
+            "naam": "synthetic.output.default",
+            "klasse": "Audio/Sink",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 21,
+            "serial": 21001,
+            "naam": "synthetic.output.other",
+            "klasse": "Audio/Sink",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 30,
+            "serial": 30001,
+            "naam": "pecanmixer-opname",
+            "klasse": "Audio/Sink",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 40,
+            "serial": 40001,
+            "naam": "synthetic.capture.default",
+            "klasse": "Audio/Source",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 41,
+            "serial": 41001,
+            "naam": "synthetic.capture.other",
+            "klasse": "Audio/Source",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 50,
+            "serial": 50001,
+            "naam": "synthetic.input.app",
+            "klasse": "Stream/Input/Audio",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          }
+        ],
+        "poorten": [
+          {
+            "id": 110,
+            "knoop": 10,
+            "naam": "synthetic.output_FL",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 111,
+            "knoop": 10,
+            "naam": "synthetic.output_FR",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 120,
+            "knoop": 11,
+            "naam": "synthetic.output_FL",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 121,
+            "knoop": 11,
+            "naam": "synthetic.output_FR",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 210,
+            "knoop": 20,
+            "naam": "synthetic.input_FL",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 211,
+            "knoop": 20,
+            "naam": "synthetic.input_FR",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 220,
+            "knoop": 21,
+            "naam": "synthetic.input_FL",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 221,
+            "knoop": 21,
+            "naam": "synthetic.input_FR",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 410,
+            "knoop": 40,
+            "naam": "synthetic.output_FL",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 411,
+            "knoop": 40,
+            "naam": "synthetic.output_FR",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 420,
+            "knoop": 41,
+            "naam": "synthetic.output_FL",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 421,
+            "knoop": 41,
+            "naam": "synthetic.output_FR",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 510,
+            "knoop": 50,
+            "naam": "synthetic.input_FL",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 511,
+            "knoop": 50,
+            "naam": "synthetic.input_FR",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 310,
+            "knoop": 30,
+            "naam": "rec_1",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "AUX0",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 311,
+            "knoop": 30,
+            "naam": "rec_2",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "AUX1",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 312,
+            "knoop": 30,
+            "naam": "rec_3",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "AUX2",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 2
+          },
+          {
+            "id": 313,
+            "knoop": 30,
+            "naam": "rec_4",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "AUX3",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 3
+          }
+        ],
+        "kabels": [
+          {
+            "id": 1000,
+            "uit_knoop": 10,
+            "uit_poort": 110,
+            "in_knoop": 20,
+            "in_poort": 210,
+            "client": 77
+          },
+          {
+            "id": 1001,
+            "uit_knoop": 10,
+            "uit_poort": 111,
+            "in_knoop": 20,
+            "in_poort": 211,
+            "client": 77
+          },
+          {
+            "id": 1010,
+            "uit_knoop": 10,
+            "uit_poort": 110,
+            "in_knoop": 30,
+            "in_poort": 310,
+            "client": null
+          },
+          {
+            "id": 1011,
+            "uit_knoop": 10,
+            "uit_poort": 111,
+            "in_knoop": 30,
+            "in_poort": 311,
+            "client": null
+          },
+          {
+            "id": 1020,
+            "uit_knoop": 40,
+            "uit_poort": 410,
+            "in_knoop": 21,
+            "in_poort": 220,
+            "client": 999
+          },
+          {
+            "id": 1021,
+            "uit_knoop": 40,
+            "uit_poort": 411,
+            "in_knoop": 21,
+            "in_poort": 221,
+            "client": 999
+          },
+          {
+            "id": 1030,
+            "uit_knoop": 11,
+            "uit_poort": 120,
+            "in_knoop": 21,
+            "in_poort": 220,
+            "client": 999
+          }
+        ]
+      },
+      "routes": [
+        {
+          "source": "synthetic.player|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "on",
+            "manual": true
+          },
+          "commands": [
+            {
+              "kind": "disconnect",
+              "id": 1000
+            },
+            {
+              "kind": "disconnect",
+              "id": 1001
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 110,
+              "to": 220
+            },
+            {
+              "kind": "connect",
+              "from": 111,
+              "to": 221
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-1-2",
+          "state": {
+            "kind": "on",
+            "manual": false
+          },
+          "commands": [
+            {
+              "kind": "disconnect",
+              "id": 1010
+            },
+            {
+              "kind": "disconnect",
+              "id": 1011
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-3-4",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 110,
+              "to": 312
+            },
+            {
+              "kind": "connect",
+              "from": 111,
+              "to": 313
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "target",
+              "node": 50,
+              "target": "10001"
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player.custom|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 120,
+              "to": 210
+            },
+            {
+              "kind": "connect",
+              "from": 121,
+              "to": 211
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player.custom|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "custom",
+            "explanation": "only FL → FL"
+          },
+          "commands": []
+        },
+        {
+          "source": "synthetic.player.custom|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-1-2",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 120,
+              "to": 310
+            },
+            {
+              "kind": "connect",
+              "from": 121,
+              "to": 311
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player.custom|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-3-4",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 120,
+              "to": 312
+            },
+            {
+              "kind": "connect",
+              "from": 121,
+              "to": 313
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player.custom|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "target",
+              "node": 50,
+              "target": "11001"
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.default|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 410,
+              "to": 210
+            },
+            {
+              "kind": "connect",
+              "from": 411,
+              "to": 211
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.default|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "on",
+            "manual": true
+          },
+          "commands": [
+            {
+              "kind": "disconnect",
+              "id": 1020
+            },
+            {
+              "kind": "disconnect",
+              "id": 1021
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.default|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-1-2",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 410,
+              "to": 310
+            },
+            {
+              "kind": "connect",
+              "from": 411,
+              "to": 311
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.default|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-3-4",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 410,
+              "to": 312
+            },
+            {
+              "kind": "connect",
+              "from": 411,
+              "to": 313
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.default|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 410,
+              "to": 510
+            },
+            {
+              "kind": "connect",
+              "from": 411,
+              "to": 511
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.other|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 420,
+              "to": 210
+            },
+            {
+              "kind": "connect",
+              "from": 421,
+              "to": 211
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.other|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 420,
+              "to": 220
+            },
+            {
+              "kind": "connect",
+              "from": 421,
+              "to": 221
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.other|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-1-2",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 420,
+              "to": 310
+            },
+            {
+              "kind": "connect",
+              "from": 421,
+              "to": 311
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.other|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-3-4",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 420,
+              "to": 312
+            },
+            {
+              "kind": "connect",
+              "from": 421,
+              "to": 313
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.other|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "target",
+              "node": 50,
+              "target": "41001"
+            }
+          ]
+        }
+      ],
+      "selections": [
+        {
+          "output": null,
+          "rec": null,
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": null,
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": null,
+          "rec": "bus|rec-1-2",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": null,
+          "rec": "bus|rec-3-4",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-3-4"
+          }
+        },
+        {
+          "output": "missing",
+          "rec": null,
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "missing",
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "missing",
+          "rec": "bus|rec-1-2",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "missing",
+          "rec": "bus|rec-3-4",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-3-4"
+          }
+        },
+        {
+          "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": null,
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-1-2",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-3-4",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-3-4"
+          }
+        },
+        {
+          "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": null,
+          "expected": {
+            "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-1-2",
+          "expected": {
+            "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-3-4",
+          "expected": {
+            "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-3-4"
+          }
+        },
+        {
+          "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": null,
+          "expected": {
+            "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-1-2",
+          "expected": {
+            "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-3-4",
+          "expected": {
+            "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-3-4"
+          }
+        }
+      ],
+      "reset": {
+        "counts": {
+          "links": 5,
+          "targets": 1,
+          "detached": 2
+        },
+        "total": 8,
+        "commands": [
+          {
+            "kind": "disconnect",
+            "id": 1000
+          },
+          {
+            "kind": "disconnect",
+            "id": 1001
+          },
+          {
+            "kind": "disconnect",
+            "id": 1020
+          },
+          {
+            "kind": "disconnect",
+            "id": 1021
+          },
+          {
+            "kind": "disconnect",
+            "id": 1030
+          },
+          {
+            "kind": "target",
+            "node": 10,
+            "target": null
+          },
+          {
+            "kind": "connect",
+            "from": 120,
+            "to": 210
+          },
+          {
+            "kind": "connect",
+            "from": 121,
+            "to": 211
+          },
+          {
+            "kind": "connect",
+            "from": 410,
+            "to": 510
+          },
+          {
+            "kind": "connect",
+            "from": 411,
+            "to": 511
+          }
+        ]
+      }
+    },
+    {
+      "name": "missing_defaults",
+      "graph": {
+        "verbonden": true,
+        "rate": 48000,
+        "quantum": 128,
+        "standaard_sink": null,
+        "standaard_bron": null,
+        "wireplumber": [
+          77
+        ],
+        "knopen": [
+          {
+            "id": 10,
+            "serial": 10001,
+            "naam": "synthetic.player",
+            "klasse": "Stream/Output/Audio",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 11,
+            "serial": 11001,
+            "naam": "synthetic.player.custom",
+            "klasse": "Stream/Output/Audio",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 20,
+            "serial": 20001,
+            "naam": "synthetic.output.default",
+            "klasse": "Audio/Sink",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 21,
+            "serial": 21001,
+            "naam": "synthetic.output.other",
+            "klasse": "Audio/Sink",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 30,
+            "serial": 30001,
+            "naam": "pecanmixer-opname",
+            "klasse": "Audio/Sink",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 40,
+            "serial": 40001,
+            "naam": "synthetic.capture.default",
+            "klasse": "Audio/Source",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 41,
+            "serial": 41001,
+            "naam": "synthetic.capture.other",
+            "klasse": "Audio/Source",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 50,
+            "serial": 50001,
+            "naam": "synthetic.input.app",
+            "klasse": "Stream/Input/Audio",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          }
+        ],
+        "poorten": [
+          {
+            "id": 110,
+            "knoop": 10,
+            "naam": "synthetic.output_FL",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 111,
+            "knoop": 10,
+            "naam": "synthetic.output_FR",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 120,
+            "knoop": 11,
+            "naam": "synthetic.output_FL",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 121,
+            "knoop": 11,
+            "naam": "synthetic.output_FR",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 210,
+            "knoop": 20,
+            "naam": "synthetic.input_FL",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 211,
+            "knoop": 20,
+            "naam": "synthetic.input_FR",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 220,
+            "knoop": 21,
+            "naam": "synthetic.input_FL",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 221,
+            "knoop": 21,
+            "naam": "synthetic.input_FR",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 410,
+            "knoop": 40,
+            "naam": "synthetic.output_FL",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 411,
+            "knoop": 40,
+            "naam": "synthetic.output_FR",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 420,
+            "knoop": 41,
+            "naam": "synthetic.output_FL",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 421,
+            "knoop": 41,
+            "naam": "synthetic.output_FR",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 510,
+            "knoop": 50,
+            "naam": "synthetic.input_FL",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 511,
+            "knoop": 50,
+            "naam": "synthetic.input_FR",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 310,
+            "knoop": 30,
+            "naam": "rec_1",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "AUX0",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 311,
+            "knoop": 30,
+            "naam": "rec_2",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "AUX1",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 312,
+            "knoop": 30,
+            "naam": "rec_3",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "AUX2",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 2
+          },
+          {
+            "id": 313,
+            "knoop": 30,
+            "naam": "rec_4",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "AUX3",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 3
+          }
+        ],
+        "kabels": [
+          {
+            "id": 1000,
+            "uit_knoop": 10,
+            "uit_poort": 110,
+            "in_knoop": 20,
+            "in_poort": 210,
+            "client": 77
+          },
+          {
+            "id": 1001,
+            "uit_knoop": 10,
+            "uit_poort": 111,
+            "in_knoop": 20,
+            "in_poort": 211,
+            "client": 77
+          },
+          {
+            "id": 1010,
+            "uit_knoop": 10,
+            "uit_poort": 110,
+            "in_knoop": 30,
+            "in_poort": 310,
+            "client": null
+          },
+          {
+            "id": 1011,
+            "uit_knoop": 10,
+            "uit_poort": 111,
+            "in_knoop": 30,
+            "in_poort": 311,
+            "client": null
+          },
+          {
+            "id": 1020,
+            "uit_knoop": 40,
+            "uit_poort": 410,
+            "in_knoop": 21,
+            "in_poort": 220,
+            "client": 999
+          },
+          {
+            "id": 1021,
+            "uit_knoop": 40,
+            "uit_poort": 411,
+            "in_knoop": 21,
+            "in_poort": 221,
+            "client": 999
+          },
+          {
+            "id": 1030,
+            "uit_knoop": 11,
+            "uit_poort": 120,
+            "in_knoop": 21,
+            "in_poort": 220,
+            "client": 999
+          }
+        ]
+      },
+      "routes": [
+        {
+          "source": "synthetic.player|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "on",
+            "manual": true
+          },
+          "commands": [
+            {
+              "kind": "disconnect",
+              "id": 1000
+            },
+            {
+              "kind": "disconnect",
+              "id": 1001
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 110,
+              "to": 220
+            },
+            {
+              "kind": "connect",
+              "from": 111,
+              "to": 221
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-1-2",
+          "state": {
+            "kind": "on",
+            "manual": false
+          },
+          "commands": [
+            {
+              "kind": "disconnect",
+              "id": 1010
+            },
+            {
+              "kind": "disconnect",
+              "id": 1011
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-3-4",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 110,
+              "to": 312
+            },
+            {
+              "kind": "connect",
+              "from": 111,
+              "to": 313
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "target",
+              "node": 50,
+              "target": "10001"
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player.custom|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 120,
+              "to": 210
+            },
+            {
+              "kind": "connect",
+              "from": 121,
+              "to": 211
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player.custom|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "custom",
+            "explanation": "only FL → FL"
+          },
+          "commands": []
+        },
+        {
+          "source": "synthetic.player.custom|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-1-2",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 120,
+              "to": 310
+            },
+            {
+              "kind": "connect",
+              "from": 121,
+              "to": 311
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player.custom|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-3-4",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 120,
+              "to": 312
+            },
+            {
+              "kind": "connect",
+              "from": 121,
+              "to": 313
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player.custom|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "target",
+              "node": 50,
+              "target": "11001"
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.default|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 410,
+              "to": 210
+            },
+            {
+              "kind": "connect",
+              "from": 411,
+              "to": 211
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.default|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "on",
+            "manual": true
+          },
+          "commands": [
+            {
+              "kind": "disconnect",
+              "id": 1020
+            },
+            {
+              "kind": "disconnect",
+              "id": 1021
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.default|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-1-2",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 410,
+              "to": 310
+            },
+            {
+              "kind": "connect",
+              "from": 411,
+              "to": 311
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.default|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-3-4",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 410,
+              "to": 312
+            },
+            {
+              "kind": "connect",
+              "from": 411,
+              "to": 313
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.default|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "target",
+              "node": 50,
+              "target": "40001"
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.other|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 420,
+              "to": 210
+            },
+            {
+              "kind": "connect",
+              "from": 421,
+              "to": 211
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.other|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 420,
+              "to": 220
+            },
+            {
+              "kind": "connect",
+              "from": 421,
+              "to": 221
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.other|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-1-2",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 420,
+              "to": 310
+            },
+            {
+              "kind": "connect",
+              "from": 421,
+              "to": 311
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.other|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "bus|rec-3-4",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 420,
+              "to": 312
+            },
+            {
+              "kind": "connect",
+              "from": 421,
+              "to": 313
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.other|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "target",
+              "node": 50,
+              "target": "41001"
+            }
+          ]
+        }
+      ],
+      "selections": [
+        {
+          "output": null,
+          "rec": null,
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": null,
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": null,
+          "rec": "bus|rec-1-2",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": null,
+          "rec": "bus|rec-3-4",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-3-4"
+          }
+        },
+        {
+          "output": "missing",
+          "rec": null,
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "missing",
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "missing",
+          "rec": "bus|rec-1-2",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "missing",
+          "rec": "bus|rec-3-4",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-3-4"
+          }
+        },
+        {
+          "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": null,
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-1-2",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-3-4",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-3-4"
+          }
+        },
+        {
+          "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": null,
+          "expected": {
+            "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-1-2",
+          "expected": {
+            "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-3-4",
+          "expected": {
+            "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-3-4"
+          }
+        },
+        {
+          "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": null,
+          "expected": {
+            "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-1-2",
+          "expected": {
+            "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-1-2"
+          }
+        },
+        {
+          "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "bus|rec-3-4",
+          "expected": {
+            "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": "bus|rec-3-4"
+          }
+        }
+      ],
+      "reset": {
+        "counts": {
+          "links": 5,
+          "targets": 0,
+          "detached": 0
+        },
+        "total": 5,
+        "commands": [
+          {
+            "kind": "disconnect",
+            "id": 1000
+          },
+          {
+            "kind": "disconnect",
+            "id": 1001
+          },
+          {
+            "kind": "disconnect",
+            "id": 1020
+          },
+          {
+            "kind": "disconnect",
+            "id": 1021
+          },
+          {
+            "kind": "disconnect",
+            "id": 1030
+          }
+        ]
+      }
+    },
+    {
+      "name": "missing_rec",
+      "graph": {
+        "verbonden": true,
+        "rate": 48000,
+        "quantum": 128,
+        "standaard_sink": "synthetic.output.default",
+        "standaard_bron": "synthetic.capture.default",
+        "wireplumber": [
+          77
+        ],
+        "knopen": [
+          {
+            "id": 10,
+            "serial": 10001,
+            "naam": "synthetic.player",
+            "klasse": "Stream/Output/Audio",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 11,
+            "serial": 11001,
+            "naam": "synthetic.player.custom",
+            "klasse": "Stream/Output/Audio",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 20,
+            "serial": 20001,
+            "naam": "synthetic.output.default",
+            "klasse": "Audio/Sink",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 21,
+            "serial": 21001,
+            "naam": "synthetic.output.other",
+            "klasse": "Audio/Sink",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 40,
+            "serial": 40001,
+            "naam": "synthetic.capture.default",
+            "klasse": "Audio/Source",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 41,
+            "serial": 41001,
+            "naam": "synthetic.capture.other",
+            "klasse": "Audio/Source",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          },
+          {
+            "id": 50,
+            "serial": 50001,
+            "naam": "synthetic.input.app",
+            "klasse": "Stream/Input/Audio",
+            "volume": [
+              1,
+              1
+            ],
+            "stand": "running",
+            "doel": null,
+            "app": null,
+            "media": null,
+            "beschrijving": null,
+            "bijnaam": null
+          }
+        ],
+        "poorten": [
+          {
+            "id": 110,
+            "knoop": 10,
+            "naam": "synthetic.output_FL",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 111,
+            "knoop": 10,
+            "naam": "synthetic.output_FR",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 120,
+            "knoop": 11,
+            "naam": "synthetic.output_FL",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 121,
+            "knoop": 11,
+            "naam": "synthetic.output_FR",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 210,
+            "knoop": 20,
+            "naam": "synthetic.input_FL",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 211,
+            "knoop": 20,
+            "naam": "synthetic.input_FR",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 220,
+            "knoop": 21,
+            "naam": "synthetic.input_FL",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 221,
+            "knoop": 21,
+            "naam": "synthetic.input_FR",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 410,
+            "knoop": 40,
+            "naam": "synthetic.output_FL",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 411,
+            "knoop": 40,
+            "naam": "synthetic.output_FR",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 420,
+            "knoop": 41,
+            "naam": "synthetic.output_FL",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 421,
+            "knoop": 41,
+            "naam": "synthetic.output_FR",
+            "ingang": false,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          },
+          {
+            "id": 510,
+            "knoop": 50,
+            "naam": "synthetic.input_FL",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FL",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 0
+          },
+          {
+            "id": 511,
+            "knoop": 50,
+            "naam": "synthetic.input_FR",
+            "ingang": true,
+            "soort": "audio",
+            "kanaal": "FR",
+            "monitor": false,
+            "fysiek": false,
+            "volgnummer": 1
+          }
+        ],
+        "kabels": [
+          {
+            "id": 1000,
+            "uit_knoop": 10,
+            "uit_poort": 110,
+            "in_knoop": 20,
+            "in_poort": 210,
+            "client": 77
+          },
+          {
+            "id": 1001,
+            "uit_knoop": 10,
+            "uit_poort": 111,
+            "in_knoop": 20,
+            "in_poort": 211,
+            "client": 77
+          },
+          {
+            "id": 1020,
+            "uit_knoop": 40,
+            "uit_poort": 410,
+            "in_knoop": 21,
+            "in_poort": 220,
+            "client": 999
+          },
+          {
+            "id": 1021,
+            "uit_knoop": 40,
+            "uit_poort": 411,
+            "in_knoop": 21,
+            "in_poort": 221,
+            "client": 999
+          },
+          {
+            "id": 1030,
+            "uit_knoop": 11,
+            "uit_poort": 120,
+            "in_knoop": 21,
+            "in_poort": 220,
+            "client": 999
+          }
+        ]
+      },
+      "routes": [
+        {
+          "source": "synthetic.player|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "on",
+            "manual": false
+          },
+          "commands": [
+            {
+              "kind": "disconnect",
+              "id": 1000
+            },
+            {
+              "kind": "disconnect",
+              "id": 1001
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 110,
+              "to": 220
+            },
+            {
+              "kind": "connect",
+              "from": 111,
+              "to": 221
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "target",
+              "node": 50,
+              "target": "10001"
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player.custom|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 120,
+              "to": 210
+            },
+            {
+              "kind": "connect",
+              "from": 121,
+              "to": 211
+            }
+          ]
+        },
+        {
+          "source": "synthetic.player.custom|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "custom",
+            "explanation": "only FL → FL"
+          },
+          "commands": []
+        },
+        {
+          "source": "synthetic.player.custom|apps|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "target",
+              "node": 50,
+              "target": "11001"
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.default|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 410,
+              "to": 210
+            },
+            {
+              "kind": "connect",
+              "from": 411,
+              "to": 211
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.default|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "on",
+            "manual": true
+          },
+          "commands": [
+            {
+              "kind": "disconnect",
+              "id": 1020
+            },
+            {
+              "kind": "disconnect",
+              "id": 1021
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.default|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 410,
+              "to": 510
+            },
+            {
+              "kind": "connect",
+              "from": 411,
+              "to": 511
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.other|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 420,
+              "to": 210
+            },
+            {
+              "kind": "connect",
+              "from": 421,
+              "to": 211
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.other|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "connect",
+              "from": 420,
+              "to": 220
+            },
+            {
+              "kind": "connect",
+              "from": 421,
+              "to": 221
+            }
+          ]
+        },
+        {
+          "source": "synthetic.capture.other|hardware|synthetic.output_FL,synthetic.output_FR",
+          "destination": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "state": {
+            "kind": "off"
+          },
+          "commands": [
+            {
+              "kind": "target",
+              "node": 50,
+              "target": "41001"
+            }
+          ]
+        }
+      ],
+      "selections": [
+        {
+          "output": null,
+          "rec": null,
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": null
+          }
+        },
+        {
+          "output": null,
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": null
+          }
+        },
+        {
+          "output": "missing",
+          "rec": null,
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": null
+          }
+        },
+        {
+          "output": "missing",
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": null
+          }
+        },
+        {
+          "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": null,
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": null
+          }
+        },
+        {
+          "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.output.default|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": null
+          }
+        },
+        {
+          "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": null,
+          "expected": {
+            "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": null
+          }
+        },
+        {
+          "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.output.other|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": null
+          }
+        },
+        {
+          "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": null,
+          "expected": {
+            "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": null
+          }
+        },
+        {
+          "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+          "rec": "missing",
+          "expected": {
+            "output": "synthetic.input.app|bestemmingen|synthetic.input_FL,synthetic.input_FR",
+            "rec": null
+          }
+        }
+      ],
+      "reset": {
+        "counts": {
+          "links": 3,
+          "targets": 0,
+          "detached": 2
+        },
+        "total": 5,
+        "commands": [
+          {
+            "kind": "disconnect",
+            "id": 1020
+          },
+          {
+            "kind": "disconnect",
+            "id": 1021
+          },
+          {
+            "kind": "disconnect",
+            "id": 1030
+          },
+          {
+            "kind": "connect",
+            "from": 120,
+            "to": 210
+          },
+          {
+            "kind": "connect",
+            "from": 121,
+            "to": 211
+          },
+          {
+            "kind": "connect",
+            "from": 410,
+            "to": 510
+          },
+          {
+            "kind": "connect",
+            "from": 411,
+            "to": 511
+          }
+        ]
+      }
+    },
+    {
+      "name": "disconnected",
+      "graph": {
+        "verbonden": false,
+        "rate": 48000,
+        "quantum": 128,
+        "standaard_sink": "synthetic.output.default",
+        "standaard_bron": "synthetic.capture.default",
+        "wireplumber": [
+          77
+        ],
+        "knopen": [],
+        "poorten": [],
+        "kabels": []
+      },
+      "routes": [],
+      "selections": [
+        {
+          "output": null,
+          "rec": null,
+          "expected": {
+            "output": null,
+            "rec": null
+          }
+        },
+        {
+          "output": null,
+          "rec": "missing",
+          "expected": {
+            "output": null,
+            "rec": null
+          }
+        },
+        {
+          "output": "missing",
+          "rec": null,
+          "expected": {
+            "output": null,
+            "rec": null
+          }
+        },
+        {
+          "output": "missing",
+          "rec": "missing",
+          "expected": {
+            "output": null,
+            "rec": null
+          }
+        }
+      ],
+      "reset": {
+        "counts": {
+          "links": 0,
+          "targets": 0,
+          "detached": 0
+        },
+        "total": 0,
+        "commands": []
+      }
+    }
+  ]
+}

@@ -7,7 +7,7 @@ use pecan_core::domain::{
 };
 use std::{rc::Rc, sync::Arc, time::Duration};
 
-mod input;
+pub(crate) mod input;
 mod view;
 pub use view::{BusControls, Destination, Event, Handoff, ViewError};
 
