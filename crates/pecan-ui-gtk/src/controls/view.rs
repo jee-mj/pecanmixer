@@ -1,6 +1,7 @@
 use super::{Adapter, Binding, ControlError, Controller, Phase, ReadOnly};
 use crate::widgets::accessibility::set_name;
 use gtk::prelude::*;
+use pecan_core::backend::Stamp;
 use pecan_core::domain::{
     levels::{db_to_position, position_to_db, OFF_DB},
     mixer,
@@ -77,8 +78,12 @@ impl<A: Adapter + 'static> MixerControls<A> {
         }
         accepted
     }
-    pub fn confirmed(&self, request: &A::Request) -> bool {
-        let accepted = self.0.controller.borrow_mut().confirmed(request);
+    pub fn observed_result(&self, request: &A::Request, stamp: Stamp) -> bool {
+        let accepted = self
+            .0
+            .controller
+            .borrow_mut()
+            .observed_result(request, stamp);
         if accepted {
             self.0.refresh();
         }
@@ -265,8 +270,14 @@ mod tests {
         let Opdracht::ZetVolume { knoop, volume } = log.borrow().calls[0].2.clone() else {
             panic!("volume")
         };
-        view.confirmed(&1);
-        assert_eq!(view.phase(), Phase::WaitingForObservation);
+        view.observed_result(
+            &1,
+            Stamp {
+                epoch: 2,
+                revision: 2,
+            },
+        );
+        assert_eq!(view.phase(), Phase::WaitingForGraph);
         next.graph.stamp.revision += 1;
         mutate(&mut next, |g| {
             g.knopen.iter_mut().find(|n| n.id == knoop).unwrap().volume = Some(volume)
@@ -307,5 +318,15 @@ mod tests {
             weak.upgrade().is_none(),
             "signal callbacks must not retain the controller"
         );
+    }
+}
+
+impl MixerControls<crate::native_backend::NativeClient> {
+    pub fn poll_native(&self) -> bool {
+        let changed = self.0.controller.borrow_mut().poll_native();
+        if changed {
+            self.0.refresh();
+        }
+        changed
     }
 }

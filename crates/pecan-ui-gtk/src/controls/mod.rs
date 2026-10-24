@@ -5,6 +5,7 @@
 //! application keeps its read-only default until a production adapter is wired
 //! and covered by synthetic integration tests.
 mod model;
+mod native;
 mod view;
 pub use model::{Adapter, Binding, ControlError, Controller, Phase, ReadOnly};
 pub use view::MixerControls;

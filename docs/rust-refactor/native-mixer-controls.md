@@ -35,3 +35,24 @@ ID reuse, channel preservation, unsupported intents and default read-only state.
 Two GTK tests exercise real scale/toggle signals, pending/failed sensitivity,
 observed-value restoration, disconnect and release of the controller. There are
 no audio-server, user-profile, hardware, physical desktop or performance tests.
+
+## Parked adapter candidate
+
+The local candidate now forwards the exact `Stamped<Arc<Momentopname>>` origin
+through `NativeIntent`/`NativeReceipt` using one cloneable `NativeClient`. It does
+not start a native owner or enable live controls in the executable. Mixer and
+patchbay callers can share its ticket allocator and exact backend API. Native
+receipts distinguish queued/local execution, observed/no-op, rejected and
+unconfirmed states; the UI waits for the reported graph revision before clearing
+pending state. Observed state is a postcondition witness, not a causal server
+transaction acknowledgement, and subsequent external changes remain visible.
+
+Compatibility source integration retains the reviewed recorder lifecycle and
+settings storage. Core/backend output records 40 core and 45 backend tests
+passing; its shell wrapper reported a nonzero status despite no test failures in
+the captured output. Fourteen pure controller/adapter tests pass. An over-broad
+`controls::` test filter also ran two GTK tests without a display; both failed
+initializing GTK. Earlier GTK results apply to the prior isolated candidate,
+not this updated adapter. A proper Xvfb run, final native build, independent
+adapter review and application ownership/control integration remain unperformed.
+Work was parked before those checks. No hardware or user-profile action ran.

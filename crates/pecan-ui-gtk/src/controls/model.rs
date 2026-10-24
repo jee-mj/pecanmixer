@@ -15,7 +15,8 @@ use pecan_core::{
 /// Submit returns admission only; confirmed/rejected callbacks arrive separately.
 pub trait Adapter {
     type Snapshot: Clone;
-    type Request: Clone + Eq;
+    type Request: Clone;
+    fn same_request(a: &Self::Request, b: &Self::Request) -> bool;
     fn graph(snapshot: &Self::Snapshot) -> &Stamped<Arc<Momentopname>>;
     fn writable(&self) -> bool {
         true
@@ -34,6 +35,9 @@ impl Adapter for ReadOnly {
     type Request = std::convert::Infallible;
     fn graph(snapshot: &Self::Snapshot) -> &Stamped<Arc<Momentopname>> {
         snapshot
+    }
+    fn same_request(a: &Self::Request, b: &Self::Request) -> bool {
+        a == b
     }
     fn writable(&self) -> bool {
         false
@@ -58,6 +62,7 @@ pub enum Phase {
     Ready,
     WaitingForCompletion,
     WaitingForObservation,
+    WaitingForGraph,
     Failed(String),
     Unconfirmed(String),
 }
@@ -67,8 +72,9 @@ impl Phase {
             Self::ReadOnly => "Read-only · mixer controls are not connected".into(),
             Self::Disconnected => "Disconnected · controls unavailable".into(),
             Self::Ready => "Mixer controls ready".into(),
-            Self::WaitingForCompletion => "Pending · waiting for command completion".into(),
-            Self::WaitingForObservation => "Pending · waiting for the observed value".into(),
+            Self::WaitingForCompletion => "Pending · queued for the worker".into(),
+            Self::WaitingForObservation => "Pending · waiting for server-fed observation".into(),
+            Self::WaitingForGraph => "Observed · waiting for the graph frame".into(),
             Self::Failed(message) => format!("Could not apply change: {message}"),
             Self::Unconfirmed(message) => format!("Previous change is unconfirmed: {message}"),
         }
@@ -86,19 +92,14 @@ pub enum ControlError {
     Rejected(String),
 }
 
-#[derive(Clone)]
-enum Desired {
-    Volume(Vec<f32>),
-    Mute(bool),
-}
 struct Pending<R> {
     request: R,
     source: Stamp,
     node: u32,
     serial: u64,
     name: String,
-    desired: Desired,
-    confirmed: bool,
+    observed: Option<Stamp>,
+    executed_locally: bool,
 }
 
 pub struct Controller<A: Adapter> {
@@ -140,7 +141,9 @@ impl<A: Adapter> Controller<A> {
             return Phase::Disconnected;
         }
         if let Some(pending) = &self.pending {
-            return if pending.confirmed {
+            return if pending.observed.is_some() {
+                Phase::WaitingForGraph
+            } else if pending.executed_locally {
                 Phase::WaitingForObservation
             } else {
                 Phase::WaitingForCompletion
@@ -267,7 +270,6 @@ impl<A: Adapter> Controller<A> {
         self.admit(
             binding,
             node,
-            Desired::Volume(values.clone()),
             Opdracht::ZetVolume {
                 knoop: node,
                 volume: values,
@@ -287,7 +289,6 @@ impl<A: Adapter> Controller<A> {
         self.admit(
             binding,
             node,
-            Desired::Mute(muted),
             Opdracht::ZetMute {
                 knoop: node,
                 mute: muted,
@@ -298,7 +299,6 @@ impl<A: Adapter> Controller<A> {
         &mut self,
         binding: &Binding<A::Snapshot>,
         node: u32,
-        desired: Desired,
         command: Opdracht,
     ) -> Result<(), ControlError> {
         let graph = A::graph(&binding.snapshot);
@@ -317,8 +317,8 @@ impl<A: Adapter> Controller<A> {
                     node,
                     serial,
                     name: owner.naam.clone(),
-                    desired,
-                    confirmed: false,
+                    observed: None,
+                    executed_locally: false,
                 });
                 self.status = None;
                 Ok(())
@@ -329,18 +329,61 @@ impl<A: Adapter> Controller<A> {
             }
         }
     }
-    /// Call only for the adapter's reviewed actual completion evidence. This is
-    /// deliberately separate from admission and does not update observed values.
-    pub fn confirmed(&mut self, request: &A::Request) -> bool {
-        let Some(pending) = self.pending.as_mut().filter(|p| &p.request == request) else {
+    /// Local execution is progress only. It cannot acknowledge history or
+    /// update displayed graph values.
+    pub fn executed_locally(&mut self, request: &A::Request) -> bool {
+        let Some(pending) = self
+            .pending
+            .as_mut()
+            .filter(|p| A::same_request(&p.request, request))
+        else {
             return false;
         };
-        pending.confirmed = true;
+        if pending.executed_locally {
+            return false;
+        }
+        pending.executed_locally = true;
+        true
+    }
+    /// Supply the backend's observed postcondition stamp, never admission/local
+    /// execution. The corresponding graph frame must reach this controller.
+    /// Observation proves a postcondition, not a causal server transaction ack.
+    pub fn observed_result(&mut self, request: &A::Request, stamp: Stamp) -> bool {
+        let Some(pending) = self
+            .pending
+            .as_mut()
+            .filter(|p| A::same_request(&p.request, request))
+        else {
+            return false;
+        };
+        if stamp.epoch != pending.source.epoch
+            || stamp.revision <= pending.source.revision
+            || pending.observed == Some(stamp)
+        {
+            return false;
+        }
+        pending.observed = Some(stamp);
         self.finish_if_observed();
         true
     }
+    pub fn unconfirmed(&mut self, request: &A::Request, message: impl Into<String>) -> bool {
+        if !self
+            .pending
+            .as_ref()
+            .is_some_and(|p| A::same_request(&p.request, request))
+        {
+            return false;
+        }
+        self.pending = None;
+        self.status = Some(Phase::Unconfirmed(message.into()));
+        true
+    }
     pub fn rejected(&mut self, request: &A::Request, message: impl Into<String>) -> bool {
-        if !self.pending.as_ref().is_some_and(|p| &p.request == request) {
+        if !self
+            .pending
+            .as_ref()
+            .is_some_and(|p| A::same_request(&p.request, request))
+        {
             return false;
         }
         self.pending = None;
@@ -355,10 +398,10 @@ impl<A: Adapter> Controller<A> {
             return;
         };
         let graph = A::graph(snapshot);
-        if !pending.confirmed
-            || graph.stamp.epoch != pending.source.epoch
-            || graph.stamp.revision <= pending.source.revision
-        {
+        let Some(observed) = pending.observed else {
+            return;
+        };
+        if graph.stamp.epoch != observed.epoch || graph.stamp.revision < observed.revision {
             return;
         }
         let Some(node) = graph.value.knopen.iter().find(|n| {
@@ -366,19 +409,11 @@ impl<A: Adapter> Controller<A> {
         }) else {
             return;
         };
-        let matches = match &pending.desired {
-            Desired::Volume(values) => node.volume.as_ref().is_some_and(|current| {
-                current.len() == values.len()
-                    && current
-                        .iter()
-                        .zip(values)
-                        .all(|(a, b)| a.is_finite() && (a - b).abs() <= 1e-6)
-            }),
-            Desired::Mute(muted) => node.mute == Some(*muted),
-        };
-        if matches {
-            self.pending = None;
-            self.status = None;
-        }
+        // The receipt already proves the postcondition at `observed`. A later
+        // external change must not leave this request pending forever. Display
+        // the latest actual graph, without attributing later changes to us.
+        let _ = node;
+        self.pending = None;
+        self.status = None;
     }
 }

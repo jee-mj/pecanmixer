@@ -21,6 +21,9 @@ pub(super) struct Fake(Rc<RefCell<Log>>);
 impl Adapter for Fake {
     type Snapshot = Snapshot;
     type Request = usize;
+    fn same_request(a: &usize, b: &usize) -> bool {
+        a == b
+    }
     fn graph(snapshot: &Snapshot) -> &Stamped<Arc<Momentopname>> {
         &snapshot.graph
     }
@@ -89,8 +92,20 @@ fn admission_is_not_completion_or_observation() {
     });
     assert!(c.observe(next));
     assert_eq!(c.phase(), Phase::WaitingForCompletion);
-    assert!(!c.confirmed(&999));
-    assert!(c.confirmed(&1));
+    assert!(!c.observed_result(
+        &999,
+        Stamp {
+            epoch: 2,
+            revision: 2
+        }
+    ));
+    assert!(c.observed_result(
+        &1,
+        Stamp {
+            epoch: 2,
+            revision: 2
+        }
+    ));
     assert_eq!(c.phase(), Phase::Ready);
     assert!(c.enabled());
 }
@@ -99,23 +114,35 @@ fn admission_is_not_completion_or_observation() {
 fn completion_requires_newer_observation_including_noop() {
     let (mut c, _, mut next) = setup();
     c.set_mute(&app_binding(&c), false).unwrap();
-    assert!(c.confirmed(&1));
-    assert_eq!(c.phase(), Phase::WaitingForObservation);
+    assert!(c.observed_result(
+        &1,
+        Stamp {
+            epoch: 2,
+            revision: 2
+        }
+    ));
+    assert_eq!(c.phase(), Phase::WaitingForGraph);
     assert!(!c.observe(next.clone()));
-    assert_eq!(c.phase(), Phase::WaitingForObservation);
+    assert_eq!(c.phase(), Phase::WaitingForGraph);
     next.graph.stamp.revision += 1;
     assert!(c.observe(next));
     assert_eq!(c.phase(), Phase::Ready);
 }
 
 #[test]
-fn mismatching_observation_does_not_claim_success() {
+fn frames_older_than_observed_result_do_not_clear_pending() {
     let (mut c, log, mut next) = setup();
     c.set_mute(&app_binding(&c), true).unwrap();
-    c.confirmed(&1);
+    c.observed_result(
+        &1,
+        Stamp {
+            epoch: 2,
+            revision: 3,
+        },
+    );
     next.graph.stamp.revision += 1;
     c.observe(next.clone());
-    assert_eq!(c.phase(), Phase::WaitingForObservation);
+    assert_eq!(c.phase(), Phase::WaitingForGraph);
     let Opdracht::ZetMute { knoop, .. } = log.borrow().calls[0].2 else {
         panic!("mute")
     };
@@ -159,7 +186,13 @@ fn epoch_disconnect_and_generation_changes_invalidate_pending() {
         }
         c.observe(next);
         assert!(c.pending_request().is_none());
-        assert!(!c.confirmed(&1));
+        assert!(!c.observed_result(
+            &1,
+            Stamp {
+                epoch: 2,
+                revision: 2
+            }
+        ));
         assert!(matches!(
             c.phase(),
             Phase::Disconnected | Phase::Unconfirmed(_)
