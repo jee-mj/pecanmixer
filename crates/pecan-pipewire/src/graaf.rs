@@ -39,6 +39,7 @@ use crate::commands::Commands;
 use crate::meter::{self, Meter};
 use crate::midimeter::{Activiteit, MidiMeter};
 use crate::opname::{self, Actief, Bericht, Bus, Klok, MidiBestand, Opnemer, Spoor};
+use crate::shutdown::Shutdown;
 
 /// Wat PipeWire in `format.dsp` zet voor MIDI: oude bytes of UMP.
 const DSP_MIDI: &str = "8 bit raw midi";
@@ -97,6 +98,7 @@ pub type Melder = Box<dyn Fn(Melding) + Send + 'static>;
 pub struct Graaf {
     opdrachten: Arc<Commands>,
     stop: Arc<StopSignal>,
+    completion: Shutdown,
 }
 
 impl Graaf {
@@ -105,11 +107,29 @@ impl Graaf {
         let gedeeld = Arc::clone(&opdrachten);
         let stop = Arc::new(StopSignal::default());
         let worker_stop = Arc::clone(&stop);
-        std::thread::Builder::new()
+        let completion = Shutdown::new();
+        let worker_completion = completion.clone();
+        let thread = std::thread::Builder::new()
             .name("pecanmixer-graaf".to_owned())
-            .spawn(move || draad(gedeeld, melder, false, worker_stop))
+            .spawn(move || draad(gedeeld, melder, false, worker_stop, worker_completion))
             .expect("graph-draad starten");
-        Self { opdrachten, stop }
+        completion.worker(thread);
+        Self {
+            opdrachten,
+            stop,
+            completion,
+        }
+    }
+
+    /// Request cancellation without waiting on the caller/UI thread. Keep the
+    /// returned handle and poll `try_complete`, or use `wait_timeout` off-UI.
+    /// Success requires finalized writers and a joined graph worker and writers;
+    /// a timeout is still pending, not permission to assume files are complete.
+    /// The legacy tray adapter still needs to adopt this protocol before exit.
+    pub fn request_shutdown(&self) -> Shutdown {
+        self.opdrachten.stop();
+        self.stop.request();
+        self.completion.clone()
     }
 
     pub fn nu(&self) -> Momentopname {
@@ -136,8 +156,8 @@ impl Backend for Graaf {
 
 impl Drop for Graaf {
     fn drop(&mut self) {
-        self.opdrachten.stop();
-        self.stop.request();
+        // Dropping alone requests cancellation; it does not wait for files.
+        self.request_shutdown();
     }
 }
 
@@ -205,7 +225,7 @@ pub fn observe(inbox: Arc<pecan_core::inbox::LatestInbox>) -> std::io::Result<Ob
     let worker_stop = Arc::clone(&stop);
     let thread = std::thread::Builder::new()
         .name("pecanmixer-observer".into())
-        .spawn(move || draad(Arc::default(), melder, true, worker_stop))?;
+        .spawn(move || draad(Arc::default(), melder, true, worker_stop, Shutdown::new()))?;
     Ok(Observer {
         stop,
         thread: Some(thread),
@@ -214,7 +234,13 @@ pub fn observe(inbox: Arc<pecan_core::inbox::LatestInbox>) -> std::io::Result<Ob
 
 /// Blijft verbinden: als de server herstart of even weg is, komt de spiegel
 /// vanzelf terug.
-fn draad(opdrachten: Arc<Commands>, melder: Melder, read_only: bool, stop: Arc<StopSignal>) {
+fn draad(
+    opdrachten: Arc<Commands>,
+    melder: Melder,
+    read_only: bool,
+    stop: Arc<StopSignal>,
+    completion: Shutdown,
+) {
     pw::init();
     let melder = Rc::new(melder);
     let meld: Rc<dyn Fn(Momentopname)> = Rc::new({
@@ -233,6 +259,7 @@ fn draad(opdrachten: Arc<Commands>, melder: Melder, read_only: bool, stop: Arc<S
             Arc::clone(&opdrachten),
             read_only,
             Arc::clone(&stop),
+            completion.clone(),
         ) {
             eprintln!("pecanmixer: PipeWire: {fout}");
         }
@@ -603,6 +630,7 @@ fn sessie(
     opdrachten: Arc<Commands>,
     read_only: bool,
     stop: Arc<StopSignal>,
+    completion: Shutdown,
 ) -> Result<(), pw::Error> {
     let opzet = || -> Result<_, pw::Error> {
         let mainloop = pw::main_loop::MainLoopRc::new(None)?;
@@ -746,7 +774,7 @@ fn sessie(
     // De opname: wat er loopt, de klok, en de Rec bus zelf.
     let opnemer: Opnemer = Rc::default();
     let klok: Rc<RefCell<Klok>> = Rc::default();
-    let transport: Rc<RefCell<Transport>> = Rc::default();
+    let transport = Rc::new(RefCell::new(Transport::new(completion)));
     let bus = Rc::new(
         (!read_only)
             .then(|| Bus::maak(&core, Rc::clone(&opnemer), 2))
@@ -926,26 +954,28 @@ fn sessie(
 }
 
 /// Wat de graph-draad over de opname bijhoudt.
-#[derive(Default)]
 struct Transport {
     opties: Option<Opties>,
     map: Option<std::path::PathBuf>,
     fout: Option<String>,
-    /// De schrijfdraden, tot ze klaar zijn.
-    schrijvers: Vec<std::thread::JoinHandle<Result<(), String>>>,
+    /// Shared across reconnects, until every writer's result is observed.
+    schrijvers: Shutdown,
 }
 
 impl Transport {
+    fn new(schrijvers: Shutdown) -> Self {
+        Self {
+            opties: None,
+            map: None,
+            fout: None,
+            schrijvers,
+        }
+    }
+
     /// Klare schrijvertjes oogsten, zodat een fout op het scherm komt.
     fn ruim_op(&mut self) {
-        let (klaar, bezig): (Vec<_>, Vec<_>) = std::mem::take(&mut self.schrijvers)
-            .into_iter()
-            .partition(|d| d.is_finished());
-        self.schrijvers = bezig;
-        for d in klaar {
-            if let Err(e) = d.join().unwrap_or(Err("writer panicked".into())) {
-                self.fout = Some(e);
-            }
+        if let Some(error) = self.schrijvers.reap_writers() {
+            self.fout = Some(error);
         }
     }
 }
@@ -1003,7 +1033,7 @@ fn begin(
                         pulsen: Vec::new(),
                     });
                     t.map = Some(map);
-                    t.schrijvers.push(draad);
+                    t.schrijvers.writer(draad);
                 }
             }
         }
@@ -1243,6 +1273,7 @@ mod command_tests {
         let backend = Graaf {
             opdrachten: Arc::default(),
             stop: Arc::default(),
+            completion: Shutdown::new(),
         };
         publish_fixture(&backend);
         backend
@@ -1838,3 +1869,7 @@ mod command_tests {
             .is_empty());
     }
 }
+
+#[cfg(test)]
+#[path = "shutdown_integration_tests.rs"]
+mod shutdown_integration_tests;
