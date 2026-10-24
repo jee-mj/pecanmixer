@@ -536,9 +536,34 @@ impl Drop for LongExit {
 #[test]
 fn recording_flag_change_after_admission_preserves_start_context_but_not_stale_admission() {
     let f = Fixture::new(true);
-    let old = f.bus_start("rec-1");
+    let RecordingBusStartResult::Admitted(old) = f
+        .commands
+        .enqueue_recording_bus(f.bus_intent("rec-1"))
+        .unwrap()
+    else {
+        panic!()
+    };
+    let (entered, waiting) = mpsc::channel();
+    let (release, gate) = mpsc::channel();
+    let releases = ReleaseAll(vec![release]);
+    let mut exit = Some(LongExit(entered, gate));
+    f.drain_with(|root, tracks, rate, owner| {
+        opname::tracked_writer_with(root, tracks, rate, owner, move |path, spec| {
+            LONG_EXIT.with(|slot| *slot.borrow_mut() = exit.take());
+            hound::WavWriter::create(path, spec).map_err(std::io::Error::other)
+        })
+    });
+    until(&old, |r| {
+        f.pump();
+        r.started_once
+    });
     let id = old.try_report().unwrap().tracks[0].id;
     f.commands.stop_recording(RecordingStop::Track(id)).unwrap();
+    // Freeze membership after stop/close while deliberately withholding join.
+    // This test changes only the aggregate flag after admission; a concurrent
+    // membership change must still be rejected by the production contract.
+    waiting.recv_timeout(Duration::from_secs(2)).unwrap();
+    assert!(!old.try_report().unwrap().is_complete());
     let captured = f.bus_intent("rec-2");
     let expected = captured.start.expected_config;
     let RecordingBusStartResult::Admitted(new) =
@@ -566,6 +591,7 @@ fn recording_flag_change_after_admission_preserves_start_context_but_not_stale_a
         "never stamp with latest revision"
     );
     f.commands.stop_recording(RecordingStop::All).unwrap();
+    drop(releases);
     finish(&old);
     finish(&new);
 }
