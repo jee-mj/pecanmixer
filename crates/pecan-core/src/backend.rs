@@ -88,6 +88,10 @@ pub enum DispatchError {
     Disconnected,
     StaleEpoch,
     Stopped,
+    /// The non-blocking command queue has reached its fixed capacity.
+    QueueFull,
+    /// A referenced object no longer exists (or has the wrong port direction).
+    InvalidObject,
 }
 
 /// Validate against worker state immediately before dispatch, not only when a UI
@@ -109,5 +113,7 @@ pub fn validate_command(
 /// The initial native preview only observes events and does not dispatch.
 pub trait Backend: Send + Sync {
     fn current_graph(&self) -> Stamped<Arc<Momentopname>>;
+    /// Accept into a bounded queue. Success is not server acknowledgement:
+    /// workers must validate again immediately before executing the command.
     fn dispatch(&self, command: BackendCommand) -> Result<(), DispatchError>;
 }

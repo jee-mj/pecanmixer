@@ -24,6 +24,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
+use pecan_core::backend::{Backend, BackendCommand, DispatchError, Stamped};
 pub use pecan_core::graph::{
     BusOpname, Kabel, Knoop, Momentopname, Opdracht, Opties, Pieken, Poort, Soort, TransportStand,
 };
@@ -34,6 +35,7 @@ use pw::spa::pod::{Object, Pod, Property, Value, ValueArray};
 use pw::spa::utils::dict::DictRef;
 use pw::types::ObjectType;
 
+use crate::commands::Commands;
 use crate::meter::{self, Meter};
 use crate::midimeter::{Activiteit, MidiMeter};
 use crate::opname::{self, Actief, Bericht, Bus, Klok, MidiBestand, Opnemer, Spoor};
@@ -77,34 +79,59 @@ pub const MIDI: bool = false;
 /// Wordt aangeroepen vanaf de graph-draad.
 pub type Melder = Box<dyn Fn(Melding) + Send + 'static>;
 
-/// De levende spiegel. Leeft zo lang als de app; de draad stopt niet.
+/// De levende spiegel. Droppen vraagt de graph-draad om te stoppen.
+///
+/// `Backend::dispatch` accepts stamped work into a bounded FIFO (256 entries,
+/// at most 32 dispatched per 40 ms tick). Acceptance is not server completion;
+/// worker-side rejection is logged. The legacy `doe` API stamps at admission
+/// and retains its unit return and unchanged IPC payloads. Legacy callers
+/// cannot supply an intent epoch: already obsolete frontend IDs that happen
+/// to be reused before admission require a future deliberate IPC migration.
+/// The native read-only `Observer` exposes neither command entry point.
 pub struct Graaf {
-    laatste: Arc<Mutex<Momentopname>>,
-    opdrachten: Mutex<pw::channel::Sender<Opdracht>>,
+    opdrachten: Arc<Commands>,
+    stop: Arc<StopSignal>,
 }
 
 impl Graaf {
     pub fn start(melder: Melder) -> Self {
-        let laatste = Arc::new(Mutex::new(Momentopname::default()));
-        let gedeeld = Arc::clone(&laatste);
-        let (tx, rx) = pw::channel::channel();
+        let opdrachten = Arc::new(Commands::default());
+        let gedeeld = Arc::clone(&opdrachten);
+        let stop = Arc::new(StopSignal::default());
+        let worker_stop = Arc::clone(&stop);
         std::thread::Builder::new()
             .name("pecanmixer-graaf".to_owned())
-            .spawn(move || draad(gedeeld, melder, rx, false, Arc::default()))
+            .spawn(move || draad(gedeeld, melder, false, worker_stop))
             .expect("graph-draad starten");
-        Self {
-            laatste,
-            opdrachten: Mutex::new(tx),
-        }
+        Self { opdrachten, stop }
     }
 
     pub fn nu(&self) -> Momentopname {
-        self.laatste.lock().unwrap().clone()
+        (*self.current_graph().value).clone()
     }
 
     /// Geeft de opdracht door aan de graph-draad en wacht niet.
     pub fn doe(&self, o: Opdracht) {
-        let _ = self.opdrachten.lock().unwrap().send(o);
+        if let Err(error) = self.opdrachten.legacy(o) {
+            eprintln!("pecanmixer: opdracht geweigerd: {error:?}");
+        }
+    }
+}
+
+impl Backend for Graaf {
+    fn current_graph(&self) -> Stamped<Arc<Momentopname>> {
+        self.opdrachten.current()
+    }
+
+    fn dispatch(&self, command: BackendCommand) -> Result<(), DispatchError> {
+        self.opdrachten.enqueue(command)
+    }
+}
+
+impl Drop for Graaf {
+    fn drop(&mut self) {
+        self.opdrachten.stop();
+        self.stop.request();
     }
 }
 
@@ -112,7 +139,6 @@ impl Graaf {
 /// Dropping it requests cancellation without blocking the GTK main thread.
 pub struct Observer {
     stop: Arc<StopSignal>,
-    _sender: pw::channel::Sender<Opdracht>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -171,53 +197,43 @@ pub fn observe(inbox: Arc<pecan_core::inbox::LatestInbox>) -> std::io::Result<Ob
     });
     let stop = Arc::new(StopSignal::default());
     let worker_stop = Arc::clone(&stop);
-    let (tx, rx) = pw::channel::channel();
     let thread = std::thread::Builder::new()
         .name("pecanmixer-observer".into())
-        .spawn(move || draad(Arc::default(), melder, rx, true, worker_stop))?;
+        .spawn(move || draad(Arc::default(), melder, true, worker_stop))?;
     Ok(Observer {
         stop,
-        _sender: tx,
         thread: Some(thread),
     })
 }
 
 /// Blijft verbinden: als de server herstart of even weg is, komt de spiegel
 /// vanzelf terug.
-fn draad(
-    laatste: Arc<Mutex<Momentopname>>,
-    melder: Melder,
-    mut rx: pw::channel::Receiver<Opdracht>,
-    read_only: bool,
-    stop: Arc<StopSignal>,
-) {
+fn draad(opdrachten: Arc<Commands>, melder: Melder, read_only: bool, stop: Arc<StopSignal>) {
     pw::init();
     let melder = Rc::new(melder);
     let meld: Rc<dyn Fn(Momentopname)> = Rc::new({
         let melder = Rc::clone(&melder);
+        let opdrachten = Arc::clone(&opdrachten);
         move |m: Momentopname| {
-            melder(Melding::Graaf(&m));
-            *laatste.lock().unwrap() = m;
+            let graph = opdrachten.publish(m);
+            melder(Melding::Graaf(&graph.value));
         }
     });
     let overig: Rc<dyn Fn(Melding)> = Rc::new(move |m: Melding| melder(m));
     while !stop.requested() {
-        rx = match sessie(
+        if let Err(fout) = sessie(
             Rc::clone(&meld),
             Rc::clone(&overig),
-            rx,
+            Arc::clone(&opdrachten),
             read_only,
             Arc::clone(&stop),
         ) {
-            (Ok(()), rx) => rx,
-            (Err(fout), rx) => {
-                eprintln!("pecanmixer: PipeWire: {fout}");
-                rx
-            }
-        };
+            eprintln!("pecanmixer: PipeWire: {fout}");
+        }
         meld(Momentopname::default());
         stop.retry_wait();
     }
+    opdrachten.stop();
 }
 
 /// Wat de draad bijhoudt tussen de callbacks door.
@@ -248,6 +264,36 @@ struct Staat {
 }
 
 impl Staat {
+    /// Check immediately before execution. The published snapshot can lag a
+    /// registry removal by one graph tick; never destroy an unknown global.
+    fn geldige_objecten(&self, o: &Opdracht) -> bool {
+        match o {
+            Opdracht::Verbind { uit, naar } => {
+                self.poorten
+                    .get(uit)
+                    .is_some_and(|p| !p.ingang && self.knopen.contains_key(&p.knoop))
+                    && self
+                        .poorten
+                        .get(naar)
+                        .is_some_and(|p| p.ingang && self.knopen.contains_key(&p.knoop))
+            }
+            Opdracht::Ontkoppel { kabel } => self.kabels.contains_key(kabel),
+            Opdracht::ZetDoel { knoop, .. }
+            | Opdracht::ZetVolume { knoop, .. }
+            | Opdracht::ZetMute { knoop, .. } => self.knopen.contains_key(knoop),
+            Opdracht::ZetTransport(opties) => opties.klok.is_none_or(|id| {
+                self.poorten.get(&id).is_some_and(|p| {
+                    !p.ingang && p.soort == Soort::Midi && self.knopen.contains_key(&p.knoop)
+                })
+            }),
+            Opdracht::ZetBus { .. }
+            | Opdracht::Start
+            | Opdracht::StartBus(_)
+            | Opdracht::Stop
+            | Opdracht::StopBus(_) => true,
+        }
+    }
+
     fn momentopname(&self) -> Momentopname {
         Momentopname {
             verbonden: true,
@@ -543,15 +589,15 @@ enum Binding {
     ),
 }
 
-/// Eén verbinding met de server, tot die wegvalt. Geeft de ontvanger van de
-/// opdrachten terug, want die gaat mee naar de volgende sessie.
+/// Eén verbinding met de server, tot die wegvalt. De begrensde wachtrij en
+/// epoch blijven op de worker bestaan tussen sessies.
 fn sessie(
     meld: Rc<dyn Fn(Momentopname)>,
     meld_overig: Rc<dyn Fn(Melding)>,
-    rx: pw::channel::Receiver<Opdracht>,
+    opdrachten: Arc<Commands>,
     read_only: bool,
     stop: Arc<StopSignal>,
-) -> (Result<(), pw::Error>, pw::channel::Receiver<Opdracht>) {
+) -> Result<(), pw::Error> {
     let opzet = || -> Result<_, pw::Error> {
         let mainloop = pw::main_loop::MainLoopRc::new(None)?;
         let context = pw::context::ContextRc::new(&mainloop, None)?;
@@ -559,13 +605,11 @@ fn sessie(
         let registry = core.get_registry_rc()?;
         Ok((mainloop, context, core, registry))
     };
-    let (mainloop, _context, core, registry) = match opzet() {
-        Ok(v) => v,
-        Err(fout) => return (Err(fout), rx),
-    };
+    let (mainloop, _context, core, registry) = opzet()?;
 
     let staat = Rc::new(RefCell::new(Staat::default()));
     let bindingen: Rc<RefCell<BTreeMap<u32, Binding>>> = Rc::default();
+    let verbonden = Rc::new(std::cell::Cell::new(true));
 
     // Fout op het core-object (id 0) betekent dat de server weg is: de loop
     // stopt en `draad` verbindt opnieuw.
@@ -573,8 +617,12 @@ fn sessie(
         .add_listener_local()
         .error({
             let mainloop = mainloop.downgrade();
+            let verbonden = Rc::clone(&verbonden);
+            let meld = Rc::clone(&meld);
             move |id, _seq, _res, bericht| {
                 if id == 0 {
+                    verbonden.set(false);
+                    meld(Momentopname::default());
                     eprintln!("pecanmixer: PipeWire-core: {bericht}");
                     if let Some(l) = mainloop.upgrade() {
                         l.quit();
@@ -695,57 +743,6 @@ fn sessie(
             .flatten(),
     );
 
-    let ontvanger = rx.attach(mainloop.loop_(), {
-        let core = core.clone();
-        let registry = registry.clone();
-        let bindingen = Rc::clone(&bindingen);
-        let gelegd = Rc::clone(&gelegd);
-        let staat = Rc::clone(&staat);
-        let opnemer = Rc::clone(&opnemer);
-        let klok = Rc::clone(&klok);
-        let transport = Rc::clone(&transport);
-        let bus = Rc::clone(&bus);
-        move |o| {
-            if read_only {
-                return;
-            }
-            match o {
-                Opdracht::ZetBus { kanalen, gain } => {
-                    if let Some(b) = bus.as_ref() {
-                        b.zet_kanalen(kanalen);
-                        b.zet_gain(&gain);
-                    }
-                }
-                Opdracht::ZetTransport(opties) => {
-                    let mut k = klok.borrow_mut();
-                    if k.bron != opties.klok {
-                        k.recent.clear();
-                    }
-                    k.bron = opties.klok.filter(|_| MIDI);
-                    k.start_stop = opties.start_stop;
-                    transport.borrow_mut().opties = Some(opties);
-                }
-                Opdracht::Start => begin(
-                    &staat.borrow(),
-                    &mut transport.borrow_mut(),
-                    &opnemer,
-                    bus.as_ref().as_ref().and_then(Bus::knoop_id),
-                    None,
-                ),
-                Opdracht::StartBus(b) => begin(
-                    &staat.borrow(),
-                    &mut transport.borrow_mut(),
-                    &opnemer,
-                    bus.as_ref().as_ref().and_then(Bus::knoop_id),
-                    Some(b),
-                ),
-                Opdracht::Stop => eindig(&opnemer, &klok.borrow()),
-                Opdracht::StopBus(naam) => eindig_bus(&opnemer, &klok.borrow(), &naam),
-                o => uitvoeren(o, &core, &registry, &bindingen.borrow(), &gelegd),
-            }
-        }
-    });
-
     // Eén meter per node die geluid maakt of ontvangt.
     let meters: Rc<RefCell<BTreeMap<u32, Meter>>> = Rc::default();
     // En één node die alle MIDI-uitgangen afluistert.
@@ -767,7 +764,7 @@ fn sessie(
         let transport = Rc::clone(&transport);
         let bus = Rc::clone(&bus);
         move |_| {
-            if stop.requested() {
+            if stop.requested() || !verbonden.get() {
                 if let Some(mainloop) = mainloop.upgrade() {
                     mainloop.quit();
                 }
@@ -849,6 +846,47 @@ fn sessie(
             } else {
                 drop(s);
             }
+            if !read_only {
+                for error in opdrachten.drain(
+                    |o| staat.borrow().geldige_objecten(o),
+                    |o| match o {
+                        Opdracht::ZetBus { kanalen, gain } => {
+                            if let Some(b) = bus.as_ref() {
+                                b.zet_kanalen(kanalen);
+                                b.zet_gain(&gain);
+                            }
+                        }
+                        Opdracht::ZetTransport(opties) => {
+                            let mut k = klok.borrow_mut();
+                            if k.bron != opties.klok {
+                                k.recent.clear();
+                            }
+                            k.bron = opties.klok.filter(|_| MIDI);
+                            k.start_stop = opties.start_stop;
+                            transport.borrow_mut().opties = Some(opties);
+                        }
+                        Opdracht::Start => begin(
+                            &staat.borrow(),
+                            &mut transport.borrow_mut(),
+                            &opnemer,
+                            bus.as_ref().as_ref().and_then(Bus::knoop_id),
+                            None,
+                        ),
+                        Opdracht::StartBus(b) => begin(
+                            &staat.borrow(),
+                            &mut transport.borrow_mut(),
+                            &opnemer,
+                            bus.as_ref().as_ref().and_then(Bus::knoop_id),
+                            Some(b),
+                        ),
+                        Opdracht::Stop => eindig(&opnemer, &klok.borrow()),
+                        Opdracht::StopBus(naam) => eindig_bus(&opnemer, &klok.borrow(), &naam),
+                        o => uitvoeren(o, &core, &registry, &bindingen.borrow(), &gelegd),
+                    },
+                ) {
+                    eprintln!("pecanmixer: opdracht geweigerd op worker: {error:?}");
+                }
+            }
             let m = meters.borrow();
             let mut pieken: Pieken = m.iter().map(|(id, meter)| (*id, meter.oogst())).collect();
             // De Rec bus meet zichzelf, onder zijn eigen node-id.
@@ -874,7 +912,7 @@ fn sessie(
     eindig(&opnemer, &klok.borrow());
     meters.borrow_mut().clear();
     midi.borrow_mut().take();
-    (Ok(()), ontvanger.deattach())
+    Ok(())
 }
 
 /// Wat de graph-draad over de opname bijhoudt.
@@ -1115,7 +1153,7 @@ fn uitvoeren(
             let eigenschap = Property::new(pw::spa::sys::SPA_PROP_mute, Value::Bool(mute));
             stuur_props(bindingen, knoop, eigenschap);
         }
-        // Die handelt de ontvanger in `sessie` zelf af.
+        // Die handelt de begrensde dispatch in `sessie` zelf af.
         Opdracht::ZetTransport(_)
         | Opdracht::ZetBus { .. }
         | Opdracht::Start
@@ -1156,5 +1194,389 @@ mod observer_tests {
         stop.request();
         assert!(completed.recv_timeout(Duration::from_secs(1)).unwrap());
         worker.join().unwrap();
+    }
+}
+
+#[cfg(test)]
+mod command_tests {
+    use super::*;
+    use crate::commands::{CAPACITY, PER_TICK};
+
+    fn graph() -> Momentopname {
+        serde_json::from_str(include_str!("../../../fixtures/graph/audio-basic.json")).unwrap()
+    }
+
+    fn live(graph: &Momentopname) -> Staat {
+        Staat {
+            knopen: graph.knopen.iter().map(|v| (v.id, v.clone())).collect(),
+            poorten: graph.poorten.iter().map(|v| (v.id, v.clone())).collect(),
+            kabels: graph.kabels.iter().map(|v| (v.id, v.clone())).collect(),
+            ..Default::default()
+        }
+    }
+
+    fn backend() -> Graaf {
+        let backend = Graaf {
+            opdrachten: Arc::default(),
+            stop: Arc::default(),
+        };
+        backend.opdrachten.publish(graph());
+        backend
+    }
+
+    fn command(backend: &Graaf, command: Opdracht) -> BackendCommand {
+        BackendCommand {
+            epoch: backend.current_graph().stamp.epoch,
+            command,
+        }
+    }
+
+    fn all_commands() -> Vec<Opdracht> {
+        vec![
+            Opdracht::Verbind {
+                uit: 201,
+                naar: 101,
+            },
+            Opdracht::Ontkoppel { kabel: 500 },
+            Opdracht::ZetDoel {
+                knoop: 20,
+                doel: Some("-1".into()),
+            },
+            Opdracht::ZetVolume {
+                knoop: 20,
+                volume: vec![0.5, 0.5],
+            },
+            Opdracht::ZetMute {
+                knoop: 20,
+                mute: true,
+            },
+            Opdracht::ZetTransport(Opties {
+                bussen: vec![BusOpname {
+                    naam: "Stereo".into(),
+                    kanalen: vec![0, 1],
+                }],
+                midi: false,
+                klok: None,
+                start_stop: false,
+            }),
+            Opdracht::ZetBus {
+                kanalen: 2,
+                gain: vec![1.0, 1.0],
+            },
+            Opdracht::Start,
+            Opdracht::StartBus(BusOpname {
+                naam: "Stereo".into(),
+                kanalen: vec![0, 1],
+            }),
+            Opdracht::Stop,
+            Opdracht::StopBus("Stereo".into()),
+        ]
+    }
+
+    #[test]
+    fn production_boundary_dispatches_all_existing_commands_in_fifo_order() {
+        fn send_sync<T: Send + Sync>() {}
+        send_sync::<Graaf>();
+        let backend = backend();
+        let state = live(&graph());
+        let expected = all_commands();
+        for o in &expected {
+            backend.dispatch(command(&backend, o.clone())).unwrap();
+        }
+        let mut executed = Vec::new();
+        assert!(backend
+            .opdrachten
+            .drain(|o| state.geldige_objecten(o), |o| executed.push(o),)
+            .is_empty());
+        assert_eq!(executed, expected);
+    }
+
+    #[test]
+    fn reconnect_rejects_every_pending_command_even_when_ids_are_reused() {
+        let backend = backend();
+        let state = live(&graph());
+        let old = command(
+            &backend,
+            Opdracht::Verbind {
+                uit: 201,
+                naar: 101,
+            },
+        );
+        for o in all_commands() {
+            backend.dispatch(command(&backend, o)).unwrap();
+        }
+        let old_stamp = backend.current_graph().stamp;
+        backend.opdrachten.publish(Momentopname::default());
+        backend.opdrachten.publish(graph()); // Deliberately reuse every ID.
+        assert!(backend.current_graph().stamp.epoch > old_stamp.epoch);
+        assert_eq!(backend.dispatch(old), Err(DispatchError::StaleEpoch));
+        let fresh = Opdracht::ZetMute {
+            knoop: 20,
+            mute: false,
+        };
+        backend.dispatch(command(&backend, fresh.clone())).unwrap();
+        let mut executed = Vec::new();
+        let rejected = backend
+            .opdrachten
+            .drain(|o| state.geldige_objecten(o), |o| executed.push(o));
+        assert_eq!(
+            rejected,
+            vec![DispatchError::StaleEpoch; all_commands().len()]
+        );
+        assert_eq!(executed, [fresh]);
+    }
+
+    #[test]
+    fn disconnect_rejects_queued_and_new_work_without_replaying_it() {
+        let backend = backend();
+        let old = command(&backend, Opdracht::Start);
+        backend.dispatch(old.clone()).unwrap();
+        backend.opdrachten.publish(Momentopname::default());
+        assert_eq!(backend.dispatch(old), Err(DispatchError::StaleEpoch));
+        assert_eq!(
+            backend.dispatch(command(&backend, Opdracht::Start)),
+            Err(DispatchError::Disconnected)
+        );
+        backend.doe(Opdracht::Start); // Same protection for the legacy entry.
+        assert_eq!(
+            backend.opdrachten.drain(
+                |_| panic!("no object checks for disconnected commands"),
+                |_| panic!("no execution while disconnected"),
+            ),
+            [DispatchError::StaleEpoch]
+        );
+        backend.opdrachten.publish(graph());
+        assert!(backend
+            .opdrachten
+            .drain(|_| true, |_| panic!("no replay"))
+            .is_empty());
+    }
+
+    #[test]
+    fn removed_objects_are_checked_against_the_live_registry_not_the_ui_snapshot() {
+        let backend = backend();
+        let mut state = live(&graph());
+        let pending = [
+            Opdracht::Verbind {
+                uit: 201,
+                naar: 101,
+            },
+            Opdracht::Verbind {
+                uit: 202,
+                naar: 102,
+            },
+            Opdracht::Ontkoppel { kabel: 500 },
+            Opdracht::ZetDoel {
+                knoop: 20,
+                doel: None,
+            },
+            Opdracht::ZetVolume {
+                knoop: 20,
+                volume: vec![1.0],
+            },
+            Opdracht::ZetMute {
+                knoop: 20,
+                mute: true,
+            },
+        ];
+        for o in pending.iter().cloned() {
+            backend.dispatch(command(&backend, o)).unwrap();
+        }
+        // Remove on the worker before the next coalesced graph publication.
+        state.weg(201);
+        state.weg(500);
+        state.weg(20);
+        assert!(backend
+            .current_graph()
+            .value
+            .knopen
+            .iter()
+            .any(|n| n.id == 20));
+        assert_eq!(
+            backend.opdrachten.drain(
+                |o| state.geldige_objecten(o),
+                |_| panic!("removed IDs must never reach PipeWire"),
+            ),
+            vec![DispatchError::InvalidObject; pending.len()]
+        );
+    }
+
+    #[test]
+    fn invalid_link_direction_and_clock_ids_are_rejected() {
+        let backend = backend();
+        let mut state = live(&graph());
+        let midi = Poort {
+            id: 999,
+            soort: Soort::Midi,
+            ..state.poorten[&201].clone()
+        };
+        state.poorten.insert(midi.id, midi);
+        let options = |klok| {
+            Opdracht::ZetTransport(Opties {
+                bussen: vec![],
+                midi: false,
+                klok,
+                start_stop: false,
+            })
+        };
+        for o in [
+            Opdracht::Verbind {
+                uit: 101,
+                naar: 201,
+            },
+            Opdracht::Verbind {
+                uit: 9999,
+                naar: 101,
+            },
+            options(Some(9999)),
+            options(Some(201)), // Audio cannot supply MIDI clock.
+            options(Some(101)), // Input cannot supply clock.
+        ] {
+            backend.dispatch(command(&backend, o)).unwrap();
+        }
+        assert_eq!(
+            backend
+                .opdrachten
+                .drain(|o| state.geldige_objecten(o), |_| panic!("invalid object"),),
+            vec![DispatchError::InvalidObject; 5]
+        );
+        assert!(state.geldige_objecten(&options(Some(999))));
+        assert!(state.geldige_objecten(&options(None)));
+    }
+
+    #[test]
+    fn queue_capacity_and_per_tick_budget_are_bounded_without_reordering() {
+        let backend = backend();
+        for i in 0..CAPACITY {
+            backend
+                .dispatch(command(&backend, Opdracht::StopBus(i.to_string())))
+                .unwrap();
+        }
+        assert_eq!(
+            backend.dispatch(command(&backend, Opdracht::Stop)),
+            Err(DispatchError::QueueFull)
+        );
+        let mut executed = Vec::new();
+        assert!(backend
+            .opdrachten
+            .drain(|_| true, |o| executed.push(o))
+            .is_empty());
+        assert_eq!(executed.len(), PER_TICK);
+        // A producer can refill, but cannot extend this tick's budget.
+        for i in 0..PER_TICK {
+            backend
+                .dispatch(command(
+                    &backend,
+                    Opdracht::StopBus((CAPACITY + i).to_string()),
+                ))
+                .unwrap();
+        }
+        while executed.len() < CAPACITY + PER_TICK {
+            let before = executed.len();
+            assert!(backend
+                .opdrachten
+                .drain(|_| true, |o| executed.push(o))
+                .is_empty());
+            assert!(executed.len() - before <= PER_TICK);
+        }
+        assert_eq!(
+            executed,
+            (0..CAPACITY + PER_TICK)
+                .map(|i| Opdracht::StopBus(i.to_string()))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn legacy_entry_stamps_at_admission_and_preserves_existing_command_values() {
+        let backend = backend();
+        let expected = all_commands();
+        for o in expected.iter().cloned() {
+            backend.doe(o);
+        }
+        let mut executed = Vec::new();
+        assert!(backend
+            .opdrachten
+            .drain(|_| true, |o| executed.push(o))
+            .is_empty());
+        assert_eq!(executed, expected);
+        backend.doe(Opdracht::Start);
+        backend.opdrachten.publish(Momentopname::default());
+        backend.opdrachten.publish(graph());
+        assert_eq!(
+            backend
+                .opdrachten
+                .drain(|_| true, |_| panic!("no restamping")),
+            [DispatchError::StaleEpoch]
+        );
+    }
+
+    #[test]
+    fn cancellation_discards_pending_work_and_rejects_future_commands() {
+        let backend = backend();
+        let commands = Arc::clone(&backend.opdrachten);
+        backend
+            .dispatch(command(&backend, Opdracht::Start))
+            .unwrap();
+        let stop = Arc::clone(&backend.stop);
+        drop(backend);
+        assert!(stop.requested());
+        assert_eq!(
+            commands.legacy(Opdracht::Start),
+            Err(DispatchError::Stopped)
+        );
+        assert_eq!(
+            commands.enqueue(BackendCommand {
+                epoch: 0,
+                command: Opdracht::Stop
+            }),
+            Err(DispatchError::Stopped)
+        );
+        assert!(commands
+            .drain(|_| panic!("cancelled"), |_| panic!("cancelled"))
+            .is_empty());
+    }
+
+    #[test]
+    fn cancellation_between_commands_stops_the_current_drain() {
+        let backend = backend();
+        backend
+            .dispatch(command(&backend, Opdracht::Start))
+            .unwrap();
+        backend.dispatch(command(&backend, Opdracht::Stop)).unwrap();
+        let mut executed = Vec::new();
+        assert!(backend
+            .opdrachten
+            .drain(
+                |_| true,
+                |o| {
+                    executed.push(o);
+                    backend.opdrachten.stop();
+                },
+            )
+            .is_empty());
+        assert_eq!(executed, [Opdracht::Start]);
+        assert_eq!(
+            backend.dispatch(command(&backend, Opdracht::Start)),
+            Err(DispatchError::Stopped)
+        );
+    }
+
+    #[test]
+    fn graph_revisions_within_a_session_do_not_invalidate_queued_commands() {
+        let backend = backend();
+        let old = backend.current_graph().stamp;
+        backend.dispatch(command(&backend, Opdracht::Stop)).unwrap();
+        let mut next = graph();
+        next.quantum = Some(512);
+        backend.opdrachten.publish(next);
+        assert_eq!(backend.current_graph().stamp.epoch, old.epoch);
+        assert!(backend.current_graph().stamp.revision > old.revision);
+        let mut executed = Vec::new();
+        assert!(backend
+            .opdrachten
+            .drain(|_| true, |o| executed.push(o))
+            .is_empty());
+        assert_eq!(executed, [Opdracht::Stop]);
     }
 }
