@@ -1,0 +1,416 @@
+//! Recording admission/execution on the production FIFO and session boundary.
+use super::*;
+use crate::{
+    opname::{self, Spoor, TrackedWriter},
+    recording::*,
+    shutdown::Shutdown,
+};
+use std::{cell::RefCell, sync::atomic::Ordering};
+
+impl Commands {
+    pub(crate) fn enqueue_recording(
+        &self,
+        intent: RecordingStart,
+    ) -> Result<RecordingReceipt, RecordingError> {
+        if intent.root.as_os_str().len() > 4096 {
+            return Err(RecordingError::InvalidInput);
+        }
+        let mut state = self.0.try_lock().map_err(|_| RecordingError::Busy)?;
+        if state.stopped {
+            return Err(RecordingError::Stopped);
+        }
+        if !state.graph.value.verbonden {
+            return Err(RecordingError::Disconnected);
+        }
+        state.recording.reap();
+        if state.recording.active.is_some() || state.config.snapshot.recording {
+            return Err(RecordingError::AlreadyRecording);
+        }
+        if intent.expected_config != state.config.snapshot.revision {
+            return Err(RecordingError::StaleConfig);
+        }
+        if state.pending.len() >= NORMAL_CAPACITY {
+            return Err(RecordingError::QueueFull);
+        }
+        let origin = state
+            .origins
+            .iter()
+            .find(|o| {
+                o.graph.stamp == intent.origin.stamp
+                    && Arc::ptr_eq(&o.graph.value, &intent.origin.value)
+            })
+            .ok_or(RecordingError::OriginUnavailable)?;
+        if origin.graph.stamp.epoch != state.graph.stamp.epoch {
+            return Err(RecordingError::InvalidOrigin);
+        }
+        let config = state
+            .config
+            .snapshot
+            .configuration
+            .as_ref()
+            .ok_or(RecordingError::ConfigurationUnknown)?;
+        let local = state
+            .config
+            .snapshot
+            .local
+            .as_ref()
+            .ok_or(RecordingError::Unavailable)?;
+        let node = local.node.ok_or(RecordingError::Unavailable)?;
+        let observed = origin
+            .graph
+            .value
+            .knopen
+            .iter()
+            .find(|n| n.id == node && n.naam == opname::BUS_NAAM)
+            .ok_or(RecordingError::InvalidOrigin)?;
+        let rate = origin
+            .graph
+            .value
+            .rate
+            .filter(|r| *r != 0)
+            .ok_or(RecordingError::Unavailable)?;
+        let defs = config
+            .buses
+            .armed()
+            .map_err(|_| RecordingError::InvalidInput)?;
+        if defs.is_empty() {
+            return Err(RecordingError::NoArmedTracks);
+        }
+        let mut tracks = Vec::new();
+        let mut references = BTreeSet::from([node]);
+        for def in defs {
+            let mut ports = Vec::new();
+            for channel in &def.channels {
+                let name = format!("rec_{}", channel + 1);
+                let mut matching = origin.graph.value.poorten.iter().filter(|p| {
+                    p.knoop == node
+                        && p.ingang
+                        && p.soort == pecan_core::graph::Soort::Audio
+                        && p.naam == name
+                });
+                let port = matching
+                    .next()
+                    .filter(|_| *channel < local.channels)
+                    .ok_or(RecordingError::InvalidOrigin)?;
+                if matching.next().is_some() {
+                    return Err(RecordingError::InvalidOrigin);
+                }
+                ports.push(port.id);
+                references.insert(port.id);
+            }
+            tracks.push(TrackSpec {
+                key: def.key,
+                name: def.file,
+                channels: def.channels,
+                ports,
+            });
+        }
+        let objects = references
+            .into_iter()
+            .map(|id| (id, origin.objects.get(&id).copied()))
+            .collect();
+        let context = Context {
+            source: origin.graph.stamp,
+            config: intent.expected_config,
+            ticket: intent.ticket,
+            node,
+            serial: observed.serial,
+            rate,
+            objects,
+            tracks,
+        };
+        state.validate_recording(&context, true)?;
+        let request = Request::new(context);
+        state.pending.push_back(QueuedCommand {
+            command: BackendCommand {
+                epoch: request.context.source.epoch,
+                command: Opdracht::Start,
+            },
+            objects: request.context.objects.clone(),
+            native: None,
+            config: None,
+            start: Some(PreparedStart::new(request.clone(), intent.root)),
+        });
+        state.recording.active = Some(request.clone());
+        Ok(RecordingReceipt(request))
+    }
+    pub(crate) fn stop_recording(
+        &self,
+        target: RecordingStop,
+    ) -> Result<RecordingStopResult, RecordingError> {
+        let mut state = self.0.try_lock().map_err(|_| RecordingError::Busy)?;
+        if target == RecordingStop::All {
+            let result = state.recording.stop_all(None, true);
+            // A stopped queued start must not retain ordinary FIFO capacity.
+            state.pending.retain(|q| q.start.is_none());
+            return Ok(result);
+        }
+        let take_id = match target {
+            RecordingStop::Take(id) => id,
+            RecordingStop::Track(id) => id.take(),
+            RecordingStop::All => unreachable!(),
+        };
+        let request = state
+            .recording
+            .active
+            .iter()
+            .chain(state.recording.recent.iter())
+            .find(|r| {
+                r.installed
+                    .get()
+                    .is_some_and(|i| i.writer.receipt.take_id() == take_id)
+            })
+            .cloned()
+            .ok_or(RecordingError::UnknownTake)?;
+        let installed = request.installed.get().unwrap();
+        match target {
+            RecordingStop::Take(_) => request.request_stop(),
+            RecordingStop::Track(id) => {
+                if installed.writer.receipt.track_id(id.index()) != Some(id) {
+                    return Err(RecordingError::UnknownTrack);
+                }
+                request.request_track_stop(id.index());
+            }
+            _ => unreachable!(),
+        }
+        Ok(RecordingStopResult::Retained(RecordingReceipt(request)))
+    }
+    pub(crate) fn recording_owned(&self) -> bool {
+        self.0
+            .lock()
+            .unwrap()
+            .recording
+            .active
+            .as_ref()
+            .is_some_and(|r| r.owned())
+    }
+    pub(crate) fn legacy_recording_blocked(&self, command: &Opdracht) -> bool {
+        matches!(
+            command,
+            Opdracht::ZetBus { .. }
+                | Opdracht::ZetTransport(_)
+                | Opdracht::Start
+                | Opdracht::StartBus(_)
+        ) && self.recording_owned()
+    }
+    pub(crate) fn recording_live(&self) -> bool {
+        self.0
+            .lock()
+            .unwrap()
+            .recording
+            .active
+            .as_ref()
+            .is_some_and(|r| r.live())
+    }
+    pub(crate) fn legacy_recording_stop(&self, name: Option<&str>) {
+        let mut state = self.0.lock().unwrap();
+        if name.is_none() {
+            state.recording.stop_all(None, false);
+            return;
+        }
+        let Some(request) = &state.recording.active else {
+            return;
+        };
+        if !request.owned() {
+            return;
+        }
+        let Some(installed) = request.installed.get() else {
+            request.request_stop();
+            return;
+        };
+        if let Some(track) = installed
+            .tracks
+            .iter()
+            .find(|t| Some(t.name.as_str()) == name)
+        {
+            request.request_track_stop(track.id.index());
+        }
+    }
+    #[cfg(test)]
+    pub(crate) fn reject_recording(&self, mut work: PreparedStart, reason: RecordingError) {
+        work.request.reject(reason);
+        work.disarm();
+    }
+    pub(crate) fn start_recording_with(
+        &self,
+        mut work: PreparedStart,
+        completion: &Shutdown,
+        legacy_active: bool,
+        factory: impl FnOnce(
+            &std::path::Path,
+            Vec<Spoor>,
+            u32,
+            &Shutdown,
+        ) -> std::io::Result<TrackedWriter>,
+    ) {
+        {
+            let state = self.0.lock().unwrap();
+            let result = if work.request.stop.load(Ordering::Acquire) {
+                Err(RecordingError::CancelledBeforeStart)
+            } else if legacy_active {
+                Err(RecordingError::AlreadyRecording)
+            } else {
+                state.validate_recording(&work.request.context, true)
+            };
+            if let Err(reason) = result {
+                work.request.reject(reason);
+                work.disarm();
+                return;
+            }
+            work.request.stage.store(OPENING, Ordering::Release);
+        }
+        let tracks = work
+            .request
+            .context
+            .tracks
+            .iter()
+            .map(|t| Spoor {
+                naam: t.name.clone(),
+                kanalen: t.channels.len() as u16,
+            })
+            .collect();
+        match factory(&work.root, tracks, work.request.context.rate, completion) {
+            Err(error) => {
+                work.request
+                    .reject(RecordingError::Writer(crate::writer_status::error_text(
+                        &error.to_string(),
+                    )))
+            }
+            Ok(writer) => {
+                let tracks = Arc::new(
+                    work.request
+                        .context
+                        .tracks
+                        .iter()
+                        .enumerate()
+                        .map(|(index, t)| RecordingTrack {
+                            id: writer.receipt.track_id(index).unwrap(),
+                            key: t.key.clone(),
+                            name: t.name.clone(),
+                            channels: t.channels.clone(),
+                            ports: t.ports.clone(),
+                        })
+                        .collect(),
+                );
+                assert!(
+                    work.request
+                        .installed
+                        .set(Installed { writer, tracks })
+                        .is_ok(),
+                    "one writer per admitted recording"
+                );
+                if work.request.stop.load(Ordering::Acquire) {
+                    work.request.request_stop();
+                }
+            }
+        }
+        work.disarm();
+    }
+    pub(crate) fn pump_recording(&self, capture: &RefCell<Option<Capture>>, legacy_active: bool) {
+        let mut state = self.0.lock().unwrap();
+        state.recording.reap();
+        let Some(request) = &state.recording.active else {
+            capture.borrow_mut().take();
+            return;
+        };
+        if request.stage.load(Ordering::Acquire) == QUEUED {
+            return;
+        }
+        if request.stop.load(Ordering::Acquire) {
+            capture.borrow_mut().take();
+            return;
+        }
+        let validation = if legacy_active {
+            Err(RecordingError::AlreadyRecording)
+        } else {
+            state.validate_recording(
+                &request.context,
+                !request.started_once.load(Ordering::Acquire),
+            )
+        };
+        if let Err(error) = validation {
+            request.fail(error);
+            request.request_stop();
+            capture.borrow_mut().take();
+            return;
+        }
+        let Some(installed) = request.installed.get() else {
+            return;
+        };
+        let Some(report) = installed.writer.receipt.try_report() else {
+            return;
+        };
+        if report.phase == opname::WriterPhase::Ready && !report.stop_requested {
+            let stops = request.track_stops.load(Ordering::Acquire);
+            for track in installed
+                .tracks
+                .iter()
+                .filter(|t| stops & (1_u64 << t.id.index()) != 0)
+            {
+                match installed.writer.sender.try_close(track.id) {
+                    Ok(())
+                    | Err(opname::WriterSendError::Busy | opname::WriterSendError::Closed) => {}
+                    Err(_) => {
+                        request.ingress_fault(6);
+                        capture.borrow_mut().take();
+                        return;
+                    }
+                }
+            }
+            if !request.started_once.load(Ordering::Acquire) {
+                *capture.borrow_mut() = Some(Capture(request.clone()));
+                request.attached.store(true, Ordering::Release);
+                request.started_once.store(true, Ordering::Release);
+            }
+        } else {
+            request.attached.store(false, Ordering::Release);
+            capture.borrow_mut().take();
+        }
+    }
+}
+impl State {
+    fn validate_recording(&self, context: &Context, config: bool) -> Result<(), RecordingError> {
+        if self.stopped {
+            return Err(RecordingError::Stopped);
+        }
+        if !self.graph.value.verbonden || self.graph.stamp.epoch != context.source.epoch {
+            return Err(RecordingError::Disconnected);
+        }
+        if config && self.config.snapshot.revision != context.config {
+            return Err(RecordingError::StaleConfig);
+        }
+        if self.graph.value.rate != Some(context.rate) {
+            return Err(RecordingError::FormatChanged);
+        }
+        if !context
+            .objects
+            .iter()
+            .all(|(id, gen)| gen.is_some() && self.objects.get(id) == gen.as_ref())
+        {
+            return Err(RecordingError::InvalidOrigin);
+        }
+        if !self.graph.value.knopen.iter().any(|n| {
+            n.id == context.node && n.serial == context.serial && n.naam == opname::BUS_NAAM
+        }) {
+            return Err(RecordingError::InvalidOrigin);
+        }
+        for track in &context.tracks {
+            for (channel, id) in track.channels.iter().zip(&track.ports) {
+                if !self.graph.value.poorten.iter().any(|p| {
+                    p.id == *id
+                        && p.knoop == context.node
+                        && p.ingang
+                        && p.soort == pecan_core::graph::Soort::Audio
+                        && p.naam == format!("rec_{}", channel + 1)
+                }) {
+                    return Err(RecordingError::InvalidOrigin);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+#[path = "recording_tests.rs"]
+mod tests;

@@ -123,7 +123,7 @@ pub fn tracked_writer(
     })
 }
 
-fn tracked_writer_with<W, F>(
+pub(crate) fn tracked_writer_with<W, F>(
     root: &Path,
     tracks: Vec<Spoor>,
     rate: u32,
@@ -657,6 +657,7 @@ struct BusBinnen {
     /// Hoogste piek per kanaal sinds de vorige oogst, na de gain.
     pieken: Vec<f32>,
     opnemer: Opnemer,
+    native: crate::recording::NativeOpnemer,
 }
 
 /// De Rec bus: één node met een instelbaar aantal audio-ingangen en één
@@ -702,6 +703,14 @@ unsafe fn bus_poort(
 
 impl Bus {
     pub fn maak(core: &pw::core::CoreRc, opnemer: Opnemer, kanalen: usize) -> Option<Self> {
+        Self::maak_native(core, opnemer, kanalen, Rc::default())
+    }
+    pub(crate) fn maak_native(
+        core: &pw::core::CoreRc,
+        opnemer: Opnemer,
+        kanalen: usize,
+        native: crate::recording::NativeOpnemer,
+    ) -> Option<Self> {
         let naam = CString::new(BUS_NAAM).ok()?;
         let props = pw::properties::properties! {
             *pw::keys::MEDIA_TYPE => "Audio",
@@ -733,6 +742,7 @@ impl Bus {
             gain: Vec::new(),
             pieken: Vec::new(),
             opnemer,
+            native,
         }));
         let events = Box::new(pw_sys::pw_filter_events {
             version: pw_sys::PW_VERSION_FILTER_EVENTS,
@@ -902,10 +912,24 @@ unsafe extern "C" fn bus_process(data: *mut c_void, positie: *mut spa::sys::spa_
         gain,
         pieken,
         opnemer,
+        native,
         ..
     } = &mut *b;
     let op = opnemer.try_borrow().ok();
     let takes = op.as_deref().filter(|t| !t.is_empty());
+    let native = native.try_borrow().ok();
+    let native = native
+        .as_deref()
+        .and_then(Option::as_ref)
+        .filter(|capture| capture.0.live());
+    if let Some(capture) = native {
+        // SAFETY: the non-null position was inspected above for n > 0.
+        let rate = unsafe { (*positie).clock.rate };
+        if !capture.accepts(n, rate.num, rate.denom) {
+            return;
+        }
+    }
+    let collecting = takes.is_some() || native.is_some();
     // Elk kanaal: gain erop, piek bijhouden, en bewaren als er opgenomen wordt.
     let mut blok: Vec<Vec<f32>> = Vec::new();
     for (i, &poort) in kanalen.iter().enumerate() {
@@ -914,7 +938,7 @@ unsafe extern "C" fn bus_process(data: *mut c_void, positie: *mut spa::sys::spa_
         let g = gain[i];
         let mut piek = pieken[i];
         let mut kanaal = Vec::new();
-        if takes.is_some() {
+        if collecting {
             kanaal.reserve(n);
         }
         for j in 0..n {
@@ -925,24 +949,28 @@ unsafe extern "C" fn bus_process(data: *mut c_void, positie: *mut spa::sys::spa_
                 unsafe { *p.add(j) }
             } * g;
             piek = piek.max(x.abs());
-            if takes.is_some() {
+            if collecting {
                 kanaal.push(x);
             }
         }
         pieken[i] = piek;
         blok.push(kanaal);
     }
-    let Some(takes) = takes else { return };
-    for a in takes {
-        for (spoor, kan, _) in &a.bussen {
-            let mut uit = Vec::with_capacity(n * kan.len());
-            for j in 0..n {
-                for &c in kan {
-                    uit.push(blok.get(c).and_then(|k| k.get(j)).copied().unwrap_or(0.0));
+    if let Some(takes) = takes {
+        for a in takes {
+            for (spoor, kan, _) in &a.bussen {
+                let mut uit = Vec::with_capacity(n * kan.len());
+                for j in 0..n {
+                    for &c in kan {
+                        uit.push(blok.get(c).and_then(|k| k.get(j)).copied().unwrap_or(0.0));
+                    }
                 }
+                let _ = a.tx.send(Bericht::Audio(*spoor, uit));
             }
-            let _ = a.tx.send(Bericht::Audio(*spoor, uit));
         }
+    }
+    if let Some(capture) = native {
+        capture.ingest(&blok, n);
     }
 }
 

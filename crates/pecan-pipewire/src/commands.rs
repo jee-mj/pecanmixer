@@ -12,6 +12,8 @@ use pecan_core::graph::{Momentopname, Opdracht};
 mod config;
 #[path = "native_commands.rs"]
 mod native;
+#[path = "recording_commands.rs"]
+mod recording;
 pub(crate) use native::LocalExecution;
 use pecan_core::native_command::NativeFailure;
 
@@ -37,6 +39,7 @@ struct State {
     next_native_id: u64,
     history_authority: Arc<()>,
     config: crate::bus_config::Registry,
+    recording: crate::recording::Registry,
 }
 
 struct QueuedCommand {
@@ -45,6 +48,7 @@ struct QueuedCommand {
     objects: Vec<(u32, Option<u64>)>,
     native: Option<native::Tag>,
     config: Option<crate::bus_config::Prepared>,
+    start: Option<crate::recording::PreparedStart>,
 }
 
 impl Default for Commands {
@@ -65,6 +69,7 @@ impl Default for Commands {
             next_native_id: 0,
             history_authority: Arc::new(()),
             config: Default::default(),
+            recording: Default::default(),
         }))
     }
 }
@@ -93,6 +98,9 @@ impl Commands {
             state.fail_all_native(NativeFailure::Disconnected);
             state.config.reset(graph.stamp.epoch);
             state.fail_all_config(crate::bus_config::ConfigError::Disconnected);
+            let failure =
+                (!state.stopped).then_some(crate::recording::RecordingError::Disconnected);
+            state.recording.stop_all(failure, true);
             state.pending.clear();
         }
         if !graph.value.verbonden {
@@ -137,6 +145,7 @@ impl Commands {
         state.config.snapshot.connected = false;
         state.fail_all_native(NativeFailure::Stopped);
         state.fail_all_config(crate::bus_config::ConfigError::Stopped);
+        state.recording.stop_all(None, true);
         state.pending.clear();
     }
 
@@ -174,12 +183,25 @@ impl Commands {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn drain_with_config(
+        &self,
+        valid_objects: impl FnMut(&Opdracht) -> bool,
+        no_op: impl FnMut(&Opdracht) -> bool,
+        execute: impl FnMut(Opdracht) -> LocalExecution,
+        configure: impl FnMut(crate::bus_config::Prepared),
+    ) -> Vec<DispatchError> {
+        self.drain_with_recording(valid_objects, no_op, execute, configure, |work| {
+            self.reject_recording(work, crate::recording::RecordingError::Unavailable);
+        })
+    }
+    pub(crate) fn drain_with_recording(
         &self,
         mut valid_objects: impl FnMut(&Opdracht) -> bool,
         mut no_op: impl FnMut(&Opdracht) -> bool,
         mut execute: impl FnMut(Opdracht) -> LocalExecution,
         mut configure: impl FnMut(crate::bus_config::Prepared),
+        mut start: impl FnMut(crate::recording::PreparedStart),
     ) -> Vec<DispatchError> {
         let mut rejected = Vec::new();
         for _ in 0..PER_TICK {
@@ -200,7 +222,11 @@ impl Commands {
                     })
                 };
                 if validation.is_err() || !identity_ok {
-                    if let Some(work) = queued.config {
+                    if let Some(mut work) = queued.start {
+                        work.request
+                            .reject(crate::recording::RecordingError::InvalidOrigin);
+                        work.disarm();
+                    } else if let Some(work) = queued.config {
                         state.reject_config(work, crate::bus_config::ConfigError::Disconnected);
                     } else if let Some(tag) = queued.native {
                         state.fail_native(
@@ -223,6 +249,10 @@ impl Commands {
                 }
                 queued
             };
+            if let Some(work) = queued.start {
+                start(work);
+                continue;
+            }
             if let Some(work) = queued.config {
                 configure(work);
                 continue;
@@ -281,6 +311,7 @@ impl State {
             objects,
             native: None,
             config: None,
+            start: None,
         });
         Ok(())
     }

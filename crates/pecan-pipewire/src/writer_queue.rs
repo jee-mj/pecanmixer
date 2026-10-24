@@ -72,6 +72,12 @@ pub(crate) fn channel(receipt: &WriterReceipt) -> (WriterSender, Receiver) {
     (sender, Receiver(shared))
 }
 impl WriterSender {
+    /// Reserved, nonblocking stop request. Reject future ingress and drain all
+    /// already-admitted FIFO messages before finalizing; this is not completion.
+    pub fn request_stop(&self) {
+        self.shared.signals.stop.store(true, Ordering::Release);
+        self.shared.wake.notify_all();
+    }
     fn index(&self, track: TrackId) -> Result<usize, WriterSendError> {
         if self.receipt.track_id(track.index()) == Some(track) {
             Ok(track.index())
