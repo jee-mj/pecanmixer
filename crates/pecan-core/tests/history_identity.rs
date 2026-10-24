@@ -1023,3 +1023,101 @@ fn route_with_two_streams_can_switch_target_branches_but_cannot_adopt_a_shadow()
         }
     }
 }
+
+#[test]
+fn opaque_binding_survives_revisions_but_not_owner_epoch_or_generation() {
+    let mut r = Registry::new();
+    let binding = r.frame().bind_objects([20, 200, 201]).unwrap();
+    r.stamp.revision += 100;
+    assert!(binding.matches(&r.frame()));
+    r.replace(201);
+    assert!(!binding.matches(&r.frame()));
+    let binding = r.frame().bind_objects([20]).unwrap();
+    r.stamp.epoch += 1;
+    assert!(!binding.matches(&r.frame()));
+    let binding = r.frame().bind_objects([20]).unwrap();
+    r.authority = Arc::new(());
+    assert!(!binding.matches(&r.frame()));
+    assert!(r.frame().bind_objects([]).is_none());
+    assert!(r.frame().bind_objects([u32::MAX]).is_none());
+    r.graph.verbonden = false;
+    assert!(r.frame().bind_objects([20]).is_none());
+    assert!(!binding.matches(&r.frame()));
+}
+#[test]
+fn applied_volume_retains_original_vector_mapping_and_shared_tickets() {
+    let mut r = Registry::new();
+    let mut c = r.start();
+    let binding = r.frame().bind_objects([20, 200, 201]).unwrap();
+    assert_eq!(c.reserve_ticket(), 1);
+    assert_eq!(c.reserve_ticket(), 2);
+    assert_eq!(c.lengths(), (0, 0));
+    c.record_volume_binding(20, vec![0.2, 0.6], vec![0.4, 0.4], &binding)
+        .unwrap();
+    assert_eq!(c.lengths(), (1, 0));
+    r.next(&mut c);
+    let plan = c.reduce(Input::Undo).unwrap().unwrap();
+    assert_eq!(plan.ticket, 3);
+    assert!(
+        matches!(&plan.commands[..],[Opdracht::ZetVolume{knoop:20,volume}]if volume==&vec![0.2,0.6])
+    );
+    r.done(&mut c, plan.ticket);
+    assert_eq!(c.lengths(), (0, 1));
+    r.replace(200);
+    r.next(&mut c);
+    assert_eq!(c.lengths(), (0, 0));
+    assert_eq!(
+        c.record_volume_binding(20, vec![0.2, 0.6], vec![0.4, 0.4], &binding),
+        Err(DomainError::IdentityUnavailable)
+    );
+}
+
+#[test]
+fn applied_vector_mapping_change_prunes_history_without_pruning_unrelated_mute() {
+    for change in 0..3 {
+        let mut r = Registry::new();
+        let mut c = r.start();
+        let ticket = mute(&mut c, 11);
+        r.done(&mut c, ticket);
+        let binding = r.frame().bind_objects([20, 200, 201]).unwrap();
+        c.record_volume_binding(20, vec![0.5, 0.25], vec![0.4, 0.4], &binding)
+            .unwrap();
+        // New enumeration order and label changes do not change channel authority.
+        r.graph.poorten.reverse();
+        r.graph.knopen.iter_mut().find(|n| n.id == 20).unwrap().app =
+            Some("Synthetic renamed label".into());
+        r.next(&mut c);
+        assert_eq!(c.lengths(), (2, 0));
+        match change {
+            0 => r
+                .graph
+                .knopen
+                .iter_mut()
+                .find(|n| n.id == 20)
+                .unwrap()
+                .volume
+                .as_mut()
+                .unwrap()
+                .push(0.3),
+            1 => {
+                r.graph
+                    .poorten
+                    .iter_mut()
+                    .find(|p| p.id == 201)
+                    .unwrap()
+                    .volgnummer = Some(8)
+            }
+            _ => {
+                r.graph
+                    .poorten
+                    .iter_mut()
+                    .find(|p| p.id == 201)
+                    .unwrap()
+                    .kanaal = Some("AUX8".into())
+            }
+        };
+        r.next(&mut c);
+        assert_eq!(c.lengths(), (1, 0));
+        assert_eq!(c.labels().0, Some("Synthetic mute 11"));
+    }
+}

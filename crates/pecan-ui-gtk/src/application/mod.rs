@@ -7,12 +7,15 @@ mod coordinator;
 mod drain;
 mod fixture;
 mod history_input;
+mod mixer;
 mod shell;
 mod view;
 
+pub use coordinator::volume::{GestureToken, StripIdentity};
 pub use coordinator::{Request, Session, SessionAdapter, Status};
 pub use drain::SettingsSummary;
 pub use fixture::{FixtureDriver, FixtureRequest};
+pub use mixer::CoordinatedMixer;
 pub use shell::{ApplicationShell, InstallFailure, ShellOptions};
 pub use view::NativeWorkspace;
 

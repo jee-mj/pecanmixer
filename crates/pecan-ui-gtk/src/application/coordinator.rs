@@ -1,3 +1,5 @@
+#[path = "volume.rs"]
+pub(super) mod volume;
 use super::{Endpoint, Graph};
 use crate::controls::{Adapter, Controller};
 use pecan_core::{
@@ -15,6 +17,8 @@ pub enum Status {
     Disconnected,
     Closing,
     IdentityUnavailable,
+    GestureActive,
+    GestureFinishing,
     Ready,
     Queued,
     ExecutedLocally,
@@ -29,6 +33,10 @@ impl Status {
             Self::Closing => "Finalizing · new commands disabled".into(),
             Self::Disconnected => "Disconnected · commands unavailable".into(),
             Self::IdentityUnavailable => "Graph identity unavailable · commands paused".into(),
+            Self::GestureActive => "Volume gesture active · proposals may be pending".into(),
+            Self::GestureFinishing => {
+                "Finishing volume gesture · waiting for observed final value".into()
+            }
             Self::Ready => "Ready".into(),
             Self::Queued => "Pending · admitted to worker queue".into(),
             Self::ExecutedLocally => "Pending · waiting for server-fed observation".into(),
@@ -60,6 +68,8 @@ struct Pending {
 struct State {
     graph: Option<Graph>,
     witnessed: bool,
+    frame: Option<pecan_core::history_identity::HistoryGraph>,
+    volume: volume::Volumes,
     history: history::Controller,
     results: HistoryResults,
     pending: Option<Pending>,
@@ -87,6 +97,8 @@ impl Session {
             state: RefCell::new(State {
                 graph: None,
                 witnessed: false,
+                frame: None,
+                volume: Default::default(),
                 history,
                 results: HistoryResults::default(),
                 pending: None,
@@ -117,6 +129,7 @@ impl Session {
         let mut state = self.0.state.borrow_mut();
         state.admission_closed = true;
         state.history_context = Rc::new(());
+        state.abandon_volume("Application finalization started.");
     }
     /// UI-local presentation authority, not registry or backend command identity.
     pub(super) fn history_context(&self) -> Rc<()> {
@@ -128,7 +141,12 @@ impl Session {
     }
 
     pub fn busy(&self) -> bool {
-        self.0.state.borrow().pending.is_some()
+        let state = self.0.state.borrow();
+        state.pending.is_some() || state.volume.busy()
+    }
+    pub fn has_receipt(&self) -> bool {
+        let state = self.0.state.borrow();
+        state.pending.is_some() || state.volume.has_receipt()
     }
     pub fn history_lengths(&self) -> (usize, usize) {
         self.0.state.borrow().history.lengths()
@@ -143,6 +161,7 @@ impl Session {
         !s.admission_closed
             && s.witnessed
             && s.pending.is_none()
+            && !s.volume.busy()
             && s.graph.as_ref().is_some_and(|g| g.value.verbonden)
     }
     pub fn adapter(&self) -> SessionAdapter {
@@ -184,8 +203,8 @@ impl Session {
         if s.admission_closed {
             return Err("Application finalization has started; new commands are disabled.".into());
         }
-        if s.pending.is_some() {
-            return Err("Another change is pending.".into());
+        if s.pending.is_some() || s.volume.busy() {
+            return Err("Another change or volume gesture is pending.".into());
         }
         if !s.witnessed {
             return Err("Native graph identity is unavailable.".into());
@@ -288,6 +307,7 @@ impl Session {
             });
             s.history_context = Rc::new(());
             s.witnessed = witness.is_some();
+            s.frame = witness.clone();
             let input = witness.map_or_else(|| Input::Graph(graph.clone()), Input::NativeGraph);
             let _ = s.history.reduce(input);
             batch.graph = Some(graph.clone());
@@ -300,7 +320,8 @@ impl Session {
             }
         }
         s.finish();
-        if s.pending.is_none() {
+        s.poll_volume(self.0.endpoint.as_ref());
+        if s.pending.is_none() && !s.volume.busy() {
             if !s.graph.as_ref().is_some_and(|g| g.value.verbonden) {
                 s.status = Status::Disconnected;
             } else if !s.witnessed {
