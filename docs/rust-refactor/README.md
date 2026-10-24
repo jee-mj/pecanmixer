@@ -16,6 +16,8 @@ The implementation now moves the graph/meter/recorder code into shared crates an
 
 The next [Stage 2 audio domain batch](./stage2-domain.md) adds pure audio projections/plans and headless policy fixtures. It is not full Stage 2 or UI parity.
 
+The [first combined native batch](./native-batch-1.md) tracks integration, review findings and the remaining Stage 2–6 sequence.
+
 ## Revision and provenance
 
 The initial R&D report and exact npm inventory inspected `57741f75eba111578b4d02566ff12ac5fa4400cd`. The later inventory records that the only repository change before `d8d473818331342ab53a0e1e4d3ced7977293449` was deletion of `CLAUDE.md`; the broader JavaScript/Node inventory and GTK proposal inspect the latter revision.
