@@ -135,6 +135,31 @@ fn settle(ms: u64) {
     }
 }
 
+// Replacing a held button schedules release notification and a new GTK layout.
+// A fixed delay does not establish that the replacement is ready on every GTK
+// version/runner. Wait for the actual preconditions, then attempt focus ONCE.
+// A stranded ledger or permanently disabled/unmapped control still fails.
+fn focus_fresh(v: &RoutingControls<Rc<()>>, key: &Key) {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let current = button(v, key);
+        let held = v.0.input.held();
+        let blocked = v.0.input.blocked();
+        let mapped = current.is_mapped();
+        let sensitive = current.is_sensitive();
+        let allocated = current.width() > 0 && current.height() > 0;
+        if !held && !blocked && mapped && sensitive && allocated {
+            assert!(current.grab_focus(), "ready replacement must accept focus");
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "fresh route focus timed out: held={held}, blocked={blocked}, mapped={mapped}, sensitive={sensitive}, allocated={allocated}"
+        );
+        settle(5);
+    }
+}
+
 #[gtk::test]
 fn xtest_held_route_release_replacement_and_return_failure_repeat_require_fresh_activation() {
     let (v, g, _) = view();
@@ -153,7 +178,7 @@ fn xtest_held_route_release_replacement_and_return_failure_repeat_require_fresh_
     let input = Input::new(&window);
     let (s, d) = first(&v.0.model.borrow());
     let key = Key::Route(s, d);
-    assert!(button(&v, &key).grab_focus());
+    focus_fresh(&v, &key);
     settle(40);
     input.key(SPACE, true);
     assert!(events.borrow().is_empty());
@@ -175,7 +200,7 @@ fn xtest_held_route_release_replacement_and_return_failure_repeat_require_fresh_
         events.borrow().is_empty(),
         "held Space release cannot take the replacement off→on action"
     );
-    assert!(button(&v, &key).grab_focus());
+    focus_fresh(&v, &key);
     input.key(RETURN, true);
     settle(300); // GTK's native button activation animation is asynchronous.
     assert_eq!(events.borrow().len(), 1);
@@ -201,7 +226,7 @@ fn xtest_held_route_release_replacement_and_return_failure_repeat_require_fresh_
     );
     input.key(RETURN, false);
     settle(50);
-    assert!(button(&v, &key).grab_focus());
+    focus_fresh(&v, &key);
     input.key(RETURN, true);
     input.key(RETURN, false);
     settle(300);
