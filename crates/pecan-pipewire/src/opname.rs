@@ -804,6 +804,47 @@ impl Bus {
         }
     }
 
+    /// Native local result, including partial allocation/removal. Port registry
+    /// publication is asynchronous and is not acknowledged by this result.
+    /// The legacy clamping/void setter above keeps its historical behavior.
+    pub fn try_set_channels(&self, requested: usize) -> crate::bus_config::ChannelResizeResult {
+        let mut b = self.binnen.borrow_mut();
+        let result = crate::bus_config::resize_ports(
+            &mut b.kanalen,
+            requested,
+            |i| {
+                // SAFETY: this filter and its ports are owned by this graph thread;
+                // no process callback runs concurrently on its loop.
+                let p = unsafe {
+                    bus_poort(
+                        self.filter,
+                        DSP_AUDIO,
+                        &format!("rec_{}", i + 1),
+                        Some(&format!("AUX{i}")),
+                    )
+                };
+                (!p.is_null()).then_some(p)
+            },
+            |p| {
+                // SAFETY: a retained live port of this filter, on its owner loop.
+                unsafe { pw_sys::pw_filter_remove_port(*p) }
+            },
+        );
+        let actual = b.kanalen.len();
+        b.gain.resize(actual, 1.0);
+        b.pieken.resize(actual, 0.0);
+        result
+    }
+
+    pub fn local_readback(&self) -> crate::bus_config::BusReadback {
+        let b = self.binnen.borrow();
+        crate::bus_config::BusReadback {
+            node: self.knoop_id(),
+            channels: b.kanalen.len(),
+            gains: b.gain.clone(),
+        }
+    }
+
     /// Het node-id van de bus, zodra de server hem kent. Niet de naam: een
     /// tweede Pecan Mixer (een voorbeeld naast de app) heeft er ook een.
     pub fn knoop_id(&self) -> Option<u32> {

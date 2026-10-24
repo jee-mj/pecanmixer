@@ -142,6 +142,19 @@ impl Graaf {
         self.opdrachten.enqueue_native(intent)
     }
 
+    /// Local idle configuration only. Admission is not completion or observed
+    /// ports. Poll the returned receipt; no recording command is enabled here.
+    pub fn configure_idle(
+        &self,
+        intent: crate::bus_config::IdleConfigIntent,
+    ) -> Result<crate::bus_config::ConfigReceipt, crate::bus_config::ConfigError> {
+        self.opdrachten.enqueue_config(intent)
+    }
+
+    pub fn config_snapshot(&self) -> Option<crate::bus_config::ConfigSnapshot> {
+        self.opdrachten.config_snapshot()
+    }
+
     /// Obtain registry identity for the exact native inbox graph. Feed this to
     /// history's `Input::NativeGraph` before planning. A copied/evicted origin
     /// fails closed; retain the owned witness, not the origin-cache entry.
@@ -973,7 +986,12 @@ fn sessie(
                 drop(s);
             }
             if !read_only {
-                for error in opdrachten.drain_with(
+                opdrachten.refresh_config(
+                    bus.as_ref().as_ref().map(Bus::local_readback),
+                    !opnemer.borrow().is_empty(),
+                    false,
+                );
+                for error in opdrachten.drain_with_config(
                     |o| staat.borrow().geldige_objecten(o),
                     |o| staat.borrow().native_no_op(o),
                     |o| match o {
@@ -985,6 +1003,8 @@ fn sessie(
                             uitvoeren(o, &core, &registry, &bindingen.borrow(), &gelegd)
                         }
                         o => {
+                            let legacy_config =
+                                matches!(&o, Opdracht::ZetBus { .. } | Opdracht::ZetTransport(_));
                             match o {
                                 Opdracht::ZetBus { kanalen, gain } => {
                                     if let Some(b) = bus.as_ref() {
@@ -1021,8 +1041,25 @@ fn sessie(
                                 }
                                 _ => unreachable!("graph commands handled above"),
                             };
+                            opdrachten.refresh_config(
+                                bus.as_ref().as_ref().map(Bus::local_readback),
+                                !opnemer.borrow().is_empty(),
+                                legacy_config,
+                            );
                             LocalExecution::Unreported
                         }
+                    },
+                    |work| {
+                        opdrachten.apply_config(
+                            work,
+                            &mut IdleConfigTarget {
+                                bus: bus.as_ref().as_ref(),
+                                staat: &staat,
+                                opnemer: &opnemer,
+                                klok: &klok,
+                                transport: &transport,
+                            },
+                        )
                     },
                 ) {
                     eprintln!("pecanmixer: opdracht geweigerd op worker: {error:?}");
@@ -1072,6 +1109,52 @@ struct Transport {
     fout: Option<String>,
     /// Shared across reconnects, until every writer's result is observed.
     schrijvers: Shutdown,
+}
+
+struct IdleConfigTarget<'a> {
+    bus: Option<&'a Bus>,
+    staat: &'a RefCell<Staat>,
+    opnemer: &'a Opnemer,
+    klok: &'a RefCell<Klok>,
+    transport: &'a RefCell<Transport>,
+}
+impl crate::bus_config::ConfigTarget for IdleConfigTarget<'_> {
+    fn readback(&self) -> Option<crate::bus_config::BusReadback> {
+        self.bus.map(Bus::local_readback)
+    }
+    fn recording(&self) -> bool {
+        !self.opnemer.borrow().is_empty()
+    }
+    fn routed(&self) -> bool {
+        let Some(id) = self.bus.and_then(Bus::knoop_id) else {
+            return true;
+        };
+        self.staat
+            .borrow()
+            .kabels
+            .values()
+            .any(|link| link.in_knoop == id || link.uit_knoop == id)
+    }
+    fn resize(&mut self, channels: usize) -> crate::bus_config::ChannelResizeResult {
+        self.bus.expect("validated bus").try_set_channels(channels)
+    }
+    fn gains(&mut self, gains: &[f32]) {
+        self.bus.expect("validated bus").zet_gain(gains);
+    }
+    fn options(&mut self, options: Opties) {
+        let mut clock = self.klok.borrow_mut();
+        if clock.bron != options.klok {
+            clock.recent.clear();
+        }
+        clock.bron = options.klok.filter(|_| MIDI);
+        clock.start_stop = options.start_stop;
+        self.transport.borrow_mut().opties = Some(options);
+    }
+    fn options_match(&self, options: &Opties) -> bool {
+        self.transport.borrow().opties.as_ref() == Some(options)
+            && self.klok.borrow().bron == options.klok
+            && self.klok.borrow().start_stop == options.start_stop
+    }
 }
 
 impl Transport {
