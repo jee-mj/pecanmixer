@@ -1,9 +1,8 @@
 //! One owner for bus/configuration handoffs and retained recording receipts.
 //! Local readback is not graph observation; writer exit is not joined completion.
+mod routing;
 mod service;
 mod view;
-mod routing;
-pub(crate) use routing::RoutingKey;
 use super::{Graph, Session};
 use crate::recording_buses as ui;
 use gtk::prelude::*;
@@ -15,6 +14,7 @@ use pecan_pipewire::{
     },
     recording::{RecordingBusStart, RecordingProgress, RecordingRevision, RecordingStart},
 };
+pub(crate) use routing::RoutingKey;
 use service::{ConfigPoll, Readback, Service, Started, Stop, TakePoll};
 pub use service::{Error, Source, TakeKey, TakeStatus, TrackKey};
 use std::{

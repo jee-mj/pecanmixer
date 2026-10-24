@@ -27,6 +27,7 @@ pub struct NativeWorkspace {
     telemetry: RefCell<super::telemetry::Telemetry>,
     pages: gtk::Stack,
     buses: RefCell<Rc<super::BusOwner>>,
+    routes: Rc<super::routes::Routes>,
     session: Session,
     history: gtk::Box,
     buttons: RefCell<Option<HistoryButtons>>,
@@ -46,6 +47,7 @@ impl NativeWorkspace {
     ) -> Rc<Self> {
         let mixer = super::mixer::CoordinatedMixer::new(session.clone());
         let buses = super::BusOwner::native(session.clone(), native);
+        let routes = super::routes::Routes::new(session.clone(), buses.clone());
         let patchbay = PatchbayOverview::new();
         let shared = session.clone();
         patchbay.bind_history_actions(move |origin, input| shared.patch(origin, input));
@@ -62,6 +64,7 @@ impl NativeWorkspace {
         pages.add_titled(mixer.widget(), Some("mixer"), "Mixer");
         pages.add_titled(patchbay.widget(), Some("patchbay"), "Patchbay");
         pages.add_titled(buses.widget(), Some("buses"), "Buses and recording");
+        pages.add_titled(routes.widget(), Some("routing"), "Routing");
         pages.set_hexpand(true);
         pages.set_vexpand(true);
         let switcher = gtk::StackSwitcher::builder().stack(&pages).build();
@@ -78,6 +81,7 @@ impl NativeWorkspace {
             telemetry: RefCell::default(),
             pages,
             buses: RefCell::new(buses),
+            routes,
             session,
             history,
             buttons: RefCell::new(None),
@@ -86,6 +90,12 @@ impl NativeWorkspace {
             error: RefCell::new(None),
             patch_gate: RefCell::new(None),
             weak: weak.clone(),
+        });
+        let weak = Rc::downgrade(&view);
+        view.routes.bind_navigation(move || {
+            if let Some(view) = weak.upgrade() {
+                view.show_patchbay();
+            }
         });
         let weak = Rc::downgrade(&view);
         view.history_input.notify(move || {
@@ -125,6 +135,7 @@ impl NativeWorkspace {
         self.pages.remove(self.buses.borrow().widget());
         self.pages
             .add_titled(buses.widget(), Some("buses"), "Buses and recording");
+        self.routes.attach_test_buses(buses.clone());
         *self.buses.borrow_mut() = buses;
     }
     /// Drive from one main-context source. Receipts need polling even if there
@@ -132,6 +143,8 @@ impl NativeWorkspace {
     /// view creates none, preventing per-activation consumer/timer duplication.
     pub fn poll(&self) {
         let batch = self.session.poll();
+        self.buses.borrow().poll();
+        self.routes.poll();
         self.refresh();
         let mut telemetry = self.telemetry.borrow_mut();
         telemetry.apply(&self.session, &batch);
@@ -143,7 +156,6 @@ impl NativeWorkspace {
             self.mixer.widget().upcast_ref(),
             self.patchbay.borrow().widget().upcast_ref(),
         );
-        self.buses.borrow().poll();
     }
     fn history_button(
         &self,

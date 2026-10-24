@@ -244,7 +244,7 @@ fn copied_and_superseded_origins_fail_without_dispatch() {
     assert!(d.take_requests().is_empty());
 }
 #[test]
-fn identical_numeric_replacement_invalidates_pending_and_late_result_is_isolated() {
+fn identical_numeric_replacement_retains_closure_gate_until_actual_terminal_result() {
     let (_, s, d, origin, mut gens) = setup();
     let mut mixer = Controller::new(s.adapter(), Default::default());
     mixer.observe(origin.clone());
@@ -256,9 +256,26 @@ fn identical_numeric_replacement_invalidates_pending_and_late_result_is_isolated
     s.poll();
     mixer.observe(replacement.clone());
     mixer.poll_session();
-    assert!(!s.busy());
+    assert!(s.busy());
+    assert!(!s.enabled());
     assert!(matches!(mixer.phase(), Phase::Unconfirmed(_)));
     assert_eq!(s.history_lengths(), (0, 0));
+    assert!(s
+        .execute(
+            &replacement,
+            "Blocked",
+            Action::Mute {
+                node: 20,
+                muted: true
+            }
+        )
+        .is_err());
+    old.reporter.set(NativeProgress::Rejected {
+        reason: NativeFailure::ObservationTimedOut,
+        counts: Default::default(),
+    });
+    s.poll();
+    assert!(!s.busy());
     mute(&s, &replacement, true);
     let fresh = d.take_requests().pop().unwrap();
     observed(&old, replacement.stamp, false);
@@ -343,11 +360,28 @@ fn reconnect_clears_history_and_ignores_abandoned_receipt() {
     g.verbonden = false;
     d.publish(g, gens.clone());
     s.poll();
-    assert_eq!(s.status(), Status::Disconnected);
-    assert!(!s.busy());
+    assert!(!s.graph().unwrap().value.verbonden);
+    assert!(matches!(s.status(), Status::Unconfirmed(_)));
+    assert!(s.busy());
     assert_eq!(s.history_lengths(), (0, 0));
     let connected = d.publish((*next.value).clone(), gens);
     s.poll();
+    assert!(s
+        .execute(
+            &connected,
+            "Blocked",
+            Action::Mute {
+                node: 20,
+                muted: false
+            }
+        )
+        .is_err());
+    old.reporter.set(NativeProgress::Rejected {
+        reason: NativeFailure::ObservationTimedOut,
+        counts: Default::default(),
+    });
+    s.poll();
+    assert!(!s.busy());
     mute(&s, &connected, false);
     d.take_requests();
     observed(&old, connected.stamp, false);
@@ -536,7 +570,7 @@ fn integrated_widgets_mute_patch_and_undo_use_one_coordinator() {
 }
 
 #[test]
-fn mismatched_receipt_fails_closed_without_leaving_history_busy() {
+fn mismatched_receipt_retains_uncertainty_without_inventing_history_completion() {
     struct BadEndpoint(RefCell<Option<HistoryGraph>>);
     impl Endpoint for BadEndpoint {
         fn witness(&self, g: &Graph) -> Result<HistoryGraph, AdmissionError> {
@@ -580,7 +614,9 @@ fn mismatched_receipt_fails_closed_without_leaving_history_busy() {
             }
         )
         .is_err());
-    assert!(!s.busy());
+    assert!(s.busy());
+    assert!(s.has_receipt());
+    assert!(!s.enabled());
     assert_eq!(s.history_lengths(), (0, 0));
     assert!(matches!(s.status(), Status::Unconfirmed(_)));
 }
