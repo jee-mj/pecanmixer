@@ -102,6 +102,9 @@ impl HistoryInput {
     }
     /// Called before retiring/replacing buttons. A held input cannot transfer to
     /// the replacement, even if its label happens to be identical.
+    pub fn retire_control(self: &Rc<Self>, owner: &Rc<Cell<bool>>) {
+        self.cancel(Some(owner), false);
+    }
     pub fn retire(self: &Rc<Self>) {
         self.cancel(None, false);
     }

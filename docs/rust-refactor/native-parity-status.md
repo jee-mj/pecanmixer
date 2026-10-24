@@ -50,3 +50,5 @@ The [held history activation correction](./native-held-history-activation.md) pr
 The [reviewed source integration batch](./reviewed-native-source-batch.md) supersedes earlier pending-review markers for its listed slices. Main startup remains observational, and pure fader/mute proposals are not yet live controller behavior.
 
 The [continuous gain/partial mute candidate](./native-gesture-coordinator.md) composes the pure policies with owner identity, one-flight samples, observed memory and one grouped history step. It remains independently unreviewed source; executable startup, native recording and acceptance status are unchanged.
+
+The [gesture review correction candidate](./native-gesture-review-correction.md) addresses held-mute semantic substitution, unconfirmed held-key retries and lost keyboard accumulation. Its strengthened before/after synthetic cases pass; independent re-review remains required. The separate settings descendant must append that correction without dropping its display hooks.

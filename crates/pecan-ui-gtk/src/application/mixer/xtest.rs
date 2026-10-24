@@ -21,6 +21,18 @@ unsafe extern "C" {
     fn XSetInputFocus(d: *mut c_void, w: c_ulong, revert: c_int, time: c_ulong) -> c_int;
     fn XKeysymToKeycode(d: *mut c_void, key: c_ulong) -> u8;
     fn XSync(d: *mut c_void, discard: c_int) -> c_int;
+    fn XkbGetAutoRepeatRate(
+        d: *mut c_void,
+        device: c_uint,
+        delay: *mut c_uint,
+        interval: *mut c_uint,
+    ) -> c_int;
+    fn XkbSetAutoRepeatRate(
+        d: *mut c_void,
+        device: c_uint,
+        delay: c_uint,
+        interval: c_uint,
+    ) -> c_int;
 }
 #[link(name = "libXtst.so.6", kind = "dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
@@ -34,6 +46,7 @@ unsafe extern "C" {
 struct XInput {
     d: *mut c_void,
     w: c_ulong,
+    repeat: Cell<Option<(c_uint, c_uint)>>,
 }
 impl XInput {
     fn new(window: &gtk::Window) -> Self {
@@ -53,7 +66,25 @@ impl XInput {
             XSetInputFocus(d, w, 2, 0);
             XSync(d, 0);
             settle(40);
-            Self { d, w }
+            Self {
+                d,
+                w,
+                repeat: Cell::new(None),
+            }
+        }
+    }
+    fn repeat_rate(&self, delay: c_uint, interval: c_uint) {
+        unsafe {
+            let (mut old_delay, mut old_interval) = (0, 0);
+            assert_ne!(
+                XkbGetAutoRepeatRate(self.d, 0x100, &mut old_delay, &mut old_interval),
+                0
+            );
+            if self.repeat.get().is_none() {
+                self.repeat.set(Some((old_delay, old_interval)));
+            }
+            assert_ne!(XkbSetAutoRepeatRate(self.d, 0x100, delay, interval), 0);
+            XSync(self.d, 0);
         }
     }
     fn point(&self, button: &impl IsA<gtk::Widget>, window: &gtk::Window) {
@@ -116,6 +147,10 @@ impl Drop for XInput {
             }
             XTestFakeButtonEvent(self.d, 1, 0, 0);
             XSync(self.d, 0);
+            if let Some((delay, interval)) = self.repeat.get() {
+                XkbSetAutoRepeatRate(self.d, 0x100, delay, interval);
+                XSync(self.d, 0);
+            }
             XCloseDisplay(self.d);
         }
     }
@@ -327,4 +362,308 @@ fn actual_double_click_resets_zero_db_once() {
     apply(&s, &d, &v, req, &gens);
     assert_eq!(s.history_lengths(), (1, 0));
     window.close();
+}
+
+struct CloseFixture(gtk::Window);
+impl Drop for CloseFixture {
+    fn drop(&mut self) {
+        self.0.close();
+    }
+}
+#[gtk::test]
+fn review_regression_native_space_mute_cancels_semantic_change_then_fresh_action_works() {
+    let (s, d, v, gens, _) = setup();
+    let key = s
+        .volume_model()
+        .destinations
+        .iter()
+        .find(|strip| strip.node.id == 10)
+        .unwrap()
+        .key
+        .clone();
+    let r = row(&v, &key);
+    let window = gtk::Window::builder()
+        .child(v.widget())
+        .default_width(900)
+        .default_height(900)
+        .build();
+    let _close = CloseFixture(window.clone());
+    window.present();
+    settle(120);
+    let input = XInput::new(&window);
+    r.mute().grab_focus();
+    input.key(SPACE, true);
+    let mut graph = (*s.graph().unwrap().value).clone();
+    graph.knopen.iter_mut().find(|n| n.id == 10).unwrap().mute = Some(true);
+    d.publish(graph, gens.clone());
+    s.poll();
+    v.refresh();
+    input.key(SPACE, false);
+    assert!(
+        d.take_requests().is_empty(),
+        "Space release adopted new mute state"
+    );
+    r.mute().grab_focus();
+    input.key(SPACE, true);
+    input.key(SPACE, false);
+    let req = d
+        .take_requests()
+        .pop()
+        .expect("fresh mute after cancelled release");
+    assert_eq!(
+        req.intent.commands,
+        vec![pecan_core::graph::Opdracht::ZetMute {
+            knoop: 10,
+            mute: false
+        }]
+    );
+    let mut graph = (*s.graph().unwrap().value).clone();
+    graph.knopen.iter_mut().find(|n| n.id == 10).unwrap().mute = Some(false);
+    let next = d.publish(graph, gens);
+    req.reporter
+        .set(pecan_core::native_command::NativeProgress::Observed {
+            stamp: next.stamp,
+            counts: Default::default(),
+        });
+    s.poll();
+    v.refresh();
+    assert_eq!(s.history_lengths(), (1, 0));
+}
+#[gtk::test]
+fn review_regression_native_unconfirmed_repeat_waits_for_real_key_release() {
+    let (s, d, v, gens, key) = setup();
+    let r = row(&v, &key);
+    let window = gtk::Window::builder()
+        .child(v.widget())
+        .default_width(900)
+        .default_height(900)
+        .build();
+    let _close = CloseFixture(window.clone());
+    window.present();
+    settle(120);
+    let input = XInput::new(&window);
+    r.scale.grab_focus();
+    input.repeat_rate(100, 100);
+    input.key(RIGHT, true);
+    let req = d.take_requests().pop().unwrap();
+    req.reporter
+        .set(pecan_core::native_command::NativeProgress::Unconfirmed {
+            reason: pecan_core::native_command::NativeFailure::ObservationTimedOut,
+            counts: Default::default(),
+        });
+    s.poll();
+    v.refresh();
+    settle(240);
+    assert!(
+        d.take_requests().is_empty(),
+        "autorepeat retried an unconfirmed gesture without release"
+    );
+    input.key(RIGHT, false);
+    input.key(RIGHT, true);
+    input.key(RIGHT, false);
+    let fresh = d.take_requests().pop().expect("fresh arrow after release");
+    assert!(fresh.intent.ticket > req.intent.ticket);
+    apply(&s, &d, &v, &fresh, &gens);
+    assert_eq!(s.history_lengths(), (1, 0));
+}
+#[gtk::test]
+fn review_regression_native_four_keys_across_ticks_flush_once_and_undo_full_vector() {
+    let (s, d, v, gens, key) = setup();
+    let r = row(&v, &key);
+    let window = gtk::Window::builder()
+        .child(v.widget())
+        .default_width(900)
+        .default_height(900)
+        .build();
+    let _close = CloseFixture(window.clone());
+    window.present();
+    settle(120);
+    let input = XInput::new(&window);
+    r.scale.grab_focus();
+    input.repeat_rate(100, 150);
+    let delivered = Rc::new(Cell::new(0usize));
+    let counter = delivered.clone();
+    let events = gtk::EventControllerKey::new();
+    events.set_propagation_phase(gtk::PropagationPhase::Capture);
+    events.connect_key_pressed(move |_, key, _, _| {
+        if key == gdk::Key::Right {
+            counter.set(counter.get() + 1);
+        }
+        glib::Propagation::Proceed
+    });
+    window.add_controller(events);
+    let position = r.scale.value();
+    let initial = s
+        .graph()
+        .unwrap()
+        .value
+        .knopen
+        .iter()
+        .find(|n| n.id == 20)
+        .unwrap()
+        .volume
+        .clone()
+        .unwrap();
+    input.key(RIGHT, true);
+    v.poll();
+    let mut seen = delivered.get();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while delivered.get() < 4 {
+        assert!(Instant::now() < deadline, "native repeat deadline");
+        settle(5);
+        if delivered.get() != seen {
+            seen = delivered.get();
+            v.poll();
+        }
+    }
+    input.key(RIGHT, false);
+    assert_eq!(delivered.get(), 4);
+    let first = d.take_requests();
+    assert_eq!(first.len(), 1);
+    apply(&s, &d, &v, &first[0], &gens);
+    let last = d.take_requests().pop().unwrap();
+    let [pecan_core::graph::Opdracht::ZetVolume { volume, .. }] = &last.intent.commands[..] else {
+        panic!()
+    };
+    let expected =
+        pecan_core::domain::levels::db_to_linear(position_to_db((position + 0.04).clamp(0., 1.)));
+    assert!(
+        (volume[0] - expected).abs() < 1e-5,
+        "latest target lost across refreshes: {volume:?}"
+    );
+    apply(&s, &d, &v, &last, &gens);
+    assert_eq!(s.history_lengths(), (1, 0));
+    s.undo(&s.graph().unwrap()).unwrap();
+    let undo = d.take_requests().pop().unwrap();
+    assert!(
+        matches!(&undo.intent.commands[..],[pecan_core::graph::Opdracht::ZetVolume{volume,..}]if *volume==initial)
+    );
+    apply(&s, &d, &v, &undo, &gens);
+    assert_eq!(s.history_lengths(), (0, 1));
+    s.redo(&s.graph().unwrap()).unwrap();
+    let redo = d.take_requests().pop().unwrap();
+    assert_eq!(redo.intent.commands, last.intent.commands);
+    apply(&s, &d, &v, &redo, &gens);
+    assert_eq!(s.history_lengths(), (1, 0));
+}
+
+#[gtk::test]
+fn pointer_mute_release_cannot_adopt_new_semantics_and_fresh_pointer_recovers() {
+    let (s, d, v, gens, _) = setup();
+    let key = s
+        .volume_model()
+        .destinations
+        .iter()
+        .find(|strip| strip.node.id == 10)
+        .unwrap()
+        .key
+        .clone();
+    let r = row(&v, &key);
+    let window = gtk::Window::builder()
+        .child(v.widget())
+        .default_width(900)
+        .default_height(900)
+        .build();
+    let _close = CloseFixture(window.clone());
+    window.present();
+    settle(120);
+    let input = XInput::new(&window);
+    input.point(&r.mute(), &window);
+    input.button(true);
+    assert!(d.take_requests().is_empty());
+    let mut graph = (*s.graph().unwrap().value).clone();
+    graph.knopen.iter_mut().find(|n| n.id == 10).unwrap().mute = Some(true);
+    d.publish(graph, gens.clone());
+    s.poll();
+    v.refresh();
+    input.button(false);
+    assert!(d.take_requests().is_empty());
+    assert!(!v.0.mute_input.held());
+    input.point(&r.mute(), &window);
+    input.button(true);
+    input.button(false);
+    let req = d.take_requests().pop().expect("fresh pointer mute");
+    assert_eq!(
+        req.intent.commands,
+        vec![pecan_core::graph::Opdracht::ZetMute {
+            knoop: 10,
+            mute: false
+        }]
+    );
+    let mut graph = (*s.graph().unwrap().value).clone();
+    graph.knopen.iter_mut().find(|n| n.id == 10).unwrap().mute = Some(false);
+    let next = d.publish(graph, gens);
+    req.reporter
+        .set(pecan_core::native_command::NativeProgress::Observed {
+            stamp: next.stamp,
+            counts: Default::default(),
+        });
+    s.poll();
+    v.refresh();
+    assert_eq!(s.history_lengths(), (1, 0));
+}
+
+#[gtk::test]
+fn return_mute_release_during_pending_keeps_fresh_activation_available() {
+    let (s, d, v, gens, _) = setup();
+    let key = s
+        .volume_model()
+        .destinations
+        .iter()
+        .find(|strip| strip.node.id == 10)
+        .unwrap()
+        .key
+        .clone();
+    let r = row(&v, &key);
+    let window = gtk::Window::builder()
+        .child(v.widget())
+        .default_width(900)
+        .default_height(900)
+        .build();
+    let _close = CloseFixture(window.clone());
+    window.present();
+    settle(120);
+    let input = XInput::new(&window);
+    r.mute().grab_focus();
+    input.key(RETURN, true);
+    settle(280);
+    let req = d.take_requests().pop().expect("Return activates mute");
+    assert_eq!(
+        req.intent.commands,
+        vec![pecan_core::graph::Opdracht::ZetMute {
+            knoop: 10,
+            mute: true
+        }]
+    );
+    assert!(s.busy());
+    input.key(RETURN, false);
+    assert!(
+        !v.0.mute_input.held(),
+        "pending sensitivity must not strand the release"
+    );
+    let mut graph = (*s.graph().unwrap().value).clone();
+    graph.knopen.iter_mut().find(|n| n.id == 10).unwrap().mute = Some(true);
+    let next = d.publish(graph, gens);
+    req.reporter
+        .set(pecan_core::native_command::NativeProgress::Observed {
+            stamp: next.stamp,
+            counts: Default::default(),
+        });
+    s.poll();
+    v.refresh();
+    r.mute().grab_focus();
+    input.key(RETURN, true);
+    input.key(RETURN, false);
+    settle(280);
+    let fresh = d
+        .take_requests()
+        .pop()
+        .expect("fresh Return after pending completion");
+    assert_eq!(
+        fresh.intent.commands,
+        vec![pecan_core::graph::Opdracht::ZetMute {
+            knoop: 10,
+            mute: false
+        }]
+    );
 }
