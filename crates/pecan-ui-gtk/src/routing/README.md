@@ -86,7 +86,9 @@ from a user machine, audio server, capture or runtime log.
    Rejected work with submitted/in-progress effects, Unconfirmed results, and
    partial/unconfirmed bus configuration latch a reconciliation restriction.
    Unrelated publications cannot clear it. A zero-effect rejection permits a
-   fresh activation; held input never becomes an automatic retry.
+   fresh activation only when no reconciliation restriction was already latched;
+   it cannot resolve an earlier partial/unconfirmed configuration result. Held
+   input never becomes an automatic retry.
 8. Only the owner may call `reconciled(capture)` after actual receipt quiescence,
    current graph/config reconciliation and shared history release. It rejects
    unresolved routing/configuration work. A graph update, cancel button or retry
@@ -146,6 +148,13 @@ accessible labels, reentrant pending status, shared bus-model selection, graph
 barriers, partial reconciliation, mixed publication order, 1,000 coalesced offers,
 missing/disconnected/unknown inputs and narrow/wide large-list allocation.
 These are source/widget fixtures, not evidence of physical input/audio acceptance.
+
+The reconciliation correction has four model/widget regressions that fail on
+`cdc418fb`: partial or unconfirmed configuration arrives while routing is queued,
+then a zero-effect routing rejection and ordinary publication must retain the
+restriction until explicit owner reconciliation. The fresh-rejection control
+continues to allow retry. Corrected candidate checks pass 274 default and 274
+accessibility tests, 315 all-feature tests on isolated Xvfb/D-Bus, and native build.
 
 Cloud validation on 2026-10-24 passed 269 default GTK library tests and 310 with
 all features under isolated Xvfb/D-Bus, including 20 routing controller/widget

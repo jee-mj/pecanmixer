@@ -206,6 +206,73 @@ fn reentrant_bus_handoff_without_request_id_already_blocks_routing_capture() {
     assert_eq!(bus.awaited_request(), Some(9));
 }
 
+fn rejected_route_keeps_configuration_reconciliation_widgets_disabled(progress: buses::Progress) {
+    let (v, g, mut bus) = view();
+    let events = Rc::new(RefCell::new(vec![]));
+    let seen = events.clone();
+    v.bind_intents(move |event| {
+        seen.borrow_mut().push(event);
+        Ok(())
+    });
+    let (source, destination) = first(&v.0.model.borrow());
+    let key = Key::Route(source, destination);
+    button(&v, &key).emit_clicked();
+    let route = intent(events.borrow_mut().pop().unwrap());
+    assert!(v.report(&route.request, report(&route, NativeProgress::Queued)));
+
+    let mut uncertain = snapshot(&g);
+    uncertain.operation = Some(buses::Operation {
+        request: 4,
+        progress,
+    });
+    bus.observe(uncertain).unwrap();
+    v.observe(capture(&g, &bus)).unwrap();
+    assert!(v.report(
+        &route.request,
+        report(
+            &route,
+            NativeProgress::Rejected {
+                reason: NativeFailure::Disconnected,
+                counts: Counts::default(),
+            },
+        ),
+    ));
+    assert!(v.pending().is_none());
+    bus.observe(snapshot(&g)).unwrap();
+    v.offer(capture(&g, &bus)).unwrap();
+    pump();
+    assert_eq!(
+        v.0.model.borrow().availability(),
+        Err(Error::ReconciliationRequired)
+    );
+    let blocked = button(&v, &key);
+    assert!(!blocked.is_sensitive());
+    assert!(!button(&v, &Key::Reset).is_sensitive());
+    blocked.emit_clicked();
+    assert!(events.borrow().is_empty());
+
+    v.reconciled(capture(&g, &bus)).unwrap();
+    assert!(button(&v, &key).is_sensitive());
+    blocked.emit_clicked();
+    assert!(events.borrow().is_empty(), "retired callback stays inert");
+    button(&v, &key).emit_clicked();
+    assert_eq!(events.borrow().len(), 1);
+}
+
+#[gtk::test]
+fn partial_configuration_widget_latch_survives_zero_effect_route_rejection() {
+    rejected_route_keeps_configuration_reconciliation_widgets_disabled(
+        buses::Progress::PartiallyApplied("synthetic partial".into()),
+    );
+}
+
+#[gtk::test]
+fn unconfirmed_configuration_widget_latch_survives_zero_effect_route_rejection() {
+    rejected_route_keeps_configuration_reconciliation_widgets_disabled(
+        buses::Progress::Unconfirmed("synthetic timeout".into()),
+    );
+}
+
 #[gtk::test]
 fn direct_old_publication_and_failed_reconciliation_do_not_discard_newest_queued_graph() {
     let (v, g, bus) = view();
