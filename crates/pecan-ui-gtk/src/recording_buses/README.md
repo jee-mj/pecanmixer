@@ -18,6 +18,9 @@ interpreted as default configurations. Rejection retires old bindings and clears
 the projection until a valid publication arrives; publication_error retains the
 typed diagnostic. The caller must surface it. This does not drop any completion
 or finalization obligation, which remains owned outside this presentation model.
+Add/split also check the row budget before emitting a growth proposal; other
+operations remain available when they fit. The budget is an explicit UI resource
+limit, not a new permanent backend bus-count policy.
 
 `bind` captures an immutable UI presentation and exact opaque origin clone.
 Bind at interaction begin and retain its action/key; a delayed release must not
@@ -123,6 +126,6 @@ receipts, transport/folder actions and production adoption require later slices.
 No physical desktop, AT, live server, hardware/audio, WAV recording or performance
 acceptance is established. No user profile/device data is read or published.
 
-Cloud validation: twelve focused tests pass in default and `a11y-tests` feature
+Cloud validation: thirteen focused tests pass in default and `a11y-tests` feature
 modes, without a display or audio server. The optional GTK feature build does
 not establish accessibility interaction or widget acceptance.

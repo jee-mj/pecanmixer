@@ -522,3 +522,33 @@ fn default_capabilities_and_input_budgets_do_not_silently_enable_or_truncate() {
     assert!(model.publication_error().is_none());
     assert!(model.request(&model.bind().unwrap(), split()).is_ok());
 }
+
+#[test]
+fn growth_preflight_cannot_emit_a_layout_beyond_the_models_row_budget() {
+    let mut model = Ui::new(Budget {
+        buses: 4,
+        tracks: 8,
+    });
+    model.observe(frame()).unwrap();
+    for action in [Action::AddStereo, split()] {
+        assert_eq!(
+            model.availability(&action).unwrap(),
+            Availability::Unavailable(Unavailable::RowBudget)
+        );
+        assert!(matches!(
+            model.request(&model.bind().unwrap(), action),
+            Err(Error::Disabled(Availability::Unavailable(
+                Unavailable::RowBudget
+            )))
+        ));
+    }
+    let join = model
+        .request(
+            &model.bind().unwrap(),
+            Action::Join {
+                bus: "rec-3".into(),
+            },
+        )
+        .unwrap();
+    assert_eq!(join.proposed_configuration.unwrap().widths.len(), 3);
+}
