@@ -56,3 +56,20 @@ initializing GTK. Earlier GTK results apply to the prior isolated candidate,
 not this updated adapter. A proper Xvfb run, final native build, independent
 adapter review and application ownership/control integration remain unperformed.
 Work was parked before those checks. No hardware or user-profile action ran.
+
+### Unresolved live-gesture origin boundary
+
+A subsequent independent signal probe reproduced row-binding substitution: a
+refresh can replace a retained scale callback's binding with a replacement
+object's newer origin during an active gesture. This is a signal-level result,
+not physical-pointer acceptance. Before live gestures are enabled, capture the
+origin at gesture start and retain it, or cancel the gesture when its target or
+origin changes. This remains unresolved; the receipt adapter's stale-binding
+checks alone do not establish gesture safety. Controls remain disabled.
+
+The bounded native backend contract at
+`e7223aa12de021952dd25392dee83b4140b653cb` subsequently received independent review
+clearance. That clearance does not clear this UI gesture boundary or establish
+live application parity. The separate, unwired patchbay actions candidate is
+`973ba2900a7268b90f0a09643804923e5d218806`; it has not been integrated here.
+No further fix, review, build or integration round was started for this handoff.
