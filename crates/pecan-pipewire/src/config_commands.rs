@@ -33,6 +33,7 @@ impl Commands {
             native: None,
             config: Some(work),
             start: None,
+            arming: None,
         });
         Ok(receipt)
     }

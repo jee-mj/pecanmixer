@@ -34,6 +34,7 @@ pub struct RecordingSnapshot {
     pub configuration: ConfigSnapshot,
     /// Retain these receipts independently of future replaceable snapshots.
     pub takes: Vec<RecordingReceipt>,
+    pub arming: Option<crate::recording_arming::ArmingReceipt>,
 }
 #[derive(Clone, Debug)]
 pub struct RecordingBusStart {
@@ -86,6 +87,8 @@ pub enum RecordingError {
     FormatChanged,
     QuantumTooLarge,
     CaptureUnavailable,
+    Cancelled,
+    ConfigApply(crate::bus_config::ConfigError),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RecordingProgress {
@@ -189,6 +192,7 @@ pub(crate) struct TrackSpec {
     pub channels: Vec<usize>,
     pub ports: Vec<u32>,
 }
+#[derive(Clone)]
 pub(crate) struct Context {
     pub source: Stamp,
     pub config: ConfigRevision,
@@ -267,7 +271,8 @@ impl Request {
     /// A pending/open track reserves its bus until a stop/close or writer exit.
     /// Descriptor retention and eventual joining do not reserve it indefinitely.
     pub fn reserves(&self, index: usize) -> bool {
-        if self.stop.load(Ordering::Acquire)
+        if index >= self.context.tracks.len()
+            || self.stop.load(Ordering::Acquire)
             || self.stage.load(Ordering::Acquire) >= REJECTED
             || self.track_stops.load(Ordering::Acquire) & (1 << index) != 0
         {
@@ -444,12 +449,15 @@ impl Registry {
         if observed.len() != self.observed.len()
             || !observed.iter().zip(&self.observed).all(|(a, b)| a.same(b))
         {
-            if let Some(next) = self.revision.checked_add(1) {
-                self.revision = next;
-            } else {
-                self.exhausted = true;
-            }
+            self.bump();
             self.observed = observed;
+        }
+    }
+    pub fn bump(&mut self) {
+        if let Some(next) = self.revision.checked_add(1) {
+            self.revision = next;
+        } else {
+            self.exhausted = true;
         }
     }
     pub fn reap(&mut self) {

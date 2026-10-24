@@ -8,6 +8,8 @@ use pecan_core::backend::{
 };
 use pecan_core::graph::{Momentopname, Opdracht};
 
+#[path = "arming_commands.rs"]
+mod arming;
 #[path = "config_commands.rs"]
 mod config;
 #[path = "native_commands.rs"]
@@ -40,6 +42,7 @@ struct State {
     history_authority: Arc<()>,
     config: crate::bus_config::Registry,
     recording: crate::recording::Registry,
+    arming: Option<crate::recording_arming::Work>,
 }
 
 struct QueuedCommand {
@@ -49,6 +52,7 @@ struct QueuedCommand {
     native: Option<native::Tag>,
     config: Option<crate::bus_config::Prepared>,
     start: Option<crate::recording::PreparedStart>,
+    arming: Option<crate::recording_arming::ArmingReceipt>,
 }
 
 impl Default for Commands {
@@ -70,6 +74,7 @@ impl Default for Commands {
             history_authority: Arc::new(()),
             config: Default::default(),
             recording: Default::default(),
+            arming: None,
         }))
     }
 }
@@ -101,6 +106,7 @@ impl Commands {
             let failure =
                 (!state.stopped).then_some(crate::recording::RecordingError::Disconnected);
             state.recording.stop_all(failure, true);
+            state.cancel_arming(crate::recording::RecordingError::Disconnected);
             state.pending.clear();
         }
         if !graph.value.verbonden {
@@ -146,6 +152,7 @@ impl Commands {
         state.fail_all_native(NativeFailure::Stopped);
         state.fail_all_config(crate::bus_config::ConfigError::Stopped);
         state.recording.stop_all(None, true);
+        state.cancel_arming(crate::recording::RecordingError::Stopped);
         state.pending.clear();
     }
 
@@ -222,7 +229,9 @@ impl Commands {
                     })
                 };
                 if validation.is_err() || !identity_ok {
-                    if let Some(mut work) = queued.start {
+                    if queued.arming.is_some() {
+                        state.cancel_arming(crate::recording::RecordingError::InvalidOrigin);
+                    } else if let Some(mut work) = queued.start {
                         work.request
                             .reject(crate::recording::RecordingError::InvalidOrigin);
                         work.disarm();
@@ -249,6 +258,10 @@ impl Commands {
                 }
                 queued
             };
+            if let Some(receipt) = queued.arming {
+                self.claim_arming(&receipt);
+                continue;
+            }
             if let Some(work) = queued.start {
                 start(work);
                 continue;
@@ -312,6 +325,7 @@ impl State {
             native: None,
             config: None,
             start: None,
+            arming: None,
         });
         Ok(())
     }
