@@ -2933,11 +2933,14 @@ dependencies = [
 name = "pecan-ui-gtk"
 version = "0.1.0"
 dependencies = [
+ "async-channel",
  "gtk4",
+ "ksni",
  "pecan-core",
  "pecan-pipewire",
  "serde",
  "serde_json",
+ "zbus",
 ]
 
 [[package]]
