@@ -7,6 +7,10 @@ use pecan_core::domain::{
 };
 use std::{rc::Rc, sync::Arc, time::Duration};
 
+mod input;
+mod view;
+pub use view::{BusControls, Destination, Event, Handoff, ViewError};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Dependency {
     IdleConfigurationAdapter,
