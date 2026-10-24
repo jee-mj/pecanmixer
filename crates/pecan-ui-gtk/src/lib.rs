@@ -7,3 +7,6 @@ mod widgets;
 mod presentation;
 pub use presentation::GraphPresentation;
 pub use widgets::{MixerOverview, PatchbayOverview};
+
+/// Synchronous explicit-path I/O; not wired to the preview or startup.
+pub mod settings_storage;

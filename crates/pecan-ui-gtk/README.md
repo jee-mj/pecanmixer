@@ -86,3 +86,49 @@ These remain synthetic population/allocation checks. No live server, hardware,
 Wayland/physical desktop, Orca/AT-SPI workflow, theme/high-DPI acceptance, rendering
 throughput, memory/latency benchmark or interactive-patchbay parity is established.
 The package and default GTK API feature floor remain unchanged.
+
+## Explicit settings storage boundary
+
+`settings_storage::SettingsFile` is a synchronous, app-side adapter for the
+validated core `SettingsV1` contract. It is not called by startup or the preview
+and does not apply preferences. A future shell must call it off GTK and audio
+process threads and serialize writers. The caller supplies an absolute file
+path in an existing directory; there is no HOME/XDG discovery or implicit
+directory creation.
+
+`load()` returns settings, the core load status, exact original bytes and an
+opaque snapshot token. `save(&loaded, &next)` requires a missing or valid native
+document and checks that the disk content still matches that snapshot before
+writing and before replacement. It writes a unique owner-only sibling, syncs
+the file, renames it over the target and syncs the directory. On Linux the
+rename is the atomic visibility boundary. These content checks are not an
+interprocess lock or a guarantee against changes racing the final check;
+multi-instance coordination remains a shell integration dependency.
+
+Corrupt JSON, invalid UTF-8 and unsupported schema versions stay untouched by
+ordinary saves. Only an explicit `recover(&loaded, &next)` can replace them:
+it first creates and syncs a unique, byte-exact owner-only recovery backup and
+syncs its directory. Complete backups remain available if replacement later
+fails. Errors expose the phase, whether replacement already happened and any
+completed backup path. After a post-rename error callers must reload; a
+directory-sync failure leaves power-loss durability uncertain. Unfinished
+staging files are ignored and are never adopted or automatically deleted on
+load. Normal error cleanup removes only this operation's own staging file.
+Existing non-regular targets, including symlinks, are rejected at the read checks.
+
+Legacy import remains an explicit data operation: a caller may pass an exported
+key/value map to core `migrate_web` using `JsonDecoder`, review its diagnostics,
+then supply the resulting validated settings to `save` or `recover`. This
+adapter never searches profiles, opens WebKit databases or imports adjacent files.
+
+```sh
+# Display-free tests; all storage is confined to fresh test temporary directories:
+cargo test -p pecan-ui-gtk --locked --lib settings_storage
+```
+
+The tests cover native schema roundtrip, absent/valid/corrupt/future input,
+invalid UTF-8, byte-exact recovery, detected concurrent edits, pre/post-rename
+faults, staging leftovers, retry semantics, missing directories, non-regular
+targets and explicit legacy export input. Fault injection is deterministic;
+these tests do not simulate a kernel crash, power loss or a physical filesystem
+failure. No GUI, autostart, tray or runtime settings integration is provided.
