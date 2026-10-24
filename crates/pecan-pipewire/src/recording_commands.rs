@@ -12,6 +12,46 @@ impl Commands {
         &self,
         intent: RecordingStart,
     ) -> Result<RecordingReceipt, RecordingError> {
+        match self.enqueue_recording_selection(intent, None)? {
+            RecordingBusStartResult::Admitted(receipt) => Ok(receipt),
+            RecordingBusStartResult::NoOp(_) => unreachable!("whole-take start remains idle-only"),
+        }
+    }
+    pub(crate) fn enqueue_recording_bus(
+        &self,
+        intent: RecordingBusStart,
+    ) -> Result<RecordingBusStartResult, RecordingError> {
+        if intent.bus.is_empty() || intent.bus.len() > 256 {
+            return Err(RecordingError::InvalidInput);
+        }
+        self.enqueue_recording_selection(
+            intent.start,
+            Some((intent.bus, intent.expected_recording)),
+        )
+    }
+    pub(crate) fn recording_snapshot(&self) -> Option<RecordingSnapshot> {
+        let mut state = self.0.try_lock().ok()?;
+        state.recording.reap();
+        Some(RecordingSnapshot {
+            revision: RecordingRevision {
+                owner: state.config.snapshot.revision.owner,
+                revision: state.recording.revision,
+            },
+            configuration: state.config.snapshot.clone(),
+            takes: state
+                .recording
+                .active
+                .iter()
+                .cloned()
+                .map(RecordingReceipt)
+                .collect(),
+        })
+    }
+    fn enqueue_recording_selection(
+        &self,
+        intent: RecordingStart,
+        selection: Option<(String, RecordingRevision)>,
+    ) -> Result<RecordingBusStartResult, RecordingError> {
         if intent.root.as_os_str().len() > 4096 {
             return Err(RecordingError::InvalidInput);
         }
@@ -23,14 +63,26 @@ impl Commands {
             return Err(RecordingError::Disconnected);
         }
         state.recording.reap();
-        if state.recording.active.is_some() || state.config.snapshot.recording {
+        if state.recording.exhausted
+            || state.recording.revision == u64::MAX
+            || state.config.exhausted
+        {
+            return Err(RecordingError::RevisionExhausted);
+        }
+        if let Some((_, expected)) = &selection {
+            if *expected
+                != (RecordingRevision {
+                    owner: state.config.snapshot.revision.owner,
+                    revision: state.recording.revision,
+                })
+            {
+                return Err(RecordingError::StaleRecording);
+            }
+        } else if !state.recording.active.is_empty() || state.config.snapshot.recording {
             return Err(RecordingError::AlreadyRecording);
         }
         if intent.expected_config != state.config.snapshot.revision {
             return Err(RecordingError::StaleConfig);
-        }
-        if state.pending.len() >= NORMAL_CAPACITY {
-            return Err(RecordingError::QueueFull);
         }
         let origin = state
             .origins
@@ -69,10 +121,20 @@ impl Commands {
             .rate
             .filter(|r| *r != 0)
             .ok_or(RecordingError::Unavailable)?;
-        let defs = config
-            .buses
-            .armed()
-            .map_err(|_| RecordingError::InvalidInput)?;
+        let defs = if let Some((key, _)) = &selection {
+            vec![config
+                .buses
+                .definitions()
+                .map_err(|_| RecordingError::InvalidInput)?
+                .into_iter()
+                .find(|d| &d.key == key)
+                .ok_or(RecordingError::InvalidInput)?]
+        } else {
+            config
+                .buses
+                .armed()
+                .map_err(|_| RecordingError::InvalidInput)?
+        };
         if defs.is_empty() {
             return Err(RecordingError::NoArmedTracks);
         }
@@ -112,6 +174,7 @@ impl Commands {
         let context = Context {
             source: origin.graph.stamp,
             config: intent.expected_config,
+            config_identity: state.config.identity.clone(),
             ticket: intent.ticket,
             node,
             serial: observed.serial,
@@ -120,6 +183,45 @@ impl Commands {
             tracks,
         };
         state.validate_recording(&context, true)?;
+        if selection.is_some() {
+            for existing in &state.recording.active {
+                for (index, track) in existing.context.tracks.iter().enumerate() {
+                    if existing.reserves(index) && track.key == context.tracks[0].key {
+                        let same = track.channels == context.tracks[0].channels
+                            && track.ports == context.tracks[0].ports
+                            && existing.context.node == context.node
+                            && existing.context.serial == context.serial
+                            && existing.context.rate == context.rate
+                            && existing.context.source.epoch == context.source.epoch
+                            && context
+                                .objects
+                                .iter()
+                                .all(|entry| existing.context.objects.contains(entry));
+                        return if same {
+                            Ok(RecordingBusStartResult::NoOp(RecordingReceipt(
+                                existing.clone(),
+                            )))
+                        } else {
+                            Err(RecordingError::AlreadyRecording)
+                        };
+                    }
+                }
+            }
+            // One opening transition at a time. Existing captures keep running;
+            // stopped/finalizing takes do not prevent an independent new take.
+            if state.recording.active.iter().any(|r| {
+                !r.started_once.load(Ordering::Acquire)
+                    && (0..r.context.tracks.len()).any(|i| r.reserves(i))
+            }) {
+                return Err(RecordingError::Busy);
+            }
+        }
+        if state.recording.active.len() >= MAX_RECORDING_TAKES {
+            return Err(RecordingError::Capacity);
+        }
+        if state.pending.len() >= NORMAL_CAPACITY {
+            return Err(RecordingError::QueueFull);
+        }
         let request = Request::new(context);
         state.pending.push_back(QueuedCommand {
             command: BackendCommand {
@@ -129,10 +231,15 @@ impl Commands {
             objects: request.context.objects.clone(),
             native: None,
             config: None,
-            start: Some(PreparedStart::new(request.clone(), intent.root)),
+            // Retain the bounded path bytes, not caller-owned spare capacity.
+            start: Some(PreparedStart::new(
+                request.clone(),
+                intent.root.as_path().to_path_buf(),
+            )),
         });
-        state.recording.active = Some(request.clone());
-        Ok(RecordingReceipt(request))
+        state.recording.active.push(request.clone());
+        state.recording.refresh_revision();
+        Ok(RecordingBusStartResult::Admitted(RecordingReceipt(request)))
     }
     pub(crate) fn stop_recording(
         &self,
@@ -173,6 +280,7 @@ impl Commands {
             }
             _ => unreachable!(),
         }
+        state.recording.refresh_revision();
         Ok(RecordingStopResult::Retained(RecordingReceipt(request)))
     }
     pub(crate) fn recording_owned(&self) -> bool {
@@ -181,8 +289,8 @@ impl Commands {
             .unwrap()
             .recording
             .active
-            .as_ref()
-            .is_some_and(|r| r.owned())
+            .iter()
+            .any(|r| r.owned())
     }
     pub(crate) fn legacy_recording_blocked(&self, command: &Opdracht) -> bool {
         matches!(
@@ -199,8 +307,8 @@ impl Commands {
             .unwrap()
             .recording
             .active
-            .as_ref()
-            .is_some_and(|r| r.live())
+            .iter()
+            .any(|r| r.live())
     }
     pub(crate) fn legacy_recording_stop(&self, name: Option<&str>) {
         let mut state = self.0.lock().unwrap();
@@ -208,23 +316,28 @@ impl Commands {
             state.recording.stop_all(None, false);
             return;
         }
-        let Some(request) = &state.recording.active else {
-            return;
-        };
-        if !request.owned() {
-            return;
+        for request in &state.recording.active {
+            if !request.owned() {
+                continue;
+            }
+            if let Some(installed) = request.installed.get() {
+                for track in installed
+                    .tracks
+                    .iter()
+                    .filter(|t| Some(t.name.as_str()) == name)
+                {
+                    request.request_track_stop(track.id.index());
+                }
+            } else if request
+                .context
+                .tracks
+                .iter()
+                .any(|t| Some(t.name.as_str()) == name)
+            {
+                request.request_stop();
+            }
         }
-        let Some(installed) = request.installed.get() else {
-            request.request_stop();
-            return;
-        };
-        if let Some(track) = installed
-            .tracks
-            .iter()
-            .find(|t| Some(t.name.as_str()) == name)
-        {
-            request.request_track_stop(track.id.index());
-        }
+        state.recording.refresh_revision();
     }
     #[cfg(test)]
     pub(crate) fn reject_recording(&self, mut work: PreparedStart, reason: RecordingError) {
@@ -306,42 +419,49 @@ impl Commands {
         }
         work.disarm();
     }
-    pub(crate) fn pump_recording(&self, capture: &RefCell<Option<Capture>>, legacy_active: bool) {
+    pub(crate) fn pump_recording(&self, captures: &RefCell<Vec<Capture>>, legacy_active: bool) {
         let mut state = self.0.lock().unwrap();
         state.recording.reap();
-        let Some(request) = &state.recording.active else {
-            capture.borrow_mut().take();
-            return;
-        };
-        if request.stage.load(Ordering::Acquire) == QUEUED {
-            return;
-        }
-        if request.stop.load(Ordering::Acquire) {
-            capture.borrow_mut().take();
-            return;
-        }
-        let validation = if legacy_active {
-            Err(RecordingError::AlreadyRecording)
-        } else {
-            state.validate_recording(
-                &request.context,
-                !request.started_once.load(Ordering::Acquire),
-            )
-        };
-        if let Err(error) = validation {
-            request.fail(error);
-            request.request_stop();
-            capture.borrow_mut().take();
-            return;
-        }
-        let Some(installed) = request.installed.get() else {
-            return;
-        };
-        let Some(report) = installed.writer.receipt.try_report() else {
-            return;
-        };
-        if report.phase == opname::WriterPhase::Ready && !report.stop_requested {
+        let mut captures = captures.borrow_mut();
+        captures.clear();
+        for request in &state.recording.active {
+            if request.stage.load(Ordering::Acquire) == QUEUED {
+                continue;
+            }
+            if request.stop.load(Ordering::Acquire) {
+                request.attached.store(false, Ordering::Release);
+                continue;
+            }
+            let validation = if legacy_active {
+                Err(RecordingError::AlreadyRecording)
+            } else {
+                state.validate_recording(
+                    &request.context,
+                    !request.started_once.load(Ordering::Acquire),
+                )
+            };
+            if let Err(error) = validation {
+                request.fail(error);
+                request.request_stop();
+                continue;
+            }
+            let Some(installed) = request.installed.get() else {
+                continue;
+            };
+            let Some(report) = installed.writer.receipt.try_report() else {
+                // A busy status read must not detach an already attached
+                // capture or silently skip its next sample block.
+                if request.live() {
+                    captures.push(Capture(request.clone()));
+                }
+                continue;
+            };
+            if report.phase != opname::WriterPhase::Ready || report.stop_requested {
+                request.attached.store(false, Ordering::Release);
+                continue;
+            }
             let stops = request.track_stops.load(Ordering::Acquire);
+            let mut failed = false;
             for track in installed
                 .tracks
                 .iter()
@@ -352,20 +472,19 @@ impl Commands {
                     | Err(opname::WriterSendError::Busy | opname::WriterSendError::Closed) => {}
                     Err(_) => {
                         request.ingress_fault(6);
-                        capture.borrow_mut().take();
-                        return;
+                        failed = true;
+                        break;
                     }
                 }
             }
-            if !request.started_once.load(Ordering::Acquire) {
-                *capture.borrow_mut() = Some(Capture(request.clone()));
-                request.attached.store(true, Ordering::Release);
-                request.started_once.store(true, Ordering::Release);
+            if failed {
+                continue;
             }
-        } else {
-            request.attached.store(false, Ordering::Release);
-            capture.borrow_mut().take();
+            request.attached.store(true, Ordering::Release);
+            request.started_once.store(true, Ordering::Release);
+            captures.push(Capture(request.clone()));
         }
+        state.recording.refresh_revision();
     }
 }
 impl State {
@@ -376,7 +495,7 @@ impl State {
         if !self.graph.value.verbonden || self.graph.stamp.epoch != context.source.epoch {
             return Err(RecordingError::Disconnected);
         }
-        if config && self.config.snapshot.revision != context.config {
+        if config && !Arc::ptr_eq(&self.config.identity, &context.config_identity) {
             return Err(RecordingError::StaleConfig);
         }
         if self.graph.value.rate != Some(context.rate) {

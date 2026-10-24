@@ -1,4 +1,6 @@
 //! Synthetic registry, injected writers and temporary WAV roots only.
+#[path = "recording_multitake_tests.rs"]
+mod multiple;
 use super::*;
 use crate::{
     bus_config::{self, ConfigTarget},
@@ -83,7 +85,7 @@ impl ConfigTarget for Target {
 struct Fixture {
     commands: Commands,
     owner: Owner,
-    capture: RefCell<Option<Capture>>,
+    capture: RefCell<Vec<Capture>>,
     root: TestDir,
     target: Target,
 }
@@ -159,7 +161,7 @@ impl Fixture {
         Self {
             commands,
             owner: Owner::new(),
-            capture: RefCell::new(None),
+            capture: RefCell::new(Vec::new()),
             root: TestDir::new("native-recording"),
             target,
         }
@@ -222,7 +224,7 @@ impl Fixture {
     }
     fn samples(&self, blocks: &[Vec<f32>]) {
         let capture = self.capture.borrow();
-        let capture = capture.as_ref().unwrap();
+        let capture = capture.first().unwrap();
         assert!(capture.accepts(blocks[0].len(), 1, 48000));
         capture.ingest(blocks, blocks[0].len());
     }
@@ -250,6 +252,7 @@ fn retained(result: RecordingStopResult) -> RecordingReceipt {
     match result {
         RecordingStopResult::Retained(r) => r,
         RecordingStopResult::NoOp => panic!("missing take"),
+        RecordingStopResult::RetainedMany(_) => panic!("expected one take"),
     }
 }
 
@@ -350,7 +353,7 @@ fn partial_open_failure_keeps_finalized_tracks_and_never_attaches_capture() {
         opname::TrackPhase::NotOpened(_)
     ));
     f.pump();
-    assert!(f.capture.borrow().is_none());
+    assert!(f.capture.borrow().is_empty());
     assert_wav(&writer.directory.unwrap().join("Rec 1.wav"), 1, 48000, &[]);
 }
 
@@ -502,7 +505,7 @@ fn replacement_while_opening_finalizes_files_without_attaching_a_new_capture() {
     let report = receipt.try_report().unwrap();
     assert_eq!(report.failure, Some(RecordingError::InvalidOrigin));
     assert!(!report.started_once);
-    assert!(f.capture.borrow().is_none());
+    assert!(f.capture.borrow().is_empty());
     assert_wav(
         &report
             .writer
@@ -551,7 +554,7 @@ fn disconnect_stops_ingress_and_keeps_stable_stops_and_finalization_usable() {
     let id = started.writer.unwrap().take;
     let track = started.tracks[0].id;
     f.samples(&[vec![0.25], vec![-0.25]]);
-    let late = f.capture.borrow().clone().unwrap();
+    let late = f.capture.borrow().first().unwrap().clone();
     f.commands.publish(Momentopname::default());
     retained(f.commands.stop_recording(RecordingStop::Take(id)).unwrap());
     late.ingest(&[vec![9.], vec![9.]], 1);
@@ -843,7 +846,7 @@ fn format_quantum_and_missing_capture_data_fail_without_successful_recording_cla
     for failure in 0..3 {
         let f = Fixture::new(false);
         let receipt = f.start();
-        let capture = f.capture.borrow().clone().unwrap();
+        let capture = f.capture.borrow().first().unwrap().clone();
         let expected = match failure {
             0 => {
                 assert!(!capture.accepts(1, 1, 44100));
