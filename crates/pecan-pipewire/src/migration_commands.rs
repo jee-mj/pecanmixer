@@ -746,6 +746,19 @@ impl Commands {
             state.finish_migration(w, reason);
             return;
         }
+        // The local adapter runs outside the state lock. Epoch/config equality
+        // alone cannot authenticate objects replaced during its callbacks.
+        // Recheck the captured surviving graph scope after the last accessor,
+        // before assigning its readback or publishing a local-only completion.
+        if let Err(reason) = state.validate_migration_graph(&w) {
+            w.local_applied = true;
+            state.config.snapshot.local = None;
+            state.config.snapshot.configuration = None;
+            state.config.snapshot.transport = None;
+            state.config.bump();
+            state.finish_migration(w, reason);
+            return;
+        }
         state.config.snapshot.local = after;
         state.config.snapshot.recording = active_after;
         state.config.snapshot.configuration = if error.is_none() && w.channels == w.ports.len() {
@@ -867,6 +880,9 @@ impl State {
         {
             return Err(MigrationError::StaleRecording);
         }
+        self.validate_migration_graph(w)
+    }
+    fn validate_migration_graph(&self, w: &Work) -> Result<(), MigrationError> {
         if self.objects.get(&w.node) != Some(&w.node_generation)
             || !self
                 .graph

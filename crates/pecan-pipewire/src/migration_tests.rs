@@ -15,6 +15,7 @@ struct Target {
     recording: bool,
     resizes: usize,
     on_resize: Option<Box<dyn FnMut()>>,
+    on_options: Option<Box<dyn FnMut()>>,
 }
 impl ConfigTarget for Target {
     fn readback(&self) -> Option<bus_config::BusReadback> {
@@ -55,6 +56,9 @@ impl ConfigTarget for Target {
     }
     fn options(&mut self, o: pecan_core::graph::Opties) {
         self.options = Some(o);
+        if let Some(hook) = self.on_options.as_mut() {
+            hook();
+        }
     }
     fn options_match(&self, o: &pecan_core::graph::Opties) -> bool {
         self.options.as_ref() == Some(o)
@@ -140,6 +144,7 @@ impl Fixture {
             recording: false,
             resizes: 0,
             on_resize: None,
+            on_options: None,
         };
         commands.refresh_config(target.readback(), false, false);
         let mut buses = BusConfig {
@@ -940,4 +945,158 @@ fn external_local_readback_change_is_retained_before_rejecting_apply() {
     assert_eq!(result.local_readback.unwrap().gains[0], 0.25);
     assert!(result.configuration.configuration.is_none());
     assert_eq!(f.target.resizes, 0);
+}
+
+fn replacement_at_final_options(widths: Vec<usize>, action: LayoutAction, id: u32) {
+    let mut f = Fixture::new(widths);
+    let before = f.commands.config_snapshot().unwrap();
+    let receipt = f.start(action);
+    let commands = f.commands.clone();
+    f.target.on_options = Some(Box::new(move || {
+        // Deliberate contract interleaving, not evidence that production's
+        // synchronous PipeWire target is reentered by registry callbacks.
+        commands.object_removed(id);
+        commands.object_added(id);
+        let graph = (*commands.current().value).clone();
+        commands.publish(graph);
+    }));
+    let report = f.finish(&receipt);
+    assert_eq!(
+        report.progress,
+        MigrationProgress::Completed(MigrationOutcome::PartiallyApplied)
+    );
+    assert_eq!(report.failure, Some(MigrationError::InvalidObject));
+    assert!(
+        report.local_readback.is_some(),
+        "retain the target result without assigning it to a replacement"
+    );
+    assert!(report.configuration.local.is_none());
+    assert!(report.configuration.configuration.is_none());
+    assert!(report.configuration.transport.is_none());
+    assert_ne!(report.configuration.revision, before.revision);
+    assert!(f.commands.0.lock().unwrap().migration.is_none());
+}
+#[test]
+fn split_replacement_of_rec_node_in_final_options_cannot_complete_locally() {
+    replacement_at_final_options(
+        vec![2, 2],
+        LayoutAction::Split {
+            bus: "rec-1-2".into(),
+        },
+        900,
+    );
+}
+#[test]
+fn split_replacement_of_input_port_in_final_options_cannot_complete_locally() {
+    replacement_at_final_options(
+        vec![2, 2],
+        LayoutAction::Split {
+            bus: "rec-1-2".into(),
+        },
+        901,
+    );
+}
+#[test]
+fn join_replacement_of_rec_node_in_final_options_cannot_complete_locally() {
+    replacement_at_final_options(
+        vec![1, 1, 2],
+        LayoutAction::Join {
+            bus: "rec-1".into(),
+        },
+        900,
+    );
+}
+#[test]
+fn join_replacement_of_input_port_in_final_options_cannot_complete_locally() {
+    replacement_at_final_options(
+        vec![1, 1, 2],
+        LayoutAction::Join {
+            bus: "rec-1".into(),
+        },
+        901,
+    );
+}
+
+#[test]
+fn nominal_noop_with_final_replacement_is_partial_instead_of_noop_success() {
+    replacement_at_final_options(
+        vec![2],
+        LayoutAction::Remove {
+            bus: "rec-1-2".into(),
+        },
+        901,
+    );
+}
+
+#[test]
+fn shrink_retained_port_replacement_during_options_retains_actual_resize_without_commit() {
+    replacement_at_final_options(
+        vec![2, 2, 2],
+        LayoutAction::Remove {
+            bus: "rec-3-4".into(),
+        },
+        901,
+    );
+}
+
+#[test]
+fn ordinary_final_callback_graph_revisions_preserve_split_and_join_completion() {
+    for (widths, action) in [
+        (
+            vec![2, 2],
+            LayoutAction::Split {
+                bus: "rec-1-2".into(),
+            },
+        ),
+        (
+            vec![1, 1, 2],
+            LayoutAction::Join {
+                bus: "rec-1".into(),
+            },
+        ),
+    ] {
+        let mut f = Fixture::new(widths);
+        let r = f.start(action);
+        let commands = f.commands.clone();
+        f.target.on_options = Some(Box::new(move || {
+            let mut graph = (*commands.current().value).clone();
+            graph
+                .knopen
+                .iter_mut()
+                .find(|n| n.id == 700)
+                .unwrap()
+                .beschrijving = Some("synthetic unrelated change".into());
+            commands.publish(graph);
+        }));
+        let result = f.finish(&r);
+        assert_eq!(
+            result.progress,
+            MigrationProgress::Completed(MigrationOutcome::AppliedLocally)
+        );
+        assert!(result.configuration.configuration.is_some());
+        assert_eq!(f.target.resizes, 0);
+    }
+}
+
+#[test]
+fn expected_tail_retirement_inside_resize_remains_a_valid_staged_shrink() {
+    let mut f = Fixture::new(vec![2, 2, 2]);
+    let r = f.remove();
+    let commands = f.commands.clone();
+    f.target.on_resize = Some(Box::new(move || {
+        let mut graph = (*commands.current().value).clone();
+        for id in [905, 906] {
+            commands.object_removed(id);
+            graph.poorten.retain(|p| p.id != id);
+        }
+        commands.publish(graph);
+    }));
+    let result = f.finish(&r);
+    assert_eq!(
+        result.progress,
+        MigrationProgress::Completed(MigrationOutcome::Observed)
+    );
+    assert_eq!(result.resize.unwrap().actual, 4);
+    assert_eq!(result.configuration.local.unwrap().channels, 4);
+    assert!(result.configuration.configuration.is_some());
 }
