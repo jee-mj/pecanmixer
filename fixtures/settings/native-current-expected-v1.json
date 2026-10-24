@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "preferences": {
+    "buses": {
+      "widths": [
+        2,
+        1,
+        1
+      ],
+      "states": {
+        "rec-1-2": {
+          "db": -6.0,
+          "mute": false,
+          "armed": true
+        },
+        "rec-3": {
+          "db": 0.0,
+          "mute": true,
+          "armed": false
+        },
+        "rec-4": {
+          "db": -12.0,
+          "mute": false,
+          "armed": false
+        }
+      },
+      "midi": false
+    },
+    "hidden": [
+      "bus|rec-3",
+      "firefox|apps|output_FL,output_FR#1",
+      "midi|Midi-Bridge/Fixture Keyboard|Fixture Keyboard: MIDI 1 (capture)",
+      "rij|hardware"
+    ],
+    "clock": {
+      "start_stop": true
+    },
+    "rows": {
+      "apps": 1.5,
+      "hardware": 0.75,
+      "destinations": 0.75
+    },
+    "destination_width_px": 356.0
+  }
+}

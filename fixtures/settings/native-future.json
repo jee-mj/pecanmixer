@@ -1,0 +1,10 @@
+{
+  "schema_version": 2,
+  "preferences": {
+    "unrecognized_future_format": [
+      {
+        "node_id": 987654321
+      }
+    ]
+  }
+}

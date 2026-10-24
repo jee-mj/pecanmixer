@@ -1,0 +1,7 @@
+{
+  "pecanmixer.bussen": "{\"bussen\":[2,0],\"stand\":{},\"midi\":true}",
+  "pecanmixer.verborgen": "[\"rij|apps\",42,\"42\",\"bus|rec-1-2\",\"not a key\"]",
+  "pecanmixer.klok": "{\"klok\":{\"node_id\":987654321},\"start_stop\":true}",
+  "pecanmixer.rijen": "{\"apps\":-1,\"hardware\":2,\"bestemmingen\":2}",
+  "pecanmixer.deling": "\"wide\""
+}

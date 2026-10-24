@@ -1,0 +1,3 @@
+{
+  "pecanmixer.bussen": "{\"paren\":[{\"gekoppeld\":true},{\"gekoppeld\":false}],\"stand\":{\"rec-1-2\":{\"db\":-3,\"mute\":false},\"rec-3\":{\"db\":0,\"mute\":false,\"gewapend\":true}},\"midi\":null}"
+}
