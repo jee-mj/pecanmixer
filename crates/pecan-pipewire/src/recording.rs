@@ -540,6 +540,22 @@ impl Capture {
         true
     }
     pub fn ingest(&self, blocks: &[Vec<f32>], frames: usize) {
+        self.ingest_with(blocks, frames, |sender, track, samples| {
+            sender.try_audio(track, samples)
+        });
+    }
+    /// Keep mapping, stop masks and fault handling shared with the offline
+    /// fixture. Production uses one nonblocking send attempt per open track.
+    pub(super) fn ingest_with(
+        &self,
+        blocks: &[Vec<f32>],
+        frames: usize,
+        mut send: impl FnMut(
+            &crate::opname::WriterSender,
+            TrackId,
+            Vec<f32>,
+        ) -> Result<(), WriterSendError>,
+    ) {
         if frames == 0 {
             return;
         }
@@ -578,7 +594,7 @@ impl Capture {
                     samples.push(blocks[*channel][frame]);
                 }
             }
-            match installed.writer.sender.try_audio(track.id, samples) {
+            match send(&installed.writer.sender, track.id, samples) {
                 Ok(()) | Err(WriterSendError::Closed) => {}
                 Err(WriterSendError::Full) => {
                     self.0.ingress_fault(1);

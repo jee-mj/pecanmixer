@@ -88,7 +88,20 @@ fn stop(f: &Fixture) {
 fn samples(f: &Fixture, blocks: &[Vec<f32>]) {
     for c in f.capture.borrow().iter() {
         if c.accepts(blocks[0].len(), 1, 48000) {
-            c.ingest(blocks, blocks[0].len());
+            c.ingest_with(blocks, blocks[0].len(), |sender, track, packet| {
+                // Offline arming/WAV fixture: a contended nonblocking send
+                // accepts no packet. Retry only that unaccepted packet before
+                // ingress fault handling; never replay an accepted sample.
+                let deadline = Instant::now() + Duration::from_secs(2);
+                loop {
+                    match sender.try_audio(track, packet.clone()) {
+                        Err(opname::WriterSendError::Busy) if Instant::now() < deadline => {
+                            std::thread::yield_now();
+                        }
+                        result => return result,
+                    }
+                }
+            });
         }
     }
 }
@@ -97,19 +110,24 @@ fn samples(f: &Fixture, blocks: &[Vec<f32>]) {
 fn exclusive_arming_attaches_addition_before_stopping_captured_removal() {
     let mut f = fixture(&["rec-1", "rec-4"]);
     let old = f.start();
-    let mapping = old.try_report().unwrap().tracks;
+    let mapping = until(&old, |_| true).tracks;
     samples(&f, &[vec![0.1], vec![0.2], vec![0.3], vec![0.4]]);
+    let initial = until(&old, |_| true);
+    assert!(
+        initial.failure.is_none(),
+        "initial sample receipt: {initial:?}"
+    );
     let request = arm(&mut f, &["rec-2", "rec-4"]);
     assert_eq!(
         request.try_report().unwrap().progress,
         ArmingProgress::Adding
     );
-    assert!(!old.try_report().unwrap().stop_requested);
-    assert_eq!(old.try_report().unwrap().track_stops, 0);
+    assert!(!until(&old, |_| true).stop_requested);
+    assert_eq!(until(&old, |_| true).track_stops, 0);
     tick(&mut f);
     let opening = request.try_report().unwrap();
     assert_eq!(opening.additions.len(), 1);
-    assert_eq!(old.try_report().unwrap().track_stops, 0);
+    assert_eq!(until(&old, |_| true).track_stops, 0);
     let result = decide(&mut f, &request);
     assert_eq!(
         result.progress,
@@ -119,13 +137,19 @@ fn exclusive_arming_attaches_addition_before_stopping_captured_removal() {
     assert!(result.withheld.is_empty());
     assert_eq!(armed(&result), ["rec-2", "rec-4"]);
     let added = &result.additions[0].receipt;
-    assert!(added.try_report().unwrap().started_once);
-    assert!(!old.try_report().unwrap().stop_requested);
-    assert!(Arc::ptr_eq(&mapping, &old.try_report().unwrap().tracks));
+    assert!(until(added, |_| true).started_once);
+    assert!(!until(&old, |_| true).stop_requested);
+    assert!(Arc::ptr_eq(&mapping, &until(&old, |_| true).tracks));
     f.pump();
     samples(&f, &[vec![-0.1], vec![-0.2], vec![-0.3], vec![-0.4]]);
+    let continuing = until(&old, |_| true);
+    assert!(
+        continuing.failure.is_none(),
+        "continued sample receipt: {continuing:?}"
+    );
     stop(&f);
     let old = old.wait_timeout(Duration::from_secs(2)).unwrap();
+    assert!(old.is_success(), "unchanged take receipt: {old:?}");
     let path = old.writer.unwrap().directory.unwrap();
     assert_wav(&path.join("Rec 1.wav"), 1, 48000, &[0.1]);
     assert_wav(&path.join("Rec 4.wav"), 1, 48000, &[0.4, -0.4]);
