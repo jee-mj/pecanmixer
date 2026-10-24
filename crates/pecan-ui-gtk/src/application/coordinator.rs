@@ -8,7 +8,7 @@ use pecan_core::{
     graph::Opdracht,
     history_backend::{bind_history_plan, HistoryResults},
     inbox::{InboxBatch, LatestInbox},
-    native_command::{NativeProgress, NativeReceipt},
+    native_command::{NativeProgress, NativeReceipt, NativeReport},
 };
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
@@ -59,7 +59,14 @@ enum Delivery {
 /// identity isolates old controller callbacks even if numeric tickets repeat in
 /// a replacement session. The backend receipt remains the only success source.
 #[derive(Clone)]
-pub struct Request(Rc<RefCell<Delivery>>);
+pub struct Request(Rc<RefCell<Delivery>>, NativeReceipt);
+impl Request {
+    /// Actual backend evidence, retained independently of presentation/history
+    /// invalidation. Terminal status alone does not establish quiescence.
+    pub(crate) fn native_report(&self) -> NativeReport {
+        self.1.report()
+    }
+}
 struct Pending {
     ticket: u64,
     source: Stamp,
@@ -173,6 +180,36 @@ impl Session {
         let (undo, redo) = state.history.labels();
         (undo.map(str::to_owned), redo.map(str::to_owned))
     }
+    pub(crate) fn request_pending(&self, request: &Request) -> bool {
+        self.0.state.borrow().pending.as_ref().is_some_and(|p| {
+            Rc::ptr_eq(&p.request.0, &request.0)
+        })
+    }
+    /// Called only with BusOwner's authenticated, accepted graph/configuration.
+    /// Preserve the definitions captured by outstanding work until it releases
+    /// the shared gate; do not replan that work using a new layout.
+    pub(crate) fn adopt_buses(
+        &self,
+        origin: &Graph,
+        buses: &pecan_core::domain::buses::BusConfig,
+    ) -> Result<(), String> {
+        buses.definitions().map_err(|e| format!("{e:?}"))?;
+        let mut state = self.0.state.borrow_mut();
+        if !state.witnessed || !state.graph.as_ref().is_some_and(|g| {
+            g.stamp == origin.stamp && Arc::ptr_eq(&g.value, &origin.value)
+        }) {
+            return Err("Bus definitions require the exact native graph authority.".into());
+        }
+        if &state.history.buses == buses {
+            return Ok(());
+        }
+        if state.pending.is_some() || state.volume.busy() || state.external.is_some() {
+            return Err("Bus definitions changed while shared work is pending.".into());
+        }
+        state.history.buses = buses.clone();
+        state.history_context = Rc::new(());
+        Ok(())
+    }
     pub fn enabled(&self) -> bool {
         let s = self.0.state.borrow();
         !s.admission_closed
@@ -278,9 +315,10 @@ impl Session {
                     s.status = Status::Unconfirmed(message.clone());
                     return Err(message);
                 }
-                let request = Request(Rc::new(RefCell::new(Delivery::Native(
-                    NativeProgress::Queued,
-                ))));
+                let request = Request(
+                    Rc::new(RefCell::new(Delivery::Native(NativeProgress::Queued))),
+                    receipt.clone(),
+                );
                 s.pending = Some(Pending {
                     ticket,
                     source: origin.stamp,
