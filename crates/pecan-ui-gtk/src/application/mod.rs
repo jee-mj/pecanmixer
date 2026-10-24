@@ -9,6 +9,7 @@ mod fixture;
 mod history_input;
 mod mixer;
 mod preferences;
+mod routes;
 mod shell;
 pub(crate) mod telemetry;
 mod view;

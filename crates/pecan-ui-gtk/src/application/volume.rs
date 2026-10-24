@@ -457,6 +457,7 @@ impl Session {
     pub fn volume_input_available(&self, key: &str) -> bool {
         let s = self.0.state.borrow();
         !s.admission_closed
+            && s.uncertain.is_none()
             && s.external.is_none()
             && s.witnessed
             && s.pending.is_none()
@@ -468,7 +469,12 @@ impl Session {
     }
     pub fn begin_volume(&self, origin: &Graph, key: &str) -> Result<GestureToken, String> {
         let mut s = self.0.state.borrow_mut();
-        if s.admission_closed || s.pending.is_some() || s.volume.busy() || s.external.is_some() {
+        if s.admission_closed
+            || s.pending.is_some()
+            || s.uncertain.is_some()
+            || s.volume.busy()
+            || s.external.is_some()
+        {
             return Err("Another change/gesture is pending or admission is closed.".into());
         }
         if !s

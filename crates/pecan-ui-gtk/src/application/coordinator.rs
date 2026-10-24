@@ -70,9 +70,16 @@ impl Request {
 struct Pending {
     ticket: u64,
     source: Stamp,
+    commands: usize,
     receipt: NativeReceipt,
     request: Request,
     observed: Option<(Stamp, bool)>,
+}
+struct Uncertain {
+    request: Request,
+    ticket: u64,
+    source: Stamp,
+    commands: usize,
 }
 struct State {
     graph: Option<Graph>,
@@ -82,6 +89,7 @@ struct State {
     history: history::Controller,
     results: HistoryResults,
     pending: Option<Pending>,
+    uncertain: Option<Uncertain>,
     status: Status,
     notices: Vec<Notice>,
     admission_closed: bool,
@@ -112,6 +120,7 @@ impl Session {
                 history,
                 results: HistoryResults::default(),
                 pending: None,
+                uncertain: None,
                 status: Status::Disconnected,
                 notices: vec![],
                 admission_closed: false,
@@ -141,6 +150,10 @@ impl Session {
         let state = self.0.state.borrow();
         if state.admission_closed {
             Status::Closing
+        } else if state.uncertain.is_some() {
+            Status::Unconfirmed(
+                "Native command closure is unconfirmed; new changes disabled.".into(),
+            )
         } else if state.external.is_some() {
             Status::ExternalOperation
         } else {
@@ -166,11 +179,17 @@ impl Session {
 
     pub fn busy(&self) -> bool {
         let state = self.0.state.borrow();
-        state.pending.is_some() || state.volume.busy() || state.external.is_some()
+        state.pending.is_some()
+            || state.uncertain.is_some()
+            || state.volume.busy()
+            || state.external.is_some()
     }
     pub fn has_receipt(&self) -> bool {
         let state = self.0.state.borrow();
-        state.pending.is_some() || state.volume.has_receipt() || state.external.is_some()
+        state.pending.is_some()
+            || state.uncertain.is_some()
+            || state.volume.has_receipt()
+            || state.external.is_some()
     }
     pub fn history_lengths(&self) -> (usize, usize) {
         self.0.state.borrow().history.lengths()
@@ -181,9 +200,15 @@ impl Session {
         (undo.map(str::to_owned), redo.map(str::to_owned))
     }
     pub(crate) fn request_pending(&self, request: &Request) -> bool {
-        self.0.state.borrow().pending.as_ref().is_some_and(|p| {
-            Rc::ptr_eq(&p.request.0, &request.0)
-        })
+        let state = self.0.state.borrow();
+        state
+            .pending
+            .as_ref()
+            .is_some_and(|p| Rc::ptr_eq(&p.request.0, &request.0))
+            || state
+                .uncertain
+                .as_ref()
+                .is_some_and(|p| Rc::ptr_eq(&p.request.0, &request.0))
     }
     /// Called only with BusOwner's authenticated, accepted graph/configuration.
     /// Preserve the definitions captured by outstanding work until it releases
@@ -195,15 +220,22 @@ impl Session {
     ) -> Result<(), String> {
         buses.definitions().map_err(|e| format!("{e:?}"))?;
         let mut state = self.0.state.borrow_mut();
-        if !state.witnessed || !state.graph.as_ref().is_some_and(|g| {
-            g.stamp == origin.stamp && Arc::ptr_eq(&g.value, &origin.value)
-        }) {
+        if !state.witnessed
+            || !state
+                .graph
+                .as_ref()
+                .is_some_and(|g| g.stamp == origin.stamp && Arc::ptr_eq(&g.value, &origin.value))
+        {
             return Err("Bus definitions require the exact native graph authority.".into());
         }
         if &state.history.buses == buses {
             return Ok(());
         }
-        if state.pending.is_some() || state.volume.busy() || state.external.is_some() {
+        if state.pending.is_some()
+            || state.uncertain.is_some()
+            || state.volume.busy()
+            || state.external.is_some()
+        {
             return Err("Bus definitions changed while shared work is pending.".into());
         }
         state.history.buses = buses.clone();
@@ -215,6 +247,7 @@ impl Session {
         !s.admission_closed
             && s.witnessed
             && s.pending.is_none()
+            && s.uncertain.is_none()
             && s.external.is_none()
             && !s.volume.busy()
             && s.graph.as_ref().is_some_and(|g| g.value.verbonden)
@@ -258,7 +291,7 @@ impl Session {
         if s.admission_closed {
             return Err("Application finalization has started; new commands are disabled.".into());
         }
-        if s.pending.is_some() || s.volume.busy() || s.external.is_some() {
+        if s.pending.is_some() || s.uncertain.is_some() || s.volume.busy() || s.external.is_some() {
             return Err("Another change or volume gesture is pending.".into());
         }
         if !s.witnessed {
@@ -313,6 +346,15 @@ impl Session {
                         result: Err(message.clone()),
                     });
                     s.status = Status::Unconfirmed(message.clone());
+                    s.uncertain = Some(Uncertain {
+                        request: Request(
+                            Rc::new(RefCell::new(Delivery::Invalidated(message.clone()))),
+                            receipt,
+                        ),
+                        ticket,
+                        source: origin.stamp,
+                        commands: command_count,
+                    });
                     return Err(message);
                 }
                 let request = Request(
@@ -322,6 +364,7 @@ impl Session {
                 s.pending = Some(Pending {
                     ticket,
                     source: origin.stamp,
+                    commands: command_count,
                     receipt,
                     request: request.clone(),
                     observed: None,
@@ -350,6 +393,7 @@ impl Session {
     pub fn poll(&self) -> InboxBatch {
         let mut batch = self.0.inbox.drain();
         let mut s = self.0.state.borrow_mut();
+        s.poll_uncertain();
         // Observe receipt first so a coalesced graph can satisfy its barrier.
         s.poll_receipt();
         s.notices = batch.notices.clone();
@@ -395,6 +439,7 @@ impl Session {
         let mut state = self.0.state.borrow_mut();
         if state.admission_closed
             || state.pending.is_some()
+            || state.uncertain.is_some()
             || state.volume.busy()
             || state.external.is_some()
         {
@@ -419,6 +464,20 @@ impl Session {
     }
 }
 impl State {
+    fn poll_uncertain(&mut self) {
+        let Some(held) = self.uncertain.as_ref() else {
+            return;
+        };
+        let report = held.request.native_report();
+        if report.ticket == held.ticket
+            && report.source == held.source
+            && report.command_count == held.commands
+            && terminal_quiescent(&report)
+        {
+            self.uncertain = None;
+            self.history_context = Rc::new(());
+        }
+    }
     fn poll_receipt(&mut self) {
         let Some(p) = self.pending.as_ref() else {
             return;
@@ -427,8 +486,17 @@ impl State {
             return;
         }
         let report = p.receipt.report();
-        if report.ticket != p.ticket || report.source != p.source {
+        if report.ticket != p.ticket
+            || report.source != p.source
+            || report.command_count != p.commands
+        {
             self.invalidate("Receipt identity changed.");
+            return;
+        }
+        if report.progress.is_terminal() && !terminal_quiescent(&report) {
+            self.invalidate(
+                "Terminal native status retains in-progress work; closure is unconfirmed.",
+            );
             return;
         }
         match &report.progress {
@@ -483,6 +551,19 @@ impl State {
                 result: Err(reason.into()),
             });
             *p.request.0.borrow_mut() = Delivery::Invalidated(reason.into());
+            let report = p.request.native_report();
+            if report.ticket != p.ticket
+                || report.source != p.source
+                || report.command_count != p.commands
+                || !terminal_quiescent(&report)
+            {
+                self.uncertain = Some(Uncertain {
+                    request: p.request,
+                    ticket: p.ticket,
+                    source: p.source,
+                    commands: p.commands,
+                });
+            }
         }
         self.status = Status::Unconfirmed(reason.into());
     }
@@ -507,6 +588,15 @@ impl State {
             *pending.request.0.borrow_mut() = Delivery::Native(pending.receipt.report().progress);
             self.status = Status::Observed { no_op };
         }
+    }
+}
+fn terminal_quiescent(report: &NativeReport) -> bool {
+    match &report.progress {
+        NativeProgress::Observed { counts, .. }
+        | NativeProgress::ObservedNoOp { counts, .. }
+        | NativeProgress::Rejected { counts, .. }
+        | NativeProgress::Unconfirmed { counts, .. } => counts.in_progress == 0,
+        _ => false,
     }
 }
 

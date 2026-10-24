@@ -30,17 +30,26 @@ impl BusOwner {
         let origin = self.origin().ok_or("Bus presentation unavailable.")?;
         let graph = self.routing_graph(&origin)?;
         if self.validate(&origin).is_ok() {
-            if let Some(configuration) = origin.0.config.as_ref().and_then(|c| c.configuration.as_ref()) {
+            if let Some(configuration) = origin
+                .0
+                .config
+                .as_ref()
+                .and_then(|c| c.configuration.as_ref())
+            {
                 self.session.adopt_buses(&graph, &configuration.buses)?;
             }
         }
-        Capture::from_bus_controls(graph, &self.view, Budget::default())
-            .map_err(|e| e.to_string())
+        Capture::from_bus_controls(graph, &self.view, Budget::default()).map_err(|e| e.to_string())
     }
     fn routing_graph(&self, origin: &Origin) -> Result<Graph, String> {
         let graph = self.session.graph().ok_or("Native graph unavailable.")?;
-        let captured = origin.0.graph.as_ref().ok_or("Captured graph unavailable.")?;
-        if graph.stamp != captured.stamp || !Arc::ptr_eq(&graph.value, &captured.value)
+        let captured = origin
+            .0
+            .graph
+            .as_ref()
+            .ok_or("Captured graph unavailable.")?;
+        if graph.stamp != captured.stamp
+            || !Arc::ptr_eq(&graph.value, &captured.value)
             || self.session.witnessed_graph().is_none()
         {
             return Err("Routing graph authority changed; await a fresh publication.".into());
@@ -63,7 +72,9 @@ impl BusOwner {
         key: &str,
     ) -> Result<(), String> {
         self.routing_navigation(origin, graph)?;
-        self.view.select_destination(binding, key).map_err(|e| format!("{e:?}"))
+        self.view
+            .select_destination(binding, key)
+            .map_err(|e| format!("{e:?}"))
     }
     pub(crate) fn authorize_routing(
         &self,
@@ -73,7 +84,11 @@ impl BusOwner {
     ) -> Result<(), String> {
         self.routing_navigation(origin, graph)?;
         self.validate(origin).map_err(|e| e.to_string())?;
-        let expected = origin.0.config.as_ref().ok_or("Configuration unavailable.")?;
+        let expected = origin
+            .0
+            .config
+            .as_ref()
+            .ok_or("Configuration unavailable.")?;
         let current = self.data.borrow().config.clone();
         if current.as_ref() != Some(expected)
             || expected.configuration.as_ref().map(|c| &c.buses) != Some(buses)
@@ -82,7 +97,10 @@ impl BusOwner {
         }
         // Configuration/membership snapshot from the same owner. Recording
         // activity alone does not block routing; membership is not a route CAS.
-        let fresh = self.service.as_ref().and_then(|s| s.read())
+        let fresh = self
+            .service
+            .as_ref()
+            .and_then(|s| s.read())
             .ok_or("Configuration inspection is busy; no routing request submitted.")?;
         if fresh.revision.owner != expected.revision.owner
             || fresh.config.revision != expected.revision
