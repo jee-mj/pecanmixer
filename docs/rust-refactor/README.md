@@ -39,3 +39,5 @@ During the original research, no dependency installation, build, test suite, GUI
 The [combined native UI source batch](./native-ui-source-batch.md) reconciles reviewed mixer gestures, display preferences/persistence and meter widgets; production startup and live controls/capture remain disabled pending their distinct gates.
 
 The [history/capture identity batch](./native-identity-batch.md) integrates registry-backed retained history, generated/potential selector witnesses and capture retention guards. Production startup and live functionality remain separate gates.
+
+- [Reviewed native source integration](./reviewed-native-source-batch.md): owning-shell/library composition, writer/configuration prerequisites and still-unfinished runtime/parity gates.
