@@ -81,8 +81,9 @@ pub type Melder = Box<dyn Fn(Melding) + Send + 'static>;
 
 /// De levende spiegel. Droppen vraagt de graph-draad om te stoppen.
 ///
-/// `Backend::dispatch` accepts stamped work into a bounded FIFO (256 entries,
-/// at most 32 dispatched per 40 ms tick). Acceptance is not server completion;
+/// `Backend::dispatch` accepts stamped work into a bounded FIFO (255 ordinary
+/// entries plus one reserved stop-all slot, at most 32 dispatched per 40 ms
+/// tick). Acceptance is not server completion;
 /// worker-side rejection is logged. The legacy `doe` API stamps at admission
 /// and retains its unit return and unchanged IPC payloads. Legacy callers
 /// cannot supply an intent epoch: already obsolete frontend IDs that happen
@@ -1200,7 +1201,7 @@ mod observer_tests {
 #[cfg(test)]
 mod command_tests {
     use super::*;
-    use crate::commands::{CAPACITY, PER_TICK};
+    use crate::commands::{CAPACITY, NORMAL_CAPACITY, PER_TICK};
 
     fn graph() -> Momentopname {
         serde_json::from_str(include_str!("../../../fixtures/graph/audio-basic.json")).unwrap()
@@ -1319,9 +1320,9 @@ mod command_tests {
         let rejected = backend
             .opdrachten
             .drain(|o| state.geldige_objecten(o), |o| executed.push(o));
-        assert_eq!(
-            rejected,
-            vec![DispatchError::StaleEpoch; all_commands().len()]
+        assert!(
+            rejected.is_empty(),
+            "old pending entries were discarded on invalidation"
         );
         assert_eq!(executed, [fresh]);
     }
@@ -1338,13 +1339,13 @@ mod command_tests {
             Err(DispatchError::Disconnected)
         );
         backend.doe(Opdracht::Start); // Same protection for the legacy entry.
-        assert_eq!(
-            backend.opdrachten.drain(
+        assert!(backend
+            .opdrachten
+            .drain(
                 |_| panic!("no object checks for disconnected commands"),
                 |_| panic!("no execution while disconnected"),
-            ),
-            [DispatchError::StaleEpoch]
-        );
+            )
+            .is_empty());
         backend.opdrachten.publish(graph());
         assert!(backend
             .opdrachten
@@ -1447,13 +1448,13 @@ mod command_tests {
     #[test]
     fn queue_capacity_and_per_tick_budget_are_bounded_without_reordering() {
         let backend = backend();
-        for i in 0..CAPACITY {
+        for i in 0..NORMAL_CAPACITY {
             backend
                 .dispatch(command(&backend, Opdracht::StopBus(i.to_string())))
                 .unwrap();
         }
         assert_eq!(
-            backend.dispatch(command(&backend, Opdracht::Stop)),
+            backend.dispatch(command(&backend, Opdracht::Start)),
             Err(DispatchError::QueueFull)
         );
         let mut executed = Vec::new();
@@ -1467,11 +1468,11 @@ mod command_tests {
             backend
                 .dispatch(command(
                     &backend,
-                    Opdracht::StopBus((CAPACITY + i).to_string()),
+                    Opdracht::StopBus((NORMAL_CAPACITY + i).to_string()),
                 ))
                 .unwrap();
         }
-        while executed.len() < CAPACITY + PER_TICK {
+        while executed.len() < NORMAL_CAPACITY + PER_TICK {
             let before = executed.len();
             assert!(backend
                 .opdrachten
@@ -1481,7 +1482,7 @@ mod command_tests {
         }
         assert_eq!(
             executed,
-            (0..CAPACITY + PER_TICK)
+            (0..NORMAL_CAPACITY + PER_TICK)
                 .map(|i| Opdracht::StopBus(i.to_string()))
                 .collect::<Vec<_>>()
         );
@@ -1503,12 +1504,92 @@ mod command_tests {
         backend.doe(Opdracht::Start);
         backend.opdrachten.publish(Momentopname::default());
         backend.opdrachten.publish(graph());
+        assert!(backend
+            .opdrachten
+            .drain(|_| true, |_| panic!("no restamping"))
+            .is_empty());
+    }
+
+    #[test]
+    fn saturated_queue_reserves_stop_all_without_reordering_or_unbounded_duplicates() {
+        let backend = backend();
+        let mut expected = Vec::new();
+        for i in 0..NORMAL_CAPACITY {
+            let o = Opdracht::StopBus(i.to_string());
+            backend.dispatch(command(&backend, o.clone())).unwrap();
+            expected.push(o);
+        }
         assert_eq!(
-            backend
-                .opdrachten
-                .drain(|_| true, |_| panic!("no restamping")),
-            [DispatchError::StaleEpoch]
+            backend.dispatch(command(&backend, Opdracht::Start)),
+            Err(DispatchError::QueueFull)
         );
+        // Both public admissions use the reservation, and adjacent duplicates
+        // consume no extra entries. This cannot overtake already accepted work.
+        backend.dispatch(command(&backend, Opdracht::Stop)).unwrap();
+        for _ in 0..10_000 {
+            backend.doe(Opdracht::Stop);
+        }
+        expected.push(Opdracht::Stop);
+        assert_eq!(expected.len(), CAPACITY);
+        assert_eq!(
+            backend.dispatch(command(&backend, Opdracht::Start)),
+            Err(DispatchError::QueueFull)
+        );
+        let mut executed = Vec::new();
+        for _ in 0..CAPACITY.div_ceil(PER_TICK) {
+            assert!(backend
+                .opdrachten
+                .drain(|_| true, |o| executed.push(o))
+                .is_empty());
+        }
+        assert_eq!(executed, expected);
+        assert!(backend
+            .opdrachten
+            .drain(|_| true, |_| panic!("duplicate stop grew queue"))
+            .is_empty());
+        // Do not merge stops with an intervening Start.
+        for o in [Opdracht::Stop, Opdracht::Start, Opdracht::Stop] {
+            backend.dispatch(command(&backend, o)).unwrap();
+        }
+        let mut executed = Vec::new();
+        assert!(backend
+            .opdrachten
+            .drain(|_| true, |o| executed.push(o))
+            .is_empty());
+        assert_eq!(executed, [Opdracht::Stop, Opdracht::Start, Opdracht::Stop]);
+    }
+
+    #[test]
+    fn invalidation_releases_all_stale_capacity_before_any_worker_drain() {
+        let backend = backend();
+        let old = command(&backend, Opdracht::Start);
+        for _ in 0..NORMAL_CAPACITY {
+            backend.dispatch(old.clone()).unwrap();
+        }
+        backend.dispatch(command(&backend, Opdracht::Stop)).unwrap();
+        backend.opdrachten.publish(Momentopname::default());
+        assert_eq!(backend.dispatch(old), Err(DispatchError::StaleEpoch));
+        backend.opdrachten.publish(graph());
+        // No intervening drain: all ordinary capacity and the reserved slot
+        // must be available atomically with the new epoch publication.
+        for i in 0..NORMAL_CAPACITY {
+            backend
+                .dispatch(command(&backend, Opdracht::StopBus(i.to_string())))
+                .unwrap();
+        }
+        backend.dispatch(command(&backend, Opdracht::Stop)).unwrap();
+        let mut executed = Vec::new();
+        for _ in 0..CAPACITY.div_ceil(PER_TICK) {
+            assert!(backend
+                .opdrachten
+                .drain(|_| true, |o| executed.push(o))
+                .is_empty());
+        }
+        let mut expected: Vec<_> = (0..NORMAL_CAPACITY)
+            .map(|i| Opdracht::StopBus(i.to_string()))
+            .collect();
+        expected.push(Opdracht::Stop);
+        assert_eq!(executed, expected);
     }
 
     #[test]

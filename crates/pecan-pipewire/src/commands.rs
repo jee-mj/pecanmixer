@@ -10,6 +10,9 @@ use pecan_core::graph::{Momentopname, Opdracht};
 
 /// Bound both queued work and the number of commands dispatched per graph tick.
 pub(crate) const CAPACITY: usize = 256;
+/// Keep the final FIFO slot available for stop-all. It is appended in order;
+/// ordinary work cannot crowd it out and existing work is never evicted.
+pub(crate) const NORMAL_CAPACITY: usize = CAPACITY - 1;
 pub(crate) const PER_TICK: usize = 32;
 
 pub(crate) struct Commands(Mutex<State>);
@@ -47,6 +50,11 @@ impl Commands {
         let BackendEvent::Graph(graph) = state.sequence.graph(graph) else {
             unreachable!()
         };
+        if graph.stamp.epoch != state.graph.stamp.epoch {
+            // Invalidate admission state and release old capacity under the
+            // same lock. No producer can enqueue against a half-transition.
+            state.pending.clear();
+        }
         state.graph = graph.clone();
         graph
     }
@@ -108,7 +116,19 @@ impl State {
             return Err(DispatchError::Stopped);
         }
         validate_command(&command, &self.graph)?;
-        if self.pending.len() == CAPACITY {
+        let stop_all = matches!(&command.command, Opdracht::Stop);
+        if stop_all
+            && self
+                .pending
+                .back()
+                .is_some_and(|queued| matches!(&queued.command, Opdracht::Stop))
+        {
+            // Adjacent stops have the same effect. Never coalesce across any
+            // intervening work, e.g. Stop, Start, Stop must keep that order.
+            return Ok(());
+        }
+        let capacity = if stop_all { CAPACITY } else { NORMAL_CAPACITY };
+        if self.pending.len() >= capacity {
             return Err(DispatchError::QueueFull);
         }
         self.pending.push_back(command);
