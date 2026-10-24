@@ -15,3 +15,9 @@ pub mod settings_storage;
 pub mod controls;
 
 pub mod native_backend;
+
+/// Explicit presentation-only preferences; not called by startup.
+pub mod display_settings;
+
+/// Explicit serialized I/O worker, not called by startup.
+pub mod settings_worker;

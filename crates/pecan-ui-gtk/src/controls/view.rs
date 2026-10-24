@@ -1,5 +1,6 @@
 use super::gesture::{GestureOrigin, Input};
 use super::{Adapter, Binding, ControlError, Controller, Phase, ReadOnly};
+use crate::display_settings::{DisplayPreferences, PreferenceLayout};
 use crate::widgets::accessibility::set_name;
 use gtk::prelude::*;
 use pecan_core::backend::Stamp;
@@ -27,7 +28,8 @@ struct State<A: Adapter> {
     controller: RefCell<Controller<A>>,
     root: gtk::Box,
     status: gtk::Label,
-    content: gtk::Box,
+    layout: PreferenceLayout,
+    display: RefCell<DisplayPreferences>,
     rows: RefCell<BTreeMap<String, Row<A>>>,
     applying: Cell<bool>,
     error: RefCell<Option<ControlError>>,
@@ -48,22 +50,16 @@ impl<A: Adapter + 'static> MixerControls<A> {
             .wrap(true)
             .accessible_role(gtk::AccessibleRole::Status)
             .build();
-        let content = gtk::Box::new(gtk::Orientation::Vertical, 12);
-        let scroll = gtk::ScrolledWindow::builder()
-            .hexpand(true)
-            .vexpand(true)
-            .hscrollbar_policy(gtk::PolicyType::Never)
-            .child(&content)
-            .build();
-        set_name(&scroll, "Mixer volume and mute controls");
+        let layout = PreferenceLayout::new();
         let root = gtk::Box::new(gtk::Orientation::Vertical, 12);
         root.append(&status);
-        root.append(&scroll);
+        root.append(layout.widget());
         let view = Self(Rc::new(State {
             controller: RefCell::new(controller),
             root,
             status,
-            content,
+            layout,
+            display: RefCell::new(DisplayPreferences::default()),
             rows: RefCell::new(BTreeMap::new()),
             applying: Cell::new(false),
             error: RefCell::new(None),
@@ -99,6 +95,12 @@ impl<A: Adapter + 'static> MixerControls<A> {
         }
         accepted
     }
+    /// Presentation only: the full controller graph/model and origin stay intact.
+    pub fn set_display_preferences(&self, preferences: DisplayPreferences) {
+        self.0.layout.set_preferences(preferences.clone());
+        *self.0.display.borrow_mut() = preferences;
+        self.0.refresh();
+    }
     pub fn phase(&self) -> Phase {
         self.0.controller.borrow().phase()
     }
@@ -110,12 +112,14 @@ impl<A: Adapter + 'static> State<A> {
         self.applying.set(true);
         let controller = self.controller.borrow();
         let mut rows = self.rows.borrow_mut();
+        let display = self.display.borrow();
         let items = controller
             .model()
             .apps
             .iter()
             .chain(&controller.model().hardware)
             .chain(&controller.model().destinations)
+            .filter(|strip| display.strip_visible(strip))
             .collect::<Vec<_>>();
         rows.retain(|key, row| {
             if items
@@ -126,11 +130,13 @@ impl<A: Adapter + 'static> State<A> {
             } else {
                 row.volume_origin.borrow_mut().retire();
                 row.mute_origin.borrow_mut().retire();
-                self.content.remove(&row.root);
+                if let Some(parent) = row.root.parent().and_downcast::<gtk::Box>() {
+                    parent.remove(&row.root);
+                }
                 false
             }
         });
-        let mut previous: Option<gtk::Widget> = None;
+        let mut previous: [Option<gtk::Widget>; 4] = std::array::from_fn(|_| None);
         for strip in items {
             let row = rows.entry(strip.key.clone()).or_insert_with(|| {
                 self.row(strip, controller.bind(&strip.key).expect("projected strip"))
@@ -158,9 +164,11 @@ impl<A: Adapter + 'static> State<A> {
                 &row.mute,
                 &format!("Mute for {} · {}", strip.name, strip.subtitle),
             );
-            self.content
-                .reorder_child_after(&row.root, previous.as_ref());
-            previous = Some(row.root.clone().upcast());
+            let lane = PreferenceLayout::lane_index(strip);
+            self.layout
+                .lane(lane)
+                .reorder_child_after(&row.root, previous[lane].as_ref());
+            previous[lane] = Some(row.root.clone().upcast());
         }
         let phase = controller.phase().message();
         self.status
@@ -169,6 +177,7 @@ impl<A: Adapter + 'static> State<A> {
             } else {
                 phase
             });
+        self.layout.changed();
         self.applying.set(false);
     }
     fn row(self: &Rc<Self>, strip: &mixer::Strip, binding: Binding<A::Snapshot>) -> Row<A> {
@@ -189,7 +198,9 @@ impl<A: Adapter + 'static> State<A> {
         root.append(&title);
         root.append(&observed);
         root.append(&line);
-        self.content.append(&root);
+        self.layout
+            .lane(PreferenceLayout::lane_index(strip))
+            .append(&root);
         capture_input(&scale, &volume_origin);
         capture_input(&mute, &mute_origin);
         let weak = Rc::downgrade(self);
@@ -520,6 +531,74 @@ mod tests {
             assert_eq!(log.borrow().calls.len(), 1);
             assert_eq!(log.borrow().calls[0].1, next.graph.stamp);
         }
+    }
+    #[gtk::test]
+    fn display_settings_filter_widgets_without_commands_or_model_pruning() {
+        use pecan_core::settings::{HiddenKey, RowWeights, SettingsV1};
+        let (controller, log, source) = setup();
+        let full_model = controller.model().clone();
+        let key = full_model.apps[0].key.clone();
+        let view = MixerControls::new(controller);
+        let window = gtk::Window::builder()
+            .default_width(900)
+            .default_height(800)
+            .child(view.widget())
+            .build();
+        window.present();
+        let (old_scale, old_mute) = {
+            let rows = view.0.rows.borrow();
+            let row = &rows[&key];
+            row.volume_origin.borrow_mut().begin(Input::Mouse(1));
+            (row.scale.clone(), row.mute.clone())
+        };
+        let mut preferences = SettingsV1::default().into_preferences();
+        preferences
+            .hidden
+            .insert(HiddenKey::new(key.clone()).unwrap());
+        preferences
+            .hidden
+            .insert(HiddenKey::new("rij|hardware").unwrap());
+        preferences.rows = RowWeights {
+            apps: 2.0,
+            hardware: 1.0,
+            destinations: 1.0,
+        };
+        preferences.destination_width_px = Some(250.0);
+        let settings = SettingsV1::new(preferences).unwrap();
+        let display = DisplayPreferences::from(&settings);
+        view.set_display_preferences(display.clone());
+        assert_eq!(
+            view.0.rows.borrow().len(),
+            display.visible_keys(&full_model).len()
+        );
+        assert!(!view.0.rows.borrow().contains_key(&key));
+        assert_eq!(view.0.controller.borrow().model(), &full_model);
+        assert!(std::sync::Arc::ptr_eq(
+            &view.0.controller.borrow().snapshot().unwrap().graph.value,
+            &source.graph.value
+        ));
+        old_scale.set_value(db_to_position(-6.0));
+        old_mute.set_active(true);
+        assert!(log.borrow().calls.is_empty());
+        // Rapid presentation edits never apply audio settings or rebind an old
+        // hidden control, even though the underlying graph stamp is unchanged.
+        for _ in 0..4 {
+            view.set_display_preferences(DisplayPreferences::default());
+            view.set_display_preferences(display.clone());
+        }
+        view.set_display_preferences(DisplayPreferences::default());
+        old_scale.set_value(db_to_position(-12.0));
+        assert!(log.borrow().calls.is_empty());
+        assert_eq!(view.0.controller.borrow().model(), &full_model);
+        assert_eq!(
+            view.0.controller.borrow().snapshot().unwrap().graph.stamp,
+            source.graph.stamp
+        );
+        assert_eq!(
+            view.0.rows.borrow().len(),
+            full_model.apps.len() + full_model.hardware.len() + full_model.destinations.len()
+        );
+        window.close();
     }
     #[gtk::test]
     fn default_widgets_are_read_only_and_release_their_controller() {
