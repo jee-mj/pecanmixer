@@ -12,7 +12,7 @@ This directory collects the research snapshot supporting the proposed native Rus
 | [`pecanmixer-js-node-inventory.json`](./pecanmixer-js-node-inventory.json) | Machine-readable companion containing tracked-file hashes, symbols, package records, commands, events, scripts, and webview-related Cargo entries | `d8d473818331342ab53a0e1e4d3ced7977293449` | Structured static evidence for the human-readable inventory |
 | [`pecanmixer-issue-1-native-gtk-proposal.md`](./pecanmixer-issue-1-native-gtk-proposal.md) | Focused GTK architecture decision, backend/UI boundary, parity map, first-PR vertical slice, test plan, and staged removal checklist | `d8d473818331342ab53a0e1e4d3ced7977293449` | Design proposal grounded in source inspection and primary GTK/GNOME documentation; proposed APIs are uncompiled |
 
-The implementation now moves the graph/meter/recorder code into shared crates and adds a separate read-only GTK preview. Historical source paths/revisions below describe the research baseline, not the current file layout.
+The implementation now has shared Rust graph/meter/recorder crates and a native GTK entrypoint with functional mixer/patchbay and bounded bus/recording controls. The latest [bus/backend integration record](./native-bus-backend-integration.md) and [functional parity matrix](./native-parity-status.md) distinguish implemented paths from unfinished parity and acceptance. Historical source paths/revisions below describe the research baseline, not the current file layout.
 
 The next [Stage 2 audio domain batch](./stage2-domain.md) adds pure audio projections/plans and headless policy fixtures. It is not full Stage 2 or UI parity.
 

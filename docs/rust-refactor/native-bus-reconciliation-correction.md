@@ -71,3 +71,13 @@ this correction. Source and synthetic widget tests establish no live PipeWire,
 recording/audio/alignment, physical desktop/input/accessibility, real-time,
 performance or crash/fsync acceptance. No merge, release, version bump or legacy
 removal is included.
+
+
+## Independent re-review clearance
+
+Independent re-review of `cb24a2ba5bbd03753fd635e6cae7ae8a987d58aa` passes
+all nine original probes unchanged and three extra recovery/authentication probes,
+along with 29 focused and 317 all-feature cases. Fresh successful readback restores
+controls, while unknown metadata still requires explicit initialization before
+recording. This closes the original candidate finding; combined publication and
+actual audio/desktop acceptance are recorded separately.

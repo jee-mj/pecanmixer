@@ -9,13 +9,14 @@ user profile or hardware was run for this slice.
 
 ## Independent review gate
 
-The original `30553a53` candidate is blocked by independent review of busy
+The original `30553a53` candidate was blocked by independent review of busy
 Refresh: terminal configuration evidence could be dropped before successful
 inspection, exposing cached configuration as usable. The separate
 [bounded reconciliation correction](./native-bus-reconciliation-correction.md)
-reproduces and addresses that finding. It requires independent re-review; the
-bus owner remains excluded from public PR2 until that gate clears. The cloud
-check table below records the original candidate, not a clearance of that finding.
+reproduces and addresses that finding at `cb24a2ba`. Independent re-review clears
+all nine unchanged original probes, three additional recovery/authentication probes,
+29 focused owner tests and 317 all-feature tests. The integration record carries
+the latest combined-tree and publication evidence; the table below is historical.
 
 ## One owner and the existing protocols
 
@@ -164,10 +165,10 @@ Final cloud checks:
 | Mixer/patchbay/hidden-disconnected smoke | PASS: fixture only, controlled Quit |
 | Recording-root/fixture rejection and help | PASS: invalid modes reject before resources; no normal native launch run |
 | Formatting, whitespace, scope/privacy and native Cargo-tree/ELF | PASS; no new dependency, legacy web runtime or GTK3 |
-| Independent owner/lifetime integration review | BLOCKED at `30553a53`; correction pending independent re-review; no adapter promoted to PR2 |
+| Independent owner/lifetime integration review | Original `30553a53` blocked; `cb24a2ba` independently cleared; latest combined-tree record is separate |
 
 The original implementation checks had no dependency/environment blocker; the
-subsequent independent Refresh finding above remains the promotion gate. Backend/core/
+subsequent independent Refresh finding above is corrected and independently cleared. Backend/core/
 legacy source and dependencies are unchanged; their cleared baseline evidence is
 67 core, 134 backend, 10 legacy tests and five example compilations.
 No hardware/audio/live PipeWire/restart, physical desktop/Wayland/AT-SPI/Orca,
