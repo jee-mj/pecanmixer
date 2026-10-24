@@ -86,3 +86,84 @@ fn session_transport_drop_keeps_unfinished_writer_results_across_reconnect() {
     assert!(report.is_success());
     assert_eq!(report.writers_finalized, 1);
 }
+
+#[test]
+fn native_rejection_does_not_acknowledge_writer_shutdown_completion() {
+    use pecan_core::native_command::{NativeFailure, NativeIntent, NativeProgress};
+    let dir = TestDir::new("synthetic-native-shutdown");
+    let backend = Graaf {
+        opdrachten: Arc::default(),
+        stop: Arc::default(),
+        completion: Shutdown::new(),
+    };
+    let synthetic: Momentopname = serde_json::from_value(serde_json::json!({
+        "verbonden": true, "wireplumber": [],
+        "knopen": [{ "id": 9001, "naam": "synthetic.shutdown-node", "mute": false }],
+        "poorten": [], "kabels": []
+    }))
+    .unwrap();
+    backend.opdrachten.object_added(9001);
+    backend.opdrachten.publish(synthetic);
+    let receipt = backend
+        .dispatch_native(NativeIntent {
+            ticket: 1,
+            origin: backend.current_graph(),
+            commands: vec![Opdracht::ZetMute {
+                knoop: 9001,
+                mute: true,
+            }],
+        })
+        .unwrap();
+    let (tx, writer) = opname::schrijver(
+        &dir.0,
+        vec![Spoor {
+            naam: "Synthetic".into(),
+            kanalen: 1,
+        }],
+        48_000,
+    )
+    .unwrap();
+    tx.send(Bericht::Audio(0, vec![0.25, -0.5])).unwrap();
+    backend.completion.writer(writer);
+    let worker_stop = Arc::clone(&backend.stop);
+    let (ready, waiting) = mpsc::channel();
+    let (entered, blocked) = mpsc::channel();
+    let (release, gate) = mpsc::channel();
+    backend.completion.worker(std::thread::spawn(move || {
+        let recorder: Opnemer = Rc::new(RefCell::new(vec![Actief {
+            tx,
+            t0: std::time::Instant::now(),
+            bussen: vec![(0, vec![0], "Synthetic".into())],
+            midi: BTreeMap::new(),
+            midi_namen: vec![],
+            midi_events: vec![],
+            pulsen: vec![],
+        }]));
+        ready.send(()).unwrap();
+        worker_stop.retry_wait();
+        assert!(worker_stop.requested());
+        entered.send(()).unwrap();
+        gate.recv_timeout(Duration::from_secs(2)).unwrap();
+        eindig(&recorder, &Klok::default());
+    }));
+    waiting.recv_timeout(Duration::from_secs(2)).unwrap();
+    let completion = backend.request_shutdown();
+    assert!(matches!(
+        receipt.report().progress,
+        NativeProgress::Rejected {
+            reason: NativeFailure::Stopped,
+            ..
+        }
+    ));
+    blocked.recv_timeout(Duration::from_secs(2)).unwrap();
+    let pending = completion.wait_timeout(Duration::from_millis(1));
+    release.send(()).unwrap();
+    assert!(
+        pending.is_err(),
+        "command rejection is not a recorder finalization receipt"
+    );
+    let report = completion.wait_timeout(Duration::from_secs(2)).unwrap();
+    assert!(report.is_success());
+    assert_eq!(report.writers_finalized, 1);
+    assert_wav(&dir.0.join("Synthetic.wav"), 1, 48_000, &[0.25, -0.5]);
+}
