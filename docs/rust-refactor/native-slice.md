@@ -58,6 +58,8 @@ The cloud started without Rust and native development pkg-config files. Standard
 
 No final check failed. An initial backend build failed because the cloud's partial libclang setup lacked discoverable `stdbool.h`; adding the standard compiler include directories resolved it. Rustfmt was initially absent and formatting differences were corrected after installing the standard component. Xvfb runs emitted non-fatal font/shader-cache warnings because the sandbox home cache was read-only; these checks do not validate fonts, GPU rendering or desktop appearance. No dependency/environment blocker remains for the checks above. The unrun acceptance work is listed below.
 
+The subsequent [Stage 2 audio domain batch](./stage2-domain.md) adds an initial pure policy slice; this document records the original connectivity implementation and its checks.
+
 ## Deliberately unfinished
 
 This slice is narrower than the proposal's complete first-PR wish list. In particular, `Backend`/stamped-command validation is a core contract exercised with a fake backend; production legacy mutation dispatch is still unstamped. The native preview exposes no mutation API, so it cannot replay old object IDs into a new connection. Routing/volume/recording commands must acquire worker-side epoch validation before exposing them in GTK.

@@ -1,0 +1,603 @@
+{
+  "verbonden": true,
+  "rate": 48000,
+  "quantum": 256,
+  "standaard_sink": "alsa_output.fixture",
+  "standaard_bron": "alsa_input.fixture",
+  "wireplumber": [
+    33
+  ],
+  "knopen": [
+    {
+      "id": 10,
+      "serial": 10,
+      "naam": "alsa_output.fixture",
+      "beschrijving": "Studio",
+      "bijnaam": null,
+      "klasse": "Audio/Sink",
+      "apparaat": 47,
+      "app": null,
+      "media": null,
+      "stand": "running",
+      "doel": null,
+      "volume": [
+        1,
+        1,
+        0.25,
+        0.5
+      ],
+      "mute": false
+    },
+    {
+      "id": 11,
+      "serial": 11,
+      "naam": "alsa_input.fixture",
+      "beschrijving": "Studio",
+      "bijnaam": null,
+      "klasse": "Audio/Source",
+      "apparaat": 47,
+      "app": null,
+      "media": null,
+      "stand": "running",
+      "doel": null,
+      "volume": [
+        1,
+        1
+      ],
+      "mute": false
+    },
+    {
+      "id": 20,
+      "serial": 20,
+      "naam": "firefox",
+      "beschrijving": null,
+      "bijnaam": null,
+      "klasse": "Stream/Output/Audio",
+      "apparaat": null,
+      "app": "Firefox",
+      "media": "Fixture tab",
+      "stand": "running",
+      "doel": null,
+      "volume": [
+        0.5,
+        0.25
+      ],
+      "mute": false
+    },
+    {
+      "id": 21,
+      "serial": 21,
+      "naam": "firefox",
+      "beschrijving": null,
+      "bijnaam": null,
+      "klasse": "Stream/Output/Audio",
+      "apparaat": null,
+      "app": "Firefox",
+      "media": "Second tab",
+      "stand": "idle",
+      "doel": null,
+      "volume": [
+        1,
+        1
+      ],
+      "mute": false
+    },
+    {
+      "id": 22,
+      "serial": 22,
+      "naam": "voice",
+      "beschrijving": null,
+      "bijnaam": null,
+      "klasse": "Stream/Output/Audio",
+      "apparaat": null,
+      "app": "Voice",
+      "media": null,
+      "stand": "running",
+      "doel": "50",
+      "volume": [
+        1
+      ],
+      "mute": false
+    },
+    {
+      "id": 30,
+      "serial": 30,
+      "naam": "pecanmixer-opname",
+      "beschrijving": null,
+      "bijnaam": null,
+      "klasse": "Stream/Input/Audio",
+      "apparaat": null,
+      "app": "Pecan Mixer",
+      "media": null,
+      "stand": "running",
+      "doel": null,
+      "volume": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "mute": false
+    },
+    {
+      "id": 40,
+      "serial": 40,
+      "naam": "recorder",
+      "beschrijving": null,
+      "bijnaam": null,
+      "klasse": "Stream/Input/Audio",
+      "apparaat": null,
+      "app": "Recorder",
+      "media": null,
+      "stand": "running",
+      "doel": null,
+      "volume": [
+        1,
+        1
+      ],
+      "mute": false
+    },
+    {
+      "id": 50,
+      "serial": 50,
+      "naam": "virtual",
+      "beschrijving": "Virtual",
+      "bijnaam": null,
+      "klasse": "Audio/Sink",
+      "apparaat": null,
+      "app": null,
+      "media": null,
+      "stand": "running",
+      "doel": null,
+      "volume": [
+        1,
+        1
+      ],
+      "mute": false
+    },
+    {
+      "id": 60,
+      "serial": 60,
+      "naam": "filter",
+      "beschrijving": "Filter",
+      "bijnaam": null,
+      "klasse": "Filter/Audio",
+      "apparaat": null,
+      "app": null,
+      "media": null,
+      "stand": "running",
+      "doel": null,
+      "volume": null,
+      "mute": false
+    },
+    {
+      "id": 70,
+      "serial": 70,
+      "naam": "disabled-midi",
+      "beschrijving": "Disabled MIDI",
+      "bijnaam": null,
+      "klasse": "Midi/Bridge",
+      "apparaat": null,
+      "app": null,
+      "media": null,
+      "stand": "running",
+      "doel": null,
+      "volume": null,
+      "mute": false
+    }
+  ],
+  "poorten": [
+    {
+      "id": 100,
+      "knoop": 10,
+      "volgnummer": 0,
+      "naam": "playback_AUX0",
+      "alias": null,
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "AUX0",
+      "monitor": false,
+      "fysiek": true,
+      "groep": null
+    },
+    {
+      "id": 101,
+      "knoop": 10,
+      "volgnummer": 1,
+      "naam": "playback_AUX1",
+      "alias": null,
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "AUX1",
+      "monitor": false,
+      "fysiek": true,
+      "groep": null
+    },
+    {
+      "id": 102,
+      "knoop": 10,
+      "volgnummer": 2,
+      "naam": "playback_AUX2",
+      "alias": null,
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "AUX2",
+      "monitor": false,
+      "fysiek": true,
+      "groep": null
+    },
+    {
+      "id": 103,
+      "knoop": 10,
+      "volgnummer": 3,
+      "naam": "playback_AUX3",
+      "alias": null,
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "AUX3",
+      "monitor": false,
+      "fysiek": true,
+      "groep": null
+    },
+    {
+      "id": 110,
+      "knoop": 11,
+      "volgnummer": 0,
+      "naam": "capture_FL",
+      "alias": null,
+      "ingang": false,
+      "soort": "audio",
+      "kanaal": "FL",
+      "monitor": false,
+      "fysiek": true,
+      "groep": null
+    },
+    {
+      "id": 111,
+      "knoop": 11,
+      "volgnummer": 1,
+      "naam": "capture_FR",
+      "alias": null,
+      "ingang": false,
+      "soort": "audio",
+      "kanaal": "FR",
+      "monitor": false,
+      "fysiek": true,
+      "groep": null
+    },
+    {
+      "id": 200,
+      "knoop": 20,
+      "volgnummer": 0,
+      "naam": "output_FL",
+      "alias": null,
+      "ingang": false,
+      "soort": "audio",
+      "kanaal": "FL",
+      "monitor": false,
+      "fysiek": false,
+      "groep": null
+    },
+    {
+      "id": 201,
+      "knoop": 20,
+      "volgnummer": 1,
+      "naam": "output_FR",
+      "alias": null,
+      "ingang": false,
+      "soort": "audio",
+      "kanaal": "FR",
+      "monitor": false,
+      "fysiek": false,
+      "groep": null
+    },
+    {
+      "id": 210,
+      "knoop": 21,
+      "volgnummer": 0,
+      "naam": "output_FL",
+      "alias": null,
+      "ingang": false,
+      "soort": "audio",
+      "kanaal": "FL",
+      "monitor": false,
+      "fysiek": false,
+      "groep": null
+    },
+    {
+      "id": 211,
+      "knoop": 21,
+      "volgnummer": 1,
+      "naam": "output_FR",
+      "alias": null,
+      "ingang": false,
+      "soort": "audio",
+      "kanaal": "FR",
+      "monitor": false,
+      "fysiek": false,
+      "groep": null
+    },
+    {
+      "id": 220,
+      "knoop": 22,
+      "volgnummer": 0,
+      "naam": "output_MONO",
+      "alias": null,
+      "ingang": false,
+      "soort": "audio",
+      "kanaal": "MONO",
+      "monitor": false,
+      "fysiek": false,
+      "groep": null
+    },
+    {
+      "id": 300,
+      "knoop": 30,
+      "volgnummer": 0,
+      "naam": "rec_1",
+      "alias": null,
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "AUX0",
+      "monitor": false,
+      "fysiek": false,
+      "groep": null
+    },
+    {
+      "id": 301,
+      "knoop": 30,
+      "volgnummer": 1,
+      "naam": "rec_2",
+      "alias": null,
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "AUX1",
+      "monitor": false,
+      "fysiek": false,
+      "groep": null
+    },
+    {
+      "id": 302,
+      "knoop": 30,
+      "volgnummer": 2,
+      "naam": "rec_3",
+      "alias": null,
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "AUX2",
+      "monitor": false,
+      "fysiek": false,
+      "groep": null
+    },
+    {
+      "id": 303,
+      "knoop": 30,
+      "volgnummer": 3,
+      "naam": "rec_4",
+      "alias": null,
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "AUX3",
+      "monitor": false,
+      "fysiek": false,
+      "groep": null
+    },
+    {
+      "id": 304,
+      "knoop": 30,
+      "volgnummer": 4,
+      "naam": "rec_5",
+      "alias": null,
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "AUX4",
+      "monitor": false,
+      "fysiek": false,
+      "groep": null
+    },
+    {
+      "id": 305,
+      "knoop": 30,
+      "volgnummer": 5,
+      "naam": "rec_6",
+      "alias": null,
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "AUX5",
+      "monitor": false,
+      "fysiek": false,
+      "groep": null
+    },
+    {
+      "id": 400,
+      "knoop": 40,
+      "volgnummer": 0,
+      "naam": "input_FL",
+      "alias": null,
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "FL",
+      "monitor": false,
+      "fysiek": false,
+      "groep": null
+    },
+    {
+      "id": 401,
+      "knoop": 40,
+      "volgnummer": 1,
+      "naam": "input_FR",
+      "alias": null,
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "FR",
+      "monitor": false,
+      "fysiek": false,
+      "groep": null
+    },
+    {
+      "id": 500,
+      "knoop": 50,
+      "volgnummer": 0,
+      "naam": "playback_FL",
+      "alias": null,
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "FL",
+      "monitor": false,
+      "fysiek": false,
+      "groep": null
+    },
+    {
+      "id": 501,
+      "knoop": 50,
+      "volgnummer": 1,
+      "naam": "playback_FR",
+      "alias": null,
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "FR",
+      "monitor": false,
+      "fysiek": false,
+      "groep": null
+    },
+    {
+      "id": 600,
+      "knoop": 60,
+      "volgnummer": 0,
+      "naam": "output_signal",
+      "alias": null,
+      "ingang": false,
+      "soort": "audio",
+      "kanaal": null,
+      "monitor": false,
+      "fysiek": false,
+      "groep": null
+    },
+    {
+      "id": 601,
+      "knoop": 60,
+      "volgnummer": 1,
+      "naam": "monitor_FL",
+      "alias": null,
+      "ingang": false,
+      "soort": "audio",
+      "kanaal": "FL",
+      "monitor": true,
+      "fysiek": false,
+      "groep": null
+    },
+    {
+      "id": 700,
+      "knoop": 70,
+      "volgnummer": 0,
+      "naam": "MIDI out",
+      "alias": null,
+      "ingang": false,
+      "soort": "midi",
+      "kanaal": null,
+      "monitor": false,
+      "fysiek": false,
+      "groep": null
+    }
+  ],
+  "kabels": [
+    {
+      "id": 1,
+      "uit_knoop": 20,
+      "uit_poort": 200,
+      "in_knoop": 10,
+      "in_poort": 100,
+      "client": 33
+    },
+    {
+      "id": 2,
+      "uit_knoop": 20,
+      "uit_poort": 201,
+      "in_knoop": 10,
+      "in_poort": 101,
+      "client": 33
+    },
+    {
+      "id": 3,
+      "uit_knoop": 20,
+      "uit_poort": 200,
+      "in_knoop": 10,
+      "in_poort": 102,
+      "client": 999
+    },
+    {
+      "id": 4,
+      "uit_knoop": 20,
+      "uit_poort": 200,
+      "in_knoop": 30,
+      "in_poort": 300,
+      "client": 999
+    },
+    {
+      "id": 5,
+      "uit_knoop": 20,
+      "uit_poort": 201,
+      "in_knoop": 30,
+      "in_poort": 301,
+      "client": 999
+    },
+    {
+      "id": 6,
+      "uit_knoop": 11,
+      "uit_poort": 110,
+      "in_knoop": 30,
+      "in_poort": 304,
+      "client": 999
+    },
+    {
+      "id": 7,
+      "uit_knoop": 11,
+      "uit_poort": 111,
+      "in_knoop": 30,
+      "in_poort": 305,
+      "client": 999
+    },
+    {
+      "id": 8,
+      "uit_knoop": 11,
+      "uit_poort": 110,
+      "in_knoop": 30,
+      "in_poort": 302,
+      "client": 999
+    },
+    {
+      "id": 9,
+      "uit_knoop": 60,
+      "uit_poort": 600,
+      "in_knoop": 40,
+      "in_poort": 400,
+      "client": 999
+    },
+    {
+      "id": 10,
+      "uit_knoop": 60,
+      "uit_poort": 601,
+      "in_knoop": 10,
+      "in_poort": 100,
+      "client": 999
+    },
+    {
+      "id": 12,
+      "uit_knoop": 22,
+      "uit_poort": 220,
+      "in_knoop": 50,
+      "in_poort": 500,
+      "client": 999
+    },
+    {
+      "id": 13,
+      "uit_knoop": 22,
+      "uit_poort": 220,
+      "in_knoop": 50,
+      "in_poort": 501,
+      "client": 999
+    }
+  ]
+}

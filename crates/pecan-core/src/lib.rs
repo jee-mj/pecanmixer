@@ -1,9 +1,11 @@
-//! Shared, owned data and the first read-only native controller.
+//! Owned data, read-only overview and pure supported-audio policy.
 //!
-//! This crate deliberately has no GTK, Tauri or PipeWire dependency. Routing,
-//! recording policy and settings migration are later slices.
+//! No GTK, Tauri, PipeWire, filesystem I/O or backend dispatch. Native widget
+//! integration, recording I/O and settings migration remain later work.
 
 pub mod backend;
 pub mod graph;
 pub mod inbox;
 pub mod overview;
+
+pub mod domain;
