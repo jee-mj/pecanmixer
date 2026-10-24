@@ -30,6 +30,7 @@ struct Row {
     title: gtk::Label,
     observed: gtk::Label,
     scale: gtk::Scale,
+    meters: gtk::Box,
     mute: RefCell<mute::Control>,
     key: String,
     identity: Option<StripIdentity>,
@@ -108,6 +109,16 @@ impl CoordinatedMixer {
     }
     pub fn widget(&self) -> &gtk::Box {
         &self.0.root
+    }
+    pub(crate) fn mount_meters(&self, meters: &[(String, gtk::Box)]) {
+        for row in self.0.rows.borrow().values() {
+            super::telemetry::mount(
+                &row.meters,
+                meters
+                    .iter()
+                    .filter_map(|(key, widget)| (key == &row.key).then_some(widget)),
+            );
+        }
     }
     pub fn set_display_preferences(&self, p: DisplayPreferences) {
         self.0.layout.set_preferences(p.clone());
@@ -254,7 +265,11 @@ impl Row {
         let mute = mute::Control::new(strip, &state.session);
         root.append(&title);
         root.append(&observed);
-        root.append(&scale);
+        let meters = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+        let gain = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        gain.append(&scale);
+        gain.append(&meters);
+        root.append(&gain);
         root.append(&mute.button);
         state
             .layout
@@ -273,6 +288,7 @@ impl Row {
             title,
             observed,
             scale,
+            meters,
             mute: RefCell::new(mute),
             key: strip.key.clone(),
             identity: state.session.strip_identity(&strip.key).ok(),

@@ -3,7 +3,7 @@ name = "pecan-ui-gtk"
 version = "0.1.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
-description = "Non-installed read-only GTK connectivity preview for Pecan Mixer"
+description = "Native GTK4 mixer migration candidate for Pecan Mixer"
 
 [dependencies]
 pecan-core = { path = "../pecan-core" }

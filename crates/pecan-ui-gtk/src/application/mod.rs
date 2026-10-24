@@ -1,7 +1,6 @@
 //! Explicit native application ownership and one shared mutation/history path.
 //!
-//! This library is not called by main startup. A future shell must retain the
-//! owner through reviewed asynchronous shutdown. `fixture()` has a separate
+//! Native startup retains this owner through asynchronous shutdown. `fixture()` has a separate
 //! synthetic endpoint: it never constructs a Graaf or connects to PipeWire.
 mod coordinator;
 mod drain;
@@ -10,6 +9,7 @@ mod history_input;
 mod mixer;
 mod preferences;
 mod shell;
+pub(crate) mod telemetry;
 mod view;
 
 pub use coordinator::volume::{GestureToken, StripIdentity};
@@ -70,7 +70,7 @@ struct Active {
 }
 /// Retain one instance for the entire GApplication lifetime. Repeated activation
 /// returns the same session/worker/inbox/history, even after windows are hidden.
-/// This is an explicit library boundary, not production startup adoption.
+/// Startup and injected tests use this same explicit ownership boundary.
 pub struct ApplicationOwner {
     mode: Mode,
     active: RefCell<Option<Active>>,

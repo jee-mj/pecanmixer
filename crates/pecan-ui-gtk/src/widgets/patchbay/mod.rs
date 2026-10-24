@@ -1,5 +1,5 @@
 //! Observed graph and isolated native patch intents. No backend sender or live
-//! mutation is attached by preview startup.
+//! mutation is attached without an explicit shared history-action adapter.
 mod actions;
 mod controls;
 mod layout;
@@ -41,6 +41,7 @@ pub struct PatchbayOverview {
     geometry: Rc<RefCell<Layout>>,
     current: Option<(Overview, Vec<Kabel>)>,
     rows: BTreeMap<u32, gtk::ListBoxRow>,
+    meter_slots: BTreeMap<(u32, bool), gtk::Box>,
 }
 impl Default for PatchbayOverview {
     fn default() -> Self {
@@ -179,12 +180,23 @@ impl PatchbayOverview {
             geometry,
             current: None,
             rows: BTreeMap::new(),
+            meter_slots: BTreeMap::new(),
         };
         view.update(&Overview::default(), &[]);
         view
     }
     pub fn widget(&self) -> &gtk::Box {
         &self.root
+    }
+    pub(crate) fn mount_meters(&self, meters: &[(u32, bool, gtk::Box)]) {
+        for ((node, input), slot) in &self.meter_slots {
+            crate::application::telemetry::mount(
+                slot,
+                meters.iter().filter_map(|(id, side, widget)| {
+                    (id == node && side == input).then_some(widget)
+                }),
+            );
+        }
     }
     /// Attach the shared application's history-intent handler, not a backend
     /// dispatcher. `Ok(())` acknowledges handoff only. The application must use
@@ -307,6 +319,7 @@ impl PatchbayOverview {
         while let Some(child) = self.modules.first_child() {
             self.modules.remove(&child);
         }
+        self.meter_slots.clear();
         for module in &layout.modules {
             let Some(node) = overview.nodes.iter().find(|node| node.id == module.node) else {
                 continue;
@@ -322,6 +335,7 @@ impl PatchbayOverview {
             title.set_max_width_chars(24);
             title.set_height_request(metrics.line as i32);
             title.set_tooltip_text(Some(&node.label));
+            title.set_margin_end(24);
             let detail = text(
                 &format!(
                     "{} · node {}",
@@ -332,6 +346,7 @@ impl PatchbayOverview {
             );
             detail.add_css_class("dim-label");
             detail.set_height_request(metrics.line as i32);
+            detail.set_margin_end(24);
             content.append(&title);
             content.append(&detail);
             for id in &module.ports {
@@ -354,8 +369,21 @@ impl PatchbayOverview {
                     content.append(&label);
                 }
             }
+            // Overlay stays inside the existing header geometry, preserving
+            // module/port hit coordinates and the shared movement controller.
+            let meter_slot = gtk::Box::new(gtk::Orientation::Horizontal, 3);
+            meter_slot.set_halign(gtk::Align::End);
+            meter_slot.set_valign(gtk::Align::Start);
+            meter_slot.set_margin_top(8);
+            meter_slot.set_margin_end(8);
+            meter_slot.set_can_target(false);
+            let overlay = gtk::Overlay::new();
+            overlay.set_child(Some(&content));
+            overlay.add_overlay(&meter_slot);
+            self.meter_slots
+                .insert((module.node, module.input), meter_slot);
             let frame = gtk::Frame::builder()
-                .child(&content)
+                .child(&overlay)
                 .width_request(WIDTH as i32)
                 .height_request(module.height as i32)
                 .build();

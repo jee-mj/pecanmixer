@@ -5,6 +5,11 @@
 capture, worker, inbox consumer or polling timer. Main, Session, application owner,
 settings, audio commands and backend/core interfaces are unchanged.
 
+The separate [entrypoint adoption candidate](../../../../../docs/rust-refactor/native-startup-adoption.md)
+now mounts this unchanged adapter through the owning workspace's one Session
+poll. That new wiring, witness factory and viewport integration require their
+own independent review; the original isolated adapter clearance is unchanged.
+
 The caller passes the batch already returned by its sole consumer, such as the
 existing `Session::poll()` call. Do not drain an inbox or call Session::poll a
 second time just to feed these widgets. The adapter applies an accepted graph
@@ -96,8 +101,8 @@ Cloud checks pass: ten new adapter cases in both default and accessibility modes
 default GTK suite, native GTK build, scoped formatting and whitespace checks.
 GTK checks use a deliberately started Xvfb/private bus with fatal criticals.
 
-Owner wiring, validated production witness generation, mounting/viewport updates
-and authoritative capture reset signals still need independent integration.
-The executable remains observational and does not mount this adapter. Fixture
+The new owner/witness/mounting/viewport wiring is separately reviewable in the
+entrypoint candidate. Detailed capture reset/availability signals and live
+acceptance remain unfinished. Fixture
 population/counters do not establish audio correctness, real-time/CPU/latency
 budgets, physical display throughput, Wayland or desktop accessibility acceptance.

@@ -1,36 +1,39 @@
 //! Main-thread GTK presentation and isolated mixer control scaffolding.
 //!
-//! The application still defaults to observation. The controls module projects
-//! the pure mixer domain and forwards intents through an adapter-owned boundary;
-//! production ownership and receipt/history wiring remain separate.
+//! The explicit native entrypoint uses the single owner/shell. GraphPresentation
+//! remains observational; functional controls use that owner's exact graph and
+//! shared receipt/history boundary. Recording and bus editors remain unwired.
 mod widgets;
 
 mod presentation;
 pub use presentation::GraphPresentation;
 pub use widgets::{MixerOverview, PatchbayOverview};
 
-/// Synchronous explicit-path I/O; not wired to the preview or startup.
+/// Synchronous explicit-path I/O, called only by the off-UI settings worker.
 pub mod settings_storage;
 
 pub mod controls;
 
 pub mod native_backend;
 
-/// Explicit presentation-only preferences; not called by startup.
+/// Presentation-only preferences; no audio configuration effects.
 pub mod display_settings;
 
-/// Explicit serialized I/O worker, not called by startup.
+/// Serialized I/O worker, started only for an explicit native settings path.
 pub mod settings_worker;
 
-/// Latest-frame meter widgets; not connected to preview startup.
+/// Latest-frame meter widgets and the accepted-batch presentation adapter.
 pub mod meters;
 
-/// Explicit application owner/coordinator; not adopted by main startup.
+/// One application owner/coordinator shared by native startup and fixture tests.
 pub mod application;
-/// Isolated native shell policy; not wired to application startup.
+/// Native shell policy and finalization effects.
 pub mod lifetime;
-/// Explicit GTK-free tray adapter; not started by the preview.
+/// GTK-free tray adapter, started only by explicit native opt-in.
 pub mod tray;
 
 /// Pure recording-bus presentation/intents; no runtime adoption.
 pub mod recording_buses;
+
+/// Explicit owner/shell executable adoption; no implicit settings discovery.
+pub mod startup;

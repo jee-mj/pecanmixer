@@ -12,7 +12,11 @@ struct HistoryButtons {
     redo: gtk::Button,
     live: Rc<Cell<bool>>,
 }
-/// Explicit workspace integration for a future owning shell. No worker, timer,
+
+#[cfg(test)]
+#[path = "telemetry/tests.rs"]
+mod telemetry_tests;
+/// Explicit workspace integration for the owning shell. No worker, timer,
 /// file access, recording, tray or automatic application startup is created.
 /// Keep one workspace for a window; repeated GApplication activation should
 /// present that window, while reusing ApplicationOwner for its whole lifetime.
@@ -20,6 +24,8 @@ pub struct NativeWorkspace {
     root: gtk::Box,
     mixer: super::mixer::CoordinatedMixer,
     patchbay: RefCell<PatchbayOverview>,
+    telemetry: RefCell<super::telemetry::Telemetry>,
+    pages: gtk::Stack,
     session: Session,
     history: gtk::Box,
     buttons: RefCell<Option<HistoryButtons>>,
@@ -60,6 +66,8 @@ impl NativeWorkspace {
             root,
             mixer,
             patchbay: RefCell::new(patchbay),
+            telemetry: RefCell::default(),
+            pages,
             session,
             history,
             buttons: RefCell::new(None),
@@ -95,12 +103,25 @@ impl NativeWorkspace {
     pub fn widget(&self) -> &gtk::Box {
         &self.root
     }
+    pub fn show_patchbay(&self) {
+        self.pages.set_visible_child_name("patchbay");
+    }
     /// Drive from one main-context source. Receipts need polling even if there
     /// are no graph events. The lifetime adapter owns/removes that source; this
     /// view creates none, preventing per-activation consumer/timer duplication.
     pub fn poll(&self) {
-        self.session.poll();
+        let batch = self.session.poll();
         self.refresh();
+        let mut telemetry = self.telemetry.borrow_mut();
+        telemetry.apply(&self.session, &batch);
+        self.mixer.mount_meters(&telemetry.mixer_widgets());
+        self.patchbay
+            .borrow()
+            .mount_meters(&telemetry.patch_widgets());
+        telemetry.visibility(
+            self.mixer.widget().upcast_ref(),
+            self.patchbay.borrow().widget().upcast_ref(),
+        );
     }
     fn history_button(
         &self,

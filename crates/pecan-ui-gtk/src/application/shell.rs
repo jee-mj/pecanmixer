@@ -1,4 +1,4 @@
-//! Explicit primary-window lifetime adapter. Not installed by main startup.
+//! Primary-window lifetime adapter installed by the explicit native entrypoint.
 use super::{
     drain::SettingsDrain, ApplicationOwner, Mode, NativeWorkspace, Session, SettingsSummary,
 };
@@ -60,8 +60,8 @@ impl Completion for OwnedCompletion {
     }
 }
 /// Install exactly once in the primary activation. Re-activation presents the
-/// retained window; it never starts another backend. Explicit library API only:
-/// the native executable is not switched to this shell by this candidate.
+/// retained window; it never starts another backend. Fixture construction uses
+/// the same shell with a separately injected synthetic endpoint.
 pub struct ApplicationShell {
     app: gtk::Application,
     owner: Rc<ApplicationOwner>,
@@ -300,6 +300,9 @@ impl ApplicationShell {
     }
     pub fn session(&self) -> Session {
         self.session.clone()
+    }
+    pub fn show_patchbay(&self) {
+        self.workspace.show_patchbay();
     }
     pub fn mailbox(&self) -> Arc<ActionMailbox> {
         self.mailbox.clone()

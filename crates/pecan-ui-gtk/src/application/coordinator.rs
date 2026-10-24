@@ -115,6 +115,17 @@ impl Session {
     pub fn graph(&self) -> Option<Graph> {
         self.0.state.borrow().graph.clone()
     }
+    /// Read the witness already accepted by this sole consumer. This neither
+    /// drains the inbox nor obtains authority from the observer/DTO properties.
+    pub(crate) fn witnessed_graph(&self) -> Option<pecan_core::history_identity::HistoryGraph> {
+        let state = self.0.state.borrow();
+        let frame = state.frame.as_ref()?;
+        let graph = state.graph.as_ref()?;
+        (state.witnessed
+            && frame.graph().stamp == graph.stamp
+            && Arc::ptr_eq(&frame.graph().value, &graph.value))
+        .then(|| frame.clone())
+    }
     pub fn status(&self) -> Status {
         let state = self.0.state.borrow();
         if state.admission_closed {
@@ -289,8 +300,8 @@ impl Session {
     /// Sole inbox drain and receipt poll. Call on the main context even without
     /// graph wakes: receipts can change without publishing a graph. No completion waits,
     /// joins, I/O, nested loops or GTK calls occur here. Returns the drained
-    /// batch for future telemetry presentation; graph acceptance happens first.
-    /// No second inbox consumer or production meter adoption is needed here.
+    /// batch for the owning workspace's telemetry presentation; graph acceptance
+    /// happens first. No second inbox consumer is created here.
     pub fn poll(&self) -> InboxBatch {
         let mut batch = self.0.inbox.drain();
         let mut s = self.0.state.borrow_mut();

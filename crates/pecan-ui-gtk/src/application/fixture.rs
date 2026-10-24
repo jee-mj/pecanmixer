@@ -94,6 +94,11 @@ impl FixtureDriver {
     pub fn take_requests(&self) -> Vec<FixtureRequest> {
         self.0.requests.borrow_mut().drain(..).collect()
     }
+    /// Deliberately synthetic samples stamped at this driver's current graph.
+    /// No capture, timer or automatic command acknowledgement is implied.
+    pub fn publish_peaks(&self, peaks: pecan_core::graph::Pieken) {
+        self.0.inbox.publish(self.0.sequencer.borrow().peaks(peaks));
+    }
     /// Model an evicted/unavailable witness without a graph-content heuristic.
     pub fn forget_origins(&self) {
         self.0.frames.borrow_mut().clear();
