@@ -471,3 +471,74 @@ fn hidden_routing_widget_keeps_its_real_receipt_and_delivers_terminal_evidence()
     assert_eq!(buses.session.history_lengths(), (0, 0));
     window.close();
 }
+
+/// No GTK/Session/bridge is involved: isolate the same reset-history failure
+/// for a core-policy correction without changing shared core production code.
+#[test]
+fn pure_core_reset_target_clear_before_auto_restore_preserves_history() {
+    use pecan_core::{
+        backend::Stamp,
+        domain::history::{Controller, Input},
+        history_identity::HistoryGraph,
+    };
+    let mut value = graph();
+    value.knopen.iter_mut().find(|n| n.id == 30).unwrap().naam =
+        pecan_core::domain::audio::REC_NODE.into();
+    let before = Graph {
+        stamp: Stamp {
+            epoch: 11,
+            revision: 1,
+        },
+        value: Arc::new(value),
+    };
+    let authority = Arc::new(());
+    let mut controller = Controller::default();
+    controller.buses = crate::application::default_idle_configuration().buses;
+    controller
+        .reduce(Input::NativeGraph(HistoryGraph::from_registry(
+            before.clone(),
+            authority.clone(),
+            generations(&before.value),
+        )))
+        .unwrap();
+    let plan = controller
+        .reduce(Input::Execute {
+            label: "Back to auto".into(),
+            action: GraphAction::BackToAuto,
+        })
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        plan.commands,
+        vec![Opdracht::ZetDoel {
+            knoop: 20,
+            doel: None
+        }]
+    );
+    let after = Graph {
+        stamp: Stamp {
+            epoch: 11,
+            revision: 2,
+        },
+        value: Arc::new(apply((*before.value).clone(), &plan.commands)),
+    };
+    assert!(after.value.kabels.is_empty());
+    controller
+        .reduce(Input::CommandResult {
+            ticket: plan.ticket,
+            result: Ok(after.stamp),
+        })
+        .unwrap();
+    controller
+        .reduce(Input::NativeGraph(HistoryGraph::from_registry(
+            after.clone(),
+            authority,
+            generations(&after.value),
+        )))
+        .unwrap();
+    assert_eq!(
+        controller.lengths(),
+        (1, 0),
+        "target clearing must remain undoable before policy reconnects links"
+    );
+}
