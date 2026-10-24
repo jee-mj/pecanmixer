@@ -101,11 +101,9 @@ impl Editor {
         Ok(())
     }
     pub fn prepare(&self, operation: Operation) -> Result<Action, String> {
-        let graph = self
-            .graph
-            .as_ref()
-            .filter(|g| g.value.verbonden)
-            .ok_or("Disconnected; editing is unavailable.")?;
+        if !self.connected() {
+            return Err("Disconnected; editing is unavailable.".into());
+        }
         let action = match operation {
             Operation::Disconnect => {
                 if self.selected.is_empty() {
@@ -122,26 +120,42 @@ impl Editor {
                     self.source.ok_or("Choose an audio output.")?,
                     self.destination.ok_or("Choose an audio input.")?,
                 ];
-                if !self.outputs.iter().any(|p| p.id == pair[0])
-                    || !self.inputs.iter().any(|p| p.id == pair[1])
-                {
-                    return Err("Choose currently available audio endpoints.".into());
-                }
-                if graph
-                    .value
-                    .kabels
-                    .iter()
-                    .any(|l| [l.uit_poort, l.in_poort] == pair)
-                {
-                    return Err("Those ports are already connected.".into());
-                }
-                if let Some(old) = self.moving {
-                    Action::Move { old, new: pair }
-                } else {
-                    Action::Connect(pair)
-                }
+                return self.connection(pair, self.moving);
             }
         };
+        self.checked(action)
+    }
+    pub fn connection(&self, pair: [u32; 2], moving: Option<[u32; 2]>) -> Result<Action, String> {
+        let graph = self
+            .graph
+            .as_ref()
+            .filter(|g| g.value.verbonden)
+            .ok_or("Disconnected; editing is unavailable.")?;
+        if !self.outputs.iter().any(|p| p.id == pair[0])
+            || !self.inputs.iter().any(|p| p.id == pair[1])
+        {
+            return Err("Choose currently available audio endpoints.".into());
+        }
+        if graph
+            .value
+            .kabels
+            .iter()
+            .any(|l| [l.uit_poort, l.in_poort] == pair)
+        {
+            return Err("Those ports are already connected.".into());
+        }
+        self.checked(if let Some(old) = moving {
+            Action::Move { old, new: pair }
+        } else {
+            Action::Connect(pair)
+        })
+    }
+    pub fn checked(&self, action: Action) -> Result<Action, String> {
+        let graph = self
+            .graph
+            .as_ref()
+            .filter(|g| g.value.verbonden)
+            .ok_or("Disconnected; editing is unavailable.")?;
         if history::plan(&action, &graph.value, &BusConfig::default())
             .map_err(|e| format!("Cannot plan patch: {e:?}"))?
             .is_empty()

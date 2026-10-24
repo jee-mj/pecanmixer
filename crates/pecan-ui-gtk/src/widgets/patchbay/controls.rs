@@ -33,6 +33,9 @@ struct Inner {
     handler: RefCell<Option<Handler>>,
     refreshing: Cell<bool>,
     pending: Cell<bool>,
+    origin_suspended: Cell<bool>,
+    cancel_hook: RefCell<Option<Rc<dyn Fn()>>>,
+    changed_hook: RefCell<Option<Rc<dyn Fn()>>>,
     list: glib::WeakRef<gtk::ListBox>,
 }
 impl Controls {
@@ -81,6 +84,9 @@ impl Controls {
             handler: RefCell::new(None),
             refreshing: Cell::new(false),
             pending: Cell::new(false),
+            origin_suspended: Cell::new(false),
+            cancel_hook: RefCell::new(None),
+            changed_hook: RefCell::new(None),
             list: glib::WeakRef::new(),
         }));
         for output in [true, false] {
@@ -169,6 +175,9 @@ impl Controls {
         let weak = Rc::downgrade(&self.0);
         list.connect_selected_rows_changed(move |list| {
             if let Some(inner) = weak.upgrade() {
+                if inner.refreshing.get() {
+                    return;
+                }
                 Controls(inner).selected(
                     list.selected_rows()
                         .iter()
@@ -219,6 +228,10 @@ impl Controls {
         if !self.0.model.borrow_mut().update(graph) {
             return false;
         }
+        self.0.origin_suspended.set(false);
+        if let Some(cancel) = self.0.cancel_hook.borrow().as_ref() {
+            cancel();
+        }
         self.0.refreshing.set(true);
         let model = self.0.model.borrow();
         let outputs: Vec<_> = std::iter::once("Choose an audio output")
@@ -252,6 +265,9 @@ impl Controls {
         self.refresh();
     }
     pub fn cancel(&self) {
+        if let Some(cancel) = self.0.cancel_hook.borrow().as_ref() {
+            cancel();
+        }
         self.0.model.borrow_mut().cancel();
         self.sync_choices();
         if let Some(list) = self.0.list.upgrade() {
@@ -267,22 +283,24 @@ impl Controls {
     /// Presentation binding only. Clear pending only when the shared application
     /// controller has resolved its real completion/observation boundary.
     pub fn set_pending(&self, pending: bool, error: Option<&str>) {
+        if pending {
+            if let Some(cancel) = self.0.cancel_hook.borrow().as_ref() {
+                cancel();
+            }
+        }
         self.0.pending.set(pending);
         self.0.status.set_text(error.unwrap_or(if pending {
-            "Patch request pending. Waiting for confirmed completion."
+            "Patch request pending. Waiting for completion and graph observation."
         } else {
             "Ready. Displayed connections come from the observed graph."
         }));
         self.refresh();
     }
     pub fn request(&self, operation: Operation) {
-        if self.0.pending.get() {
-            return;
-        }
-        let Some(handler) = self.0.handler.borrow().clone() else {
+        if !self.enabled() {
             self.refresh();
             return;
-        };
+        }
         let operation =
             if matches!(operation, Operation::Connect) && self.0.model.borrow().moving.is_some() {
                 Operation::Move
@@ -302,6 +320,86 @@ impl Controls {
                 return;
             }
         };
+        if let Err(error) = self.submit_action(origin, action) {
+            self.message(&error);
+        }
+    }
+    pub fn enabled(&self) -> bool {
+        !self.0.origin_suspended.get()
+            && self.0.handler.borrow().is_some()
+            && self.0.model.borrow().connected()
+            && !self.0.pending.get()
+    }
+    pub fn suspend_origin(&self) {
+        self.0.origin_suspended.set(true);
+        self.cancel();
+        self.message("Read-only overview; supply a new full stamped graph to resume editing.");
+    }
+    pub fn inspect<T>(&self, f: impl FnOnce(&Editor) -> T) -> T {
+        f(&self.0.model.borrow())
+    }
+    pub fn message(&self, message: &str) {
+        if !self.0.pending.get() {
+            self.0.status.set_text(message);
+        }
+    }
+    pub fn watch(&self, cancel: impl Fn() + 'static, changed: impl Fn() + 'static) {
+        *self.0.cancel_hook.borrow_mut() = Some(Rc::new(cancel));
+        *self.0.changed_hook.borrow_mut() = Some(Rc::new(changed));
+    }
+    pub fn select(&self, ids: impl IntoIterator<Item = u32>) {
+        let ids: std::collections::BTreeSet<_> = ids.into_iter().collect();
+        self.0.refreshing.set(true);
+        if let Some(list) = self.0.list.upgrade() {
+            list.unselect_all();
+            let mut child = list.first_child();
+            while let Some(widget) = child {
+                child = widget.next_sibling();
+                if let Ok(row) = widget.downcast::<gtk::ListBoxRow>() {
+                    if row
+                        .widget_name()
+                        .parse::<u32>()
+                        .is_ok_and(|id| ids.contains(&id))
+                    {
+                        list.select_row(Some(&row));
+                    }
+                }
+            }
+        }
+        self.0.refreshing.set(false);
+        self.selected(ids);
+    }
+    pub fn clear_choices(&self) {
+        let mut model = self.0.model.borrow_mut();
+        model.source = None;
+        model.destination = None;
+        model.moving = None;
+        drop(model);
+        self.sync_choices();
+        self.refresh();
+    }
+    pub fn submit_action(
+        &self,
+        origin: Stamped<Arc<Momentopname>>,
+        action: Action,
+    ) -> Result<(), String> {
+        if !self.enabled() {
+            return Err("Patch editing is unavailable or a request is pending.".into());
+        }
+        let handler = self
+            .0
+            .handler
+            .borrow()
+            .clone()
+            .ok_or("Editing is unavailable.")?;
+        self.inspect(|model| {
+            if !model.graph.as_ref().is_some_and(|current| {
+                current.stamp == origin.stamp && Arc::ptr_eq(&current.value, &origin.value)
+            }) {
+                return Err("The graph changed; start a fresh patch gesture.".to_owned());
+            }
+            model.checked(action.clone()).map(|_| ())
+        })?;
         let label = match &action {
             Action::Connect(_) => "Connect".into(),
             Action::Disconnect(pairs) => {
@@ -319,7 +417,9 @@ impl Controls {
         // update presentation without reentering a RefCell borrow.
         if let Err(error) = handler(origin, Input::Execute { label, action }) {
             self.set_pending(false, Some(&error));
+            return Err(error);
         }
+        Ok(())
     }
     fn sync_choices(&self) {
         self.0.refreshing.set(true);
@@ -339,9 +439,11 @@ impl Controls {
         self.0.refreshing.set(false);
     }
     fn refresh(&self) {
+        if let Some(changed) = self.0.changed_hook.borrow().as_ref() {
+            changed();
+        }
         let model = self.0.model.borrow();
-        let enabled =
-            self.0.handler.borrow().is_some() && model.connected() && !self.0.pending.get();
+        let enabled = self.enabled();
         self.0
             .source
             .set_sensitive(enabled && model.moving.is_none());

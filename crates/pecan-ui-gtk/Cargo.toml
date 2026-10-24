@@ -15,3 +15,6 @@ serde_json.workspace = true
 # Only the optional accessibility assertions need GTK >= 4.10. The preview's
 # default build continues to use the base GTK 4 API.
 a11y-tests = ["gtk/v4_10"]
+
+# Opt-in synthetic Xvfb pointer input tests; no production dependency.
+x11-input-tests = []
