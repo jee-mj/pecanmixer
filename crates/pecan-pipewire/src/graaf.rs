@@ -36,9 +36,11 @@ use pw::spa::utils::dict::DictRef;
 use pw::types::ObjectType;
 
 use crate::commands::Commands;
+use crate::commands::LocalExecution;
 use crate::meter::{self, Meter};
 use crate::midimeter::{Activiteit, MidiMeter};
 use crate::opname::{self, Actief, Bericht, Bus, Klok, MidiBestand, Opnemer, Spoor};
+use pecan_core::native_command::{AdmissionError, NativeIntent, NativeReceipt};
 
 /// Wat PipeWire in `format.dsp` zet voor MIDI: oude bytes of UMP.
 const DSP_MIDI: &str = "8 bit raw midi";
@@ -101,7 +103,43 @@ pub struct Graaf {
 
 impl Graaf {
     pub fn start(melder: Melder) -> Self {
+        Self::start_with_commands(Arc::new(Commands::default()), melder)
+    }
+
+    /// Full command-capable worker with owned origin-preserving graph events.
+    /// Use these exact frames for planning native intents. The read-only
+    /// preview continues to use `observe`; no GTK controls are enabled here.
+    pub fn start_native(inbox: Arc<pecan_core::inbox::LatestInbox>) -> Self {
+        use pecan_core::backend::BackendEvent;
         let opdrachten = Arc::new(Commands::default());
+        let shared = Arc::clone(&opdrachten);
+        let melder: Melder = Box::new(move |event| {
+            let current = shared.current();
+            let event = match event {
+                Melding::Graaf(_) => BackendEvent::Graph(current),
+                Melding::Pieken(v) => BackendEvent::Peaks(Stamped {
+                    stamp: current.stamp,
+                    value: Arc::new(v.clone()),
+                }),
+                Melding::Midi(v) => BackendEvent::Midi(Stamped {
+                    stamp: current.stamp,
+                    value: Arc::new(v.clone()),
+                }),
+                Melding::Transport(v) => BackendEvent::Transport(Stamped {
+                    stamp: current.stamp,
+                    value: Arc::new(v.clone()),
+                }),
+            };
+            inbox.publish(event);
+        });
+        Self::start_with_commands(opdrachten, melder)
+    }
+
+    pub fn dispatch_native(&self, intent: NativeIntent) -> Result<NativeReceipt, AdmissionError> {
+        self.opdrachten.enqueue_native(intent)
+    }
+
+    fn start_with_commands(opdrachten: Arc<Commands>, melder: Melder) -> Self {
         let gedeeld = Arc::clone(&opdrachten);
         let stop = Arc::new(StopSignal::default());
         let worker_stop = Arc::clone(&stop);
@@ -297,6 +335,28 @@ impl Staat {
             | Opdracht::StartBus(_)
             | Opdracht::Stop
             | Opdracht::StopBus(_) => true,
+        }
+    }
+
+    fn native_no_op(&self, command: &Opdracht) -> bool {
+        match command {
+            Opdracht::Verbind { uit, naar } => self
+                .kabels
+                .values()
+                .any(|l| l.uit_poort == *uit && l.in_poort == *naar),
+            Opdracht::Ontkoppel { kabel } => !self.kabels.contains_key(kabel),
+            Opdracht::ZetDoel { knoop, doel } => {
+                self.knopen.contains_key(knoop) && self.doelen.get(knoop) == doel.as_ref()
+            }
+            Opdracht::ZetVolume { knoop, volume } => self
+                .knopen
+                .get(knoop)
+                .is_some_and(|n| n.volume.as_ref() == Some(volume)),
+            Opdracht::ZetMute { knoop, mute } => self
+                .knopen
+                .get(knoop)
+                .is_some_and(|n| n.mute == Some(*mute)),
+            _ => false,
         }
     }
 
@@ -857,45 +917,66 @@ fn sessie(
                 drop(s);
             }
             if !read_only {
-                for error in opdrachten.drain(
+                for error in opdrachten.drain_with(
                     |o| staat.borrow().geldige_objecten(o),
+                    |o| staat.borrow().native_no_op(o),
                     |o| match o {
-                        Opdracht::ZetBus { kanalen, gain } => {
-                            if let Some(b) = bus.as_ref() {
-                                b.zet_kanalen(kanalen);
-                                b.zet_gain(&gain);
-                            }
+                        o @ (Opdracht::Verbind { .. }
+                        | Opdracht::Ontkoppel { .. }
+                        | Opdracht::ZetDoel { .. }
+                        | Opdracht::ZetVolume { .. }
+                        | Opdracht::ZetMute { .. }) => {
+                            uitvoeren(o, &core, &registry, &bindingen.borrow(), &gelegd)
                         }
-                        Opdracht::ZetTransport(opties) => {
-                            let mut k = klok.borrow_mut();
-                            if k.bron != opties.klok {
-                                k.recent.clear();
-                            }
-                            k.bron = opties.klok.filter(|_| MIDI);
-                            k.start_stop = opties.start_stop;
-                            transport.borrow_mut().opties = Some(opties);
+                        o => {
+                            match o {
+                                Opdracht::ZetBus { kanalen, gain } => {
+                                    if let Some(b) = bus.as_ref() {
+                                        b.zet_kanalen(kanalen);
+                                        b.zet_gain(&gain);
+                                    }
+                                }
+                                Opdracht::ZetTransport(opties) => {
+                                    let mut k = klok.borrow_mut();
+                                    if k.bron != opties.klok {
+                                        k.recent.clear();
+                                    }
+                                    k.bron = opties.klok.filter(|_| MIDI);
+                                    k.start_stop = opties.start_stop;
+                                    transport.borrow_mut().opties = Some(opties);
+                                }
+                                Opdracht::Start => begin(
+                                    &staat.borrow(),
+                                    &mut transport.borrow_mut(),
+                                    &opnemer,
+                                    bus.as_ref().as_ref().and_then(Bus::knoop_id),
+                                    None,
+                                ),
+                                Opdracht::StartBus(b) => begin(
+                                    &staat.borrow(),
+                                    &mut transport.borrow_mut(),
+                                    &opnemer,
+                                    bus.as_ref().as_ref().and_then(Bus::knoop_id),
+                                    Some(b),
+                                ),
+                                Opdracht::Stop => eindig(&opnemer, &klok.borrow()),
+                                Opdracht::StopBus(naam) => {
+                                    eindig_bus(&opnemer, &klok.borrow(), &naam)
+                                }
+                                _ => unreachable!("graph commands handled above"),
+                            };
+                            LocalExecution::Unreported
                         }
-                        Opdracht::Start => begin(
-                            &staat.borrow(),
-                            &mut transport.borrow_mut(),
-                            &opnemer,
-                            bus.as_ref().as_ref().and_then(Bus::knoop_id),
-                            None,
-                        ),
-                        Opdracht::StartBus(b) => begin(
-                            &staat.borrow(),
-                            &mut transport.borrow_mut(),
-                            &opnemer,
-                            bus.as_ref().as_ref().and_then(Bus::knoop_id),
-                            Some(b),
-                        ),
-                        Opdracht::Stop => eindig(&opnemer, &klok.borrow()),
-                        Opdracht::StopBus(naam) => eindig_bus(&opnemer, &klok.borrow(), &naam),
-                        o => uitvoeren(o, &core, &registry, &bindingen.borrow(), &gelegd),
                     },
                 ) {
                     eprintln!("pecanmixer: opdracht geweigerd op worker: {error:?}");
                 }
+                if opdrachten.native_needs_barrier() {
+                    // An unchanged but observed state still needs a fresh
+                    // owned publication to release the history graph gate.
+                    meld(staat.borrow().momentopname());
+                }
+                opdrachten.expire_native(std::time::Instant::now());
             }
             let m = meters.borrow();
             let mut pieken: Pieken = m.iter().map(|(id, meter)| (*id, meter.oogst())).collect();
@@ -1121,7 +1202,7 @@ fn uitvoeren(
     registry: &pw::registry::RegistryRc,
     bindingen: &BTreeMap<u32, Binding>,
     gelegd: &RefCell<std::collections::VecDeque<pw::link::Link>>,
-) {
+) -> LocalExecution {
     match o {
         Opdracht::Verbind { uit, naar } => {
             let props = pw::properties::properties! {
@@ -1136,32 +1217,41 @@ fn uitvoeren(
                     while g.len() > 64 {
                         g.pop_front();
                     }
+                    LocalExecution::Submitted
                 }
-                Err(fout) => eprintln!("pecanmixer: link {uit} → {naar}: {fout}"),
+                Err(fout) => {
+                    eprintln!("pecanmixer: link {uit} → {naar}: {fout}");
+                    LocalExecution::Rejected(fout.to_string())
+                }
             }
         }
         Opdracht::Ontkoppel { kabel } => {
             registry.destroy_global(kabel);
+            LocalExecution::Submitted
         }
         Opdracht::ZetDoel { knoop, doel } => {
             let Some(meta) = bindingen.values().find_map(|b| match b {
                 Binding::Metadata(m, _, naam) if naam == "default" => Some(m),
                 _ => None,
             }) else {
-                return;
+                return LocalExecution::Rejected("default metadata is unavailable".into());
             };
+            if doel.as_ref().is_some_and(|s| s.contains('\0')) {
+                return LocalExecution::Rejected("target contains NUL".into());
+            }
             meta.set_property(knoop, "target.object", None, doel.as_deref());
+            LocalExecution::Submitted
         }
         Opdracht::ZetVolume { knoop, volume } => {
             let eigenschap = Property::new(
                 pw::spa::sys::SPA_PROP_channelVolumes,
                 Value::ValueArray(ValueArray::Float(volume)),
             );
-            stuur_props(bindingen, knoop, eigenschap);
+            stuur_props(bindingen, knoop, eigenschap)
         }
         Opdracht::ZetMute { knoop, mute } => {
             let eigenschap = Property::new(pw::spa::sys::SPA_PROP_mute, Value::Bool(mute));
-            stuur_props(bindingen, knoop, eigenschap);
+            stuur_props(bindingen, knoop, eigenschap)
         }
         // Die handelt de begrensde dispatch in `sessie` zelf af.
         Opdracht::ZetTransport(_)
@@ -1169,19 +1259,26 @@ fn uitvoeren(
         | Opdracht::Start
         | Opdracht::StartBus(_)
         | Opdracht::Stop
-        | Opdracht::StopBus(_) => {}
+        | Opdracht::StopBus(_) => LocalExecution::Unreported,
     }
 }
 
-fn stuur_props(bindingen: &BTreeMap<u32, Binding>, knoop: u32, eigenschap: Property) {
+fn stuur_props(
+    bindingen: &BTreeMap<u32, Binding>,
+    knoop: u32,
+    eigenschap: Property,
+) -> LocalExecution {
     let Some(Binding::Knoop(node, _)) = bindingen.get(&knoop) else {
-        return;
+        return LocalExecution::Rejected("node binding or Props payload is unavailable".into());
     };
     let Some(bytes) = props_pod(eigenschap) else {
-        return;
+        return LocalExecution::Rejected("node binding or Props payload is unavailable".into());
     };
     if let Some(pod) = Pod::from_bytes(&bytes) {
         node.set_param(ParamType::Props, 0, pod);
+        LocalExecution::Submitted
+    } else {
+        LocalExecution::Rejected("invalid Props payload".into())
     }
 }
 
