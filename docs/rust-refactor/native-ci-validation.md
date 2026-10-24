@@ -229,3 +229,37 @@ empty. No final failure or environment/dependency blocker remains. The separate
 legacy Tauri suite, default-only GTK test modes and examples were not repeated
 for this CI-only follow-up; their prior results remain baseline evidence. No live
 audio/hardware, physical desktop, performance or packaging acceptance was run.
+
+
+## Reviewed focus and offline WAV fixture follow-ups
+
+The first combined bus/routing PR check `40139675385` passes 343 GTK cases and
+fails replacement-button focus in the routing XTest after a fixed settling
+interval. Reviewed test-only correction `ad8f5966` waits for actual released input,
+mapping, sensitivity and allocation with a two-second bound, then attempts focus
+once. All original input events and activation assertions remain. Independent
+review passes both XTests in six fresh candidate runs and three baseline runs;
+the original hosted failure was not reproduced locally. A stuck ledger or focus
+rejection still fails rather than becoming a skipped/retried action.
+
+Runs `40140347487` and `40141708059` stop earlier on the same separate synthetic
+arming WAV-length assertion (191 of 192 backend tests pass), before GTK executes.
+The first cannot validate the focus correction. Investigation identifies explicit
+Ingress(Busy) on an unaccepted synthetic sample and a temporarily unreadable
+status. Reviewed correction `2857aa10bf3b8980f89d82f5358b18269347a1d4` extracts the
+existing mapping/fault body behind `ingest_with`: production still makes one
+nonblocking send attempt per open track. Only the offline arming fixture retries
+an unaccepted Busy packet with a bounded deadline; success/non-Busy outcomes are
+never replayed. Exact sample ordering, RIFF/data lengths and decoded WAV assertions
+are retained, and success/status assertions are stronger. Independent review passes
+192 backend tests and fifty exact repetitions. This does not claim production
+losslessness, realtime performance or audio acceptance.
+
+The two independently cleared corrections combine without source conflicts.
+Their executable source matches the reviewed commits exactly. The locked local
+aggregate exits zero: 86 controls, 67 core, 192 backend, 344 all-feature GTK tests,
+format/build, Cargo/ELF, three headless fixtures and three controlled smokes.
+Selected source hashes match and Node-attempt evidence is empty. No new workflow,
+test exclusion, failed-run retry or production queue/resource limit is added.
+The combined publication has its own automatic hosted check; prior failed runs
+remain part of the evidence and are not overwritten by the local result.

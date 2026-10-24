@@ -28,3 +28,8 @@ source/privacy scope checks pass. Core/backend/default-only suites
 and native build are not repeated for this test-only delta; their preceding
 combined-tree results remain baseline evidence. No hardware, real desktop,
 audio, profile, performance or actual recording test is performed.
+
+Independent review clears `ad8f5966` without weakening its input assertions. Its
+first hosted candidate and subsequent PR check stop before GTK on the separate
+arming WAV fixture issue, so they do not validate focus behavior. The reviewed
+WAV correction and latest combined check are recorded in native-ci-validation.md.
