@@ -20,6 +20,7 @@ pub enum Status {
     GestureActive,
     GestureFinishing,
     Ready,
+    ExternalOperation,
     Queued,
     ExecutedLocally,
     WaitingForGraph,
@@ -38,6 +39,7 @@ impl Status {
                 "Finishing volume gesture · waiting for observed final value".into()
             }
             Self::Ready => "Ready".into(),
+            Self::ExternalOperation => "Bus configuration pending · local result required".into(),
             Self::Queued => "Pending · admitted to worker queue".into(),
             Self::ExecutedLocally => "Pending · waiting for server-fed observation".into(),
             Self::WaitingForGraph => "Observed · waiting for corresponding graph".into(),
@@ -77,6 +79,7 @@ struct State {
     notices: Vec<Notice>,
     admission_closed: bool,
     history_context: Rc<()>,
+    external: Option<Rc<()>>,
 }
 struct Inner {
     inbox: Arc<LatestInbox>,
@@ -106,6 +109,7 @@ impl Session {
                 notices: vec![],
                 admission_closed: false,
                 history_context: Rc::new(()),
+                external: None,
             }),
         }))
     }
@@ -130,6 +134,8 @@ impl Session {
         let state = self.0.state.borrow();
         if state.admission_closed {
             Status::Closing
+        } else if state.external.is_some() {
+            Status::ExternalOperation
         } else {
             state.status.clone()
         }
@@ -153,11 +159,11 @@ impl Session {
 
     pub fn busy(&self) -> bool {
         let state = self.0.state.borrow();
-        state.pending.is_some() || state.volume.busy()
+        state.pending.is_some() || state.volume.busy() || state.external.is_some()
     }
     pub fn has_receipt(&self) -> bool {
         let state = self.0.state.borrow();
-        state.pending.is_some() || state.volume.has_receipt()
+        state.pending.is_some() || state.volume.has_receipt() || state.external.is_some()
     }
     pub fn history_lengths(&self) -> (usize, usize) {
         self.0.state.borrow().history.lengths()
@@ -172,6 +178,7 @@ impl Session {
         !s.admission_closed
             && s.witnessed
             && s.pending.is_none()
+            && s.external.is_none()
             && !s.volume.busy()
             && s.graph.as_ref().is_some_and(|g| g.value.verbonden)
     }
@@ -214,7 +221,7 @@ impl Session {
         if s.admission_closed {
             return Err("Application finalization has started; new commands are disabled.".into());
         }
-        if s.pending.is_some() || s.volume.busy() {
+        if s.pending.is_some() || s.volume.busy() || s.external.is_some() {
             return Err("Another change or volume gesture is pending.".into());
         }
         if !s.witnessed {
@@ -343,6 +350,34 @@ impl Session {
     }
     pub fn notices(&self) -> Vec<Notice> {
         self.0.state.borrow().notices.clone()
+    }
+    /// Share the existing ticket sequence without adding these local protocols
+    /// to graph history. A config receipt retains the lease until terminal.
+    pub(crate) fn reserve_external(&self) -> Result<(u64, Rc<()>), String> {
+        let mut state = self.0.state.borrow_mut();
+        if state.admission_closed
+            || state.pending.is_some()
+            || state.volume.busy()
+            || state.external.is_some()
+        {
+            return Err("Another change is pending or finalization has started.".into());
+        }
+        let token = Rc::new(());
+        let ticket = state.history.reserve_ticket();
+        state.external = Some(token.clone());
+        state.history_context = Rc::new(());
+        Ok((ticket, token))
+    }
+    pub(crate) fn release_external(&self, token: &Rc<()>) {
+        let mut state = self.0.state.borrow_mut();
+        if state
+            .external
+            .as_ref()
+            .is_some_and(|held| Rc::ptr_eq(held, token))
+        {
+            state.external = None;
+            state.history_context = Rc::new(());
+        }
     }
 }
 impl State {

@@ -109,6 +109,19 @@ fn options_keep_fixture_settings_and_real_services_disjoint() {
             .is_some()
     );
     assert!(parse(&["--help"]).unwrap().is_none());
+    assert!(parse(&[
+        "--fixture",
+        "synthetic.json",
+        "--recording-root",
+        "/tmp/synthetic-recording"
+    ])
+    .is_err());
+    assert!(parse(&["--recording-root", "relative"]).is_err());
+    assert!(parse(&["--recording-root", "/tmp/synthetic-recording"])
+        .unwrap()
+        .unwrap()
+        .recording_root
+        .is_some());
 }
 #[gtk::test]
 fn failed_factory_never_installs_a_window_or_retries_on_later_activation() {

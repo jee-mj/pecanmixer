@@ -97,8 +97,7 @@ physical KDE/GNOME/Wayland/cross-app/AT-SPI/Orca, real-time/performance, packagi
 license closure, fsync/crash durability and final cutover remain untested.
 
 The [parity matrix](./native-parity-status.md) retains remaining route selectors,
-bus/transport adapters, queued input/complete shortcuts, folder actions, persistent
-module positions, autostart and other functional gates. No dependency, version,
+bus/transport adapters, queued input/complete shortcuts, folder actions, session-layout acceptance, autostart and other functional gates. No dependency, version,
 release, merge or JavaScript-removal change is included.
 
 ## Synthetic checks

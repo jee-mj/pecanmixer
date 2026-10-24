@@ -94,6 +94,11 @@ pub enum Event {
 /// joins on its coordinator thread, including potentially gated TLS teardown.
 pub trait Completion: Clone {
     fn try_complete(&self) -> Option<ShutdownReport>;
+    /// Additional owner evidence, kept separate from the writer's join report.
+    /// None retains the same handle while its diagnostic status is busy.
+    fn additional_errors(&self, _joined: &ShutdownReport) -> Option<Vec<String>> {
+        Some(vec![])
+    }
 }
 impl Completion for Shutdown {
     fn try_complete(&self) -> Option<ShutdownReport> {
@@ -105,7 +110,7 @@ enum Backend<C> {
     Needed,
     Requested(RequestId),
     Waiting(C),
-    Complete(ShutdownReport),
+    Complete(ShutdownReport, Vec<String>),
     Blocked(String),
 }
 enum Settings {
@@ -362,18 +367,21 @@ impl<C: Completion> Lifetime<C> {
         }
         if let Backend::Waiting(completion) = &self.backend {
             if let Some(report) = completion.try_complete() {
-                self.backend = Backend::Complete(report);
+                if let Some(errors) = completion.additional_errors(&report) {
+                    self.backend = Backend::Complete(report, errors);
+                }
             }
         }
         if let Backend::Blocked(error) = &self.backend {
             self.phase = QuitPhase::Blocked(error.clone());
             return;
         }
-        let backend_done = matches!(self.backend, Backend::NotOwned | Backend::Complete(_));
+        let backend_done = matches!(self.backend, Backend::NotOwned | Backend::Complete(..));
         let settings_done = matches!(self.settings, Settings::NotOwned | Settings::Complete(_));
         if backend_done && settings_done {
             let mut errors = vec![];
-            if let Backend::Complete(report) = &self.backend {
+            if let Backend::Complete(report, additional) = &self.backend {
+                errors.extend(additional.iter().take(32).cloned());
                 if report.worker_panicked {
                     errors.push("Audio worker panicked".into());
                 }

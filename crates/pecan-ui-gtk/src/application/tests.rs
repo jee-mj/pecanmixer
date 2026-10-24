@@ -463,9 +463,14 @@ fn integrated_widgets_mute_patch_and_undo_use_one_coordinator() {
     observed(&req, frame.stamp, false);
     view.poll();
     assert_eq!(s.history_lengths(), (1, 0));
-    let dropdowns: Vec<_> = controls
+    let patch = controls
         .iter()
-        .filter_map(|w| w.clone().downcast::<gtk::DropDown>().ok())
+        .filter_map(|w| w.clone().downcast::<gtk::Stack>().ok())
+        .find_map(|stack| stack.child_by_name("patchbay"))
+        .unwrap();
+    let dropdowns: Vec<_> = descendants(&patch)
+        .into_iter()
+        .filter_map(|w| w.downcast::<gtk::DropDown>().ok())
         .collect();
     assert_eq!(dropdowns.len(), 2);
     // Labels are generated from this public synthetic fixture; find endpoints
@@ -645,9 +650,14 @@ fn idle_polling_preserves_the_patchbay_draft_instructions() {
     let view = NativeWorkspace::new(s);
     view.poll();
     let all = descendants(view.widget());
-    let dropdowns: Vec<_> = all
+    let patch = all
         .iter()
-        .filter_map(|w| w.clone().downcast::<gtk::DropDown>().ok())
+        .filter_map(|w| w.clone().downcast::<gtk::Stack>().ok())
+        .find_map(|stack| stack.child_by_name("patchbay"))
+        .unwrap();
+    let dropdowns: Vec<_> = descendants(&patch)
+        .into_iter()
+        .filter_map(|w| w.downcast::<gtk::DropDown>().ok())
         .collect();
     for (d, port) in [(&dropdowns[0], 201), (&dropdowns[1], 301)] {
         let model = d.model().unwrap();

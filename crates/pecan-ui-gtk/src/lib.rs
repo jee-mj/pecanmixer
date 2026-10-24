@@ -2,7 +2,8 @@
 //!
 //! The explicit native entrypoint uses the single owner/shell. GraphPresentation
 //! remains observational; functional controls use that owner's exact graph and
-//! shared receipt/history boundary. Recording and bus editors remain unwired.
+//! shared receipt/history boundary. A separate owner adapter gates bus edits and
+//! recording behind exact local readback and an explicit recording directory.
 mod widgets;
 
 mod presentation;

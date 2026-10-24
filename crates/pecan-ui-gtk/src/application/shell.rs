@@ -47,16 +47,25 @@ impl std::fmt::Display for InstallFailure {
 }
 impl std::error::Error for InstallFailure {}
 #[derive(Clone)]
-enum OwnedCompletion {
+enum RawCompletion {
     Native(Shutdown),
     Fixture(Arc<Mutex<Option<ShutdownReport>>>),
 }
+#[derive(Clone)]
+struct OwnedCompletion {
+    raw: RawCompletion,
+    recording: Rc<super::BusOwner>,
+}
 impl Completion for OwnedCompletion {
     fn try_complete(&self) -> Option<ShutdownReport> {
-        match self {
-            Self::Native(handle) => handle.try_complete(),
-            Self::Fixture(report) => report.try_lock().ok().and_then(|r| r.clone()),
+        match &self.raw {
+            RawCompletion::Native(handle) => handle.try_complete(),
+            RawCompletion::Fixture(report) => report.try_lock().ok().and_then(|r| r.clone()),
         }
+    }
+    fn additional_errors(&self, joined: &ShutdownReport) -> Option<Vec<String>> {
+        self.recording
+            .finalization_errors(joined.worker_panicked || joined.writers_failed > 0)
     }
 }
 /// Install exactly once in the primary activation. Re-activation presents the
@@ -154,7 +163,7 @@ impl ApplicationShell {
             });
         }
         let session = owner.activate();
-        let workspace = NativeWorkspace::new(session.clone());
+        let workspace = NativeWorkspace::new_with_native(session.clone(), owner.native_handle());
         let (mailbox, wake) = ActionMailbox::new();
         let (policy, effects) = Lifetime::start(
             options.hidden,
@@ -303,6 +312,13 @@ impl ApplicationShell {
     }
     pub fn show_patchbay(&self) {
         self.workspace.show_patchbay();
+    }
+    pub fn bus_owner(&self) -> Rc<super::BusOwner> {
+        self.workspace.bus_owner()
+    }
+    #[cfg(test)]
+    pub(crate) fn attach_test_buses(&self, buses: Rc<super::BusOwner>) {
+        self.workspace.attach_test_buses(buses);
     }
     pub fn mailbox(&self) -> Arc<ActionMailbox> {
         self.mailbox.clone()
@@ -456,13 +472,17 @@ impl ApplicationShell {
                 Effect::DisableMutations => self.session.close_admission(),
                 Effect::RequestBackendShutdown { request } => {
                     let completion = if let Some(native) = self.owner.native_handle() {
-                        Ok(OwnedCompletion::Native(native.request_shutdown()))
+                        Ok(RawCompletion::Native(native.request_shutdown()))
                     } else {
                         self.owner
                             .fixture_driver()
                             .ok_or_else(|| "Backend owner unavailable.".to_owned())
-                            .and_then(|f| f.request_shutdown().map(OwnedCompletion::Fixture))
+                            .and_then(|f| f.request_shutdown().map(RawCompletion::Fixture))
                     };
+                    let completion = completion.map(|raw| OwnedCompletion {
+                        raw,
+                        recording: self.workspace.bus_owner(),
+                    });
                     let effects =
                         self.policy
                             .borrow_mut()
@@ -558,7 +578,7 @@ impl ApplicationShell {
         self.render_preferences();
         let phase = self.phase();
         let message=match &phase{
-            QuitPhase::Idle=>"Native candidate · recording disabled".to_owned(),
+            QuitPhase::Idle=>"Native candidate · recording requires explicit configuration/directory; active bus migration remains unavailable".to_owned(),
             QuitPhase::Waiting=>"Finalizing. Waiting for joined backend/settings completion; keep this window open.".into(),
             QuitPhase::Pending{backend,settings}=>format!("Finalization is still pending (backend={backend}, settings={settings}). Retry checks the retained work; it does not restart it."),
             QuitPhase::Blocked(error)=>format!("Finalization request blocked: {error}. Retry keeps other resource progress."),

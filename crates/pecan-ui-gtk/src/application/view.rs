@@ -26,6 +26,7 @@ pub struct NativeWorkspace {
     patchbay: RefCell<PatchbayOverview>,
     telemetry: RefCell<super::telemetry::Telemetry>,
     pages: gtk::Stack,
+    buses: RefCell<Rc<super::BusOwner>>,
     session: Session,
     history: gtk::Box,
     buttons: RefCell<Option<HistoryButtons>>,
@@ -37,7 +38,14 @@ pub struct NativeWorkspace {
 }
 impl NativeWorkspace {
     pub fn new(session: Session) -> Rc<Self> {
+        Self::new_with_native(session, None)
+    }
+    pub(crate) fn new_with_native(
+        session: Session,
+        native: Option<Rc<pecan_pipewire::graaf::Graaf>>,
+    ) -> Rc<Self> {
         let mixer = super::mixer::CoordinatedMixer::new(session.clone());
+        let buses = super::BusOwner::native(session.clone(), native);
         let patchbay = PatchbayOverview::new();
         let shared = session.clone();
         patchbay.bind_history_actions(move |origin, input| shared.patch(origin, input));
@@ -53,6 +61,7 @@ impl NativeWorkspace {
         let pages = gtk::Stack::new();
         pages.add_titled(mixer.widget(), Some("mixer"), "Mixer");
         pages.add_titled(patchbay.widget(), Some("patchbay"), "Patchbay");
+        pages.add_titled(buses.widget(), Some("buses"), "Buses and recording");
         pages.set_hexpand(true);
         pages.set_vexpand(true);
         let switcher = gtk::StackSwitcher::builder().stack(&pages).build();
@@ -68,6 +77,7 @@ impl NativeWorkspace {
             patchbay: RefCell::new(patchbay),
             telemetry: RefCell::default(),
             pages,
+            buses: RefCell::new(buses),
             session,
             history,
             buttons: RefCell::new(None),
@@ -106,6 +116,17 @@ impl NativeWorkspace {
     pub fn show_patchbay(&self) {
         self.pages.set_visible_child_name("patchbay");
     }
+    pub fn bus_owner(&self) -> Rc<super::BusOwner> {
+        self.buses.borrow().clone()
+    }
+    #[cfg(test)]
+    pub(crate) fn attach_test_buses(&self, buses: Rc<super::BusOwner>) {
+        assert!(self.session.same_session(&buses.session));
+        self.pages.remove(self.buses.borrow().widget());
+        self.pages
+            .add_titled(buses.widget(), Some("buses"), "Buses and recording");
+        *self.buses.borrow_mut() = buses;
+    }
     /// Drive from one main-context source. Receipts need polling even if there
     /// are no graph events. The lifetime adapter owns/removes that source; this
     /// view creates none, preventing per-activation consumer/timer duplication.
@@ -122,6 +143,7 @@ impl NativeWorkspace {
             self.mixer.widget().upcast_ref(),
             self.patchbay.borrow().widget().upcast_ref(),
         );
+        self.buses.borrow().poll();
     }
     fn history_button(
         &self,
