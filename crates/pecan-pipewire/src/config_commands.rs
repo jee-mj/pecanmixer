@@ -34,6 +34,7 @@ impl Commands {
             config: Some(work),
             start: None,
             arming: None,
+            migration: None,
         });
         Ok(receipt)
     }
@@ -150,6 +151,9 @@ impl Commands {
 
 impl State {
     fn config_admission(&self, expected: ConfigRevision) -> Result<(), ConfigError> {
+        if self.migration.is_some() {
+            return Err(ConfigError::Busy);
+        }
         if self.stopped {
             return Err(ConfigError::Stopped);
         }

@@ -32,7 +32,7 @@ impl Commands {
             return Err(RecordingError::Disconnected);
         }
         state.recording.reap();
-        if state.arming.is_some() {
+        if state.arming.is_some() || state.migration.is_some() {
             return Err(RecordingError::Busy);
         }
         if state.config.exhausted
@@ -180,6 +180,7 @@ impl Commands {
             config: None,
             start: None,
             arming: Some(receipt.clone()),
+            migration: None,
         });
         state.arming = Some(work);
         Ok(receipt)

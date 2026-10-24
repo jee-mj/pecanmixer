@@ -154,6 +154,18 @@ impl Graaf {
     pub fn config_snapshot(&self) -> Option<crate::bus_config::ConfigSnapshot> {
         self.opdrachten.config_snapshot()
     }
+    pub fn migrate_idle_bus(
+        &self,
+        intent: crate::bus_migration::LayoutIntent,
+    ) -> Result<crate::bus_migration::MigrationReceipt, crate::bus_migration::MigrationError> {
+        self.opdrachten.enqueue_migration(intent)
+    }
+    pub fn cancel_bus_migration(
+        &self,
+        receipt: &crate::bus_migration::MigrationReceipt,
+    ) -> Result<(), crate::bus_migration::MigrationError> {
+        self.opdrachten.cancel_migration_receipt(receipt)
+    }
 
     pub fn start_recording(
         &self,
@@ -1049,7 +1061,8 @@ fn sessie(
                     !opnemer.borrow().is_empty() || opdrachten.recording_live(),
                     false,
                 );
-                for error in opdrachten.drain_with_recording(
+                opdrachten.drive_migration_at(std::time::Instant::now());
+                for error in opdrachten.drain_with_migration(
                     |o| staat.borrow().geldige_objecten(o),
                     |o| staat.borrow().native_no_op(o),
                     |o| match o {
@@ -1139,6 +1152,19 @@ fn sessie(
                             !opnemer.borrow().is_empty(),
                             opname::tracked_writer,
                         );
+                    },
+                    |receipt| {
+                        opdrachten.apply_migration(
+                            &receipt,
+                            &mut IdleConfigTarget {
+                                bus: bus.as_ref().as_ref(),
+                                staat: &staat,
+                                opnemer: &opnemer,
+                                klok: &klok,
+                                transport: &transport,
+                                opdrachten: &opdrachten,
+                            },
+                        )
                     },
                 ) {
                     eprintln!("pecanmixer: opdracht geweigerd op worker: {error:?}");

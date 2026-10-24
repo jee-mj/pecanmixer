@@ -12,6 +12,8 @@ use pecan_core::graph::{Momentopname, Opdracht};
 mod arming;
 #[path = "config_commands.rs"]
 mod config;
+#[path = "migration_commands.rs"]
+mod migration;
 #[path = "native_commands.rs"]
 mod native;
 #[path = "recording_commands.rs"]
@@ -43,6 +45,7 @@ struct State {
     config: crate::bus_config::Registry,
     recording: crate::recording::Registry,
     arming: Option<crate::recording_arming::Work>,
+    migration: Option<crate::bus_migration::Work>,
 }
 
 struct QueuedCommand {
@@ -53,6 +56,7 @@ struct QueuedCommand {
     config: Option<crate::bus_config::Prepared>,
     start: Option<crate::recording::PreparedStart>,
     arming: Option<crate::recording_arming::ArmingReceipt>,
+    migration: Option<crate::bus_migration::Tag>,
 }
 
 impl Default for Commands {
@@ -75,6 +79,7 @@ impl Default for Commands {
             config: Default::default(),
             recording: Default::default(),
             arming: None,
+            migration: None,
         }))
     }
 }
@@ -107,6 +112,7 @@ impl Commands {
                 (!state.stopped).then_some(crate::recording::RecordingError::Disconnected);
             state.recording.stop_all(failure, true);
             state.cancel_arming(crate::recording::RecordingError::Disconnected);
+            state.cancel_migration(crate::bus_migration::MigrationError::Disconnected);
             state.pending.clear();
         }
         if !graph.value.verbonden {
@@ -153,6 +159,7 @@ impl Commands {
         state.fail_all_config(crate::bus_config::ConfigError::Stopped);
         state.recording.stop_all(None, true);
         state.cancel_arming(crate::recording::RecordingError::Stopped);
+        state.cancel_migration(crate::bus_migration::MigrationError::Stopped);
         state.pending.clear();
     }
 
@@ -202,13 +209,27 @@ impl Commands {
             self.reject_recording(work, crate::recording::RecordingError::Unavailable);
         })
     }
+    #[cfg(test)]
     pub(crate) fn drain_with_recording(
+        &self,
+        valid_objects: impl FnMut(&Opdracht) -> bool,
+        no_op: impl FnMut(&Opdracht) -> bool,
+        execute: impl FnMut(Opdracht) -> LocalExecution,
+        configure: impl FnMut(crate::bus_config::Prepared),
+        start: impl FnMut(crate::recording::PreparedStart),
+    ) -> Vec<DispatchError> {
+        self.drain_with_migration(valid_objects, no_op, execute, configure, start, |receipt| {
+            self.reject_migration_apply(&receipt)
+        })
+    }
+    pub(crate) fn drain_with_migration(
         &self,
         mut valid_objects: impl FnMut(&Opdracht) -> bool,
         mut no_op: impl FnMut(&Opdracht) -> bool,
         mut execute: impl FnMut(Opdracht) -> LocalExecution,
         mut configure: impl FnMut(crate::bus_config::Prepared),
         mut start: impl FnMut(crate::recording::PreparedStart),
+        mut migrate: impl FnMut(crate::bus_migration::MigrationReceipt),
     ) -> Vec<DispatchError> {
         let mut rejected = Vec::new();
         for _ in 0..PER_TICK {
@@ -221,7 +242,7 @@ impl Commands {
                     break;
                 };
                 let validation = validate_command(&queued.command, &state.graph);
-                let identity_ok = if queued.native.is_some() {
+                let identity_ok = if queued.native.is_some() || queued.migration.is_some() {
                     native::objects_match(&queued.command.command, &queued.objects, &state.objects)
                 } else {
                     queued.objects.iter().all(|(id, expected)| {
@@ -229,7 +250,9 @@ impl Commands {
                     })
                 };
                 if validation.is_err() || !identity_ok {
-                    if queued.arming.is_some() {
+                    if queued.migration.is_some() {
+                        state.cancel_migration(crate::bus_migration::MigrationError::InvalidObject);
+                    } else if queued.arming.is_some() {
                         state.cancel_arming(crate::recording::RecordingError::InvalidOrigin);
                     } else if let Some(mut work) = queued.start {
                         work.request
@@ -251,6 +274,24 @@ impl Commands {
                     }
                     continue;
                 }
+                if queued.migration.is_none() && state.migration_blocks(&queued.command.command) {
+                    if let Some(tag) = queued.native {
+                        state.fail_native(
+                            tag.id,
+                            NativeFailure::LocalUnavailable(
+                                "bus migration owns affected ports".into(),
+                            ),
+                        );
+                    } else if let Some(work) = queued.config {
+                        state.reject_config(work, crate::bus_config::ConfigError::Busy);
+                    } else {
+                        rejected.push(DispatchError::InvalidObject);
+                    }
+                    continue;
+                }
+                if queued.migration.is_none() && matches!(queued.command.command, Opdracht::Stop) {
+                    state.cancel_migration(crate::bus_migration::MigrationError::Cancelled);
+                }
                 if let Some(tag) = queued.native {
                     if !state.claim_native(tag, std::time::Instant::now()) {
                         continue;
@@ -258,6 +299,23 @@ impl Commands {
                 }
                 queued
             };
+            if let Some(tag) = queued.migration {
+                use crate::bus_migration::{Claim, Kind};
+                match self.claim_migration(&tag, &queued.command.command, std::time::Instant::now())
+                {
+                    Claim::Skip => {}
+                    Claim::Control => {
+                        if matches!(tag.kind, Kind::Apply) {
+                            migrate(tag.receipt)
+                        }
+                    }
+                    Claim::Execute(command) => {
+                        let result = execute(command);
+                        self.migration_rpc_finished(&tag, result);
+                    }
+                }
+                continue;
+            }
             if let Some(receipt) = queued.arming {
                 self.claim_arming(&receipt);
                 continue;
@@ -326,6 +384,7 @@ impl State {
             config: None,
             start: None,
             arming: None,
+            migration: None,
         });
         Ok(())
     }

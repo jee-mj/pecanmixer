@@ -64,7 +64,7 @@ impl Commands {
             return Err(RecordingError::Disconnected);
         }
         state.recording.reap();
-        if state.arming.is_some() {
+        if state.arming.is_some() || state.migration.is_some() {
             return Err(RecordingError::Busy);
         }
         if state.recording.exhausted
@@ -146,6 +146,7 @@ impl Commands {
                 intent.root.as_path().to_path_buf(),
             )),
             arming: None,
+            migration: None,
         });
         state.recording.active.push(request.clone());
         state.recording.refresh_revision();
@@ -159,6 +160,7 @@ impl Commands {
         if target == RecordingStop::All {
             let result = state.recording.stop_all(None, true);
             state.cancel_arming(RecordingError::Cancelled);
+            state.cancel_migration(crate::bus_migration::MigrationError::Cancelled);
             // A stopped queued start must not retain ordinary FIFO capacity.
             state
                 .pending

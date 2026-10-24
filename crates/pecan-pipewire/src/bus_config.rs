@@ -144,53 +144,58 @@ pub(crate) struct Prepared {
     receipt: ConfigReceipt,
     completed: bool,
 }
+pub(crate) fn validate_configuration(
+    config: &IdleBusConfig,
+) -> Result<(usize, Vec<f32>, Opties), ConfigError> {
+    if config.buses.widths.len() > 64
+        || config.buses.states.len() > 128
+        || config
+            .buses
+            .states
+            .iter()
+            .any(|(key, state)| key.len() > 256 || key.contains('\0') || !state.db.is_finite())
+    {
+        return Err(ConfigError::InvalidInput);
+    }
+    let defs = config
+        .buses
+        .definitions()
+        .map_err(|_| ConfigError::InvalidInput)?;
+    let Opdracht::ZetBus { kanalen, gain } = config
+        .buses
+        .backend_config()
+        .map_err(|_| ConfigError::InvalidInput)?
+    else {
+        unreachable!()
+    };
+    if kanalen > 64
+        || gain
+            .iter()
+            .any(|g| !g.is_finite() || !(0.0..=4.0).contains(g))
+    {
+        return Err(ConfigError::InvalidInput);
+    }
+    if config.buses.midi || config.clock.is_some() || config.start_stop {
+        return Err(ConfigError::UnsupportedMidi);
+    }
+    let options = Opties {
+        bussen: defs
+            .into_iter()
+            .filter(|d| config.buses.state(&d.key).armed)
+            .map(|d| BusOpname {
+                naam: d.file,
+                kanalen: d.channels,
+            })
+            .collect(),
+        midi: false,
+        klok: None,
+        start_stop: false,
+    };
+    Ok((kanalen, gain, options))
+}
 impl Prepared {
     pub(crate) fn new(intent: IdleConfigIntent) -> Result<(Self, ConfigReceipt), ConfigError> {
-        let config = &intent.configuration;
-        if config.buses.widths.len() > 64
-            || config.buses.states.len() > 128
-            || config
-                .buses
-                .states
-                .iter()
-                .any(|(key, state)| key.len() > 256 || key.contains('\0') || !state.db.is_finite())
-        {
-            return Err(ConfigError::InvalidInput);
-        }
-        let defs = config
-            .buses
-            .definitions()
-            .map_err(|_| ConfigError::InvalidInput)?;
-        let Opdracht::ZetBus { kanalen, gain } = config
-            .buses
-            .backend_config()
-            .map_err(|_| ConfigError::InvalidInput)?
-        else {
-            unreachable!()
-        };
-        if kanalen > 64
-            || gain
-                .iter()
-                .any(|g| !g.is_finite() || !(0.0..=4.0).contains(g))
-        {
-            return Err(ConfigError::InvalidInput);
-        }
-        if config.buses.midi || config.clock.is_some() || config.start_stop {
-            return Err(ConfigError::UnsupportedMidi);
-        }
-        let options = Opties {
-            bussen: defs
-                .into_iter()
-                .filter(|d| config.buses.state(&d.key).armed)
-                .map(|d| BusOpname {
-                    naam: d.file,
-                    kanalen: d.channels,
-                })
-                .collect(),
-            midi: false,
-            klok: None,
-            start_stop: false,
-        };
+        let (kanalen, gain, options) = validate_configuration(&intent.configuration)?;
         // Retain bounded owned metadata, not the caller's spare Vec capacity.
         let intent = intent.clone();
         let receipt = ConfigReceipt(Arc::new(Mutex::new(ConfigReport {
