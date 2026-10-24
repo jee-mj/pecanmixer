@@ -27,3 +27,5 @@ pub mod meters;
 
 /// Explicit application owner/coordinator; not adopted by main startup.
 pub mod application;
+/// Isolated native shell policy; not wired to application startup.
+pub mod lifetime;
