@@ -13,6 +13,7 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 #[derive(Clone, Debug, PartialEq)]
 pub enum Status {
     Disconnected,
+    Closing,
     IdentityUnavailable,
     Ready,
     Queued,
@@ -25,6 +26,7 @@ pub enum Status {
 impl Status {
     pub fn message(&self) -> String {
         match self {
+            Self::Closing => "Finalizing · new commands disabled".into(),
             Self::Disconnected => "Disconnected · commands unavailable".into(),
             Self::IdentityUnavailable => "Graph identity unavailable · commands paused".into(),
             Self::Ready => "Ready".into(),
@@ -63,6 +65,7 @@ struct State {
     pending: Option<Pending>,
     status: Status,
     notices: Vec<Notice>,
+    admission_closed: bool,
 }
 struct Inner {
     inbox: Arc<LatestInbox>,
@@ -86,6 +89,7 @@ impl Session {
                 pending: None,
                 status: Status::Disconnected,
                 notices: vec![],
+                admission_closed: false,
             }),
         }))
     }
@@ -96,8 +100,22 @@ impl Session {
         self.0.state.borrow().graph.clone()
     }
     pub fn status(&self) -> Status {
-        self.0.state.borrow().status.clone()
+        let state = self.0.state.borrow();
+        if state.admission_closed {
+            Status::Closing
+        } else {
+            state.status.clone()
+        }
     }
+    /// Irreversible for this owner. Existing receipts continue polling; stopping
+    /// new submissions is not cancellation, rollback or shutdown completion.
+    pub fn close_admission(&self) {
+        self.0.state.borrow_mut().admission_closed = true;
+    }
+    pub fn admission_closed(&self) -> bool {
+        self.0.state.borrow().admission_closed
+    }
+
     pub fn busy(&self) -> bool {
         self.0.state.borrow().pending.is_some()
     }
@@ -111,7 +129,10 @@ impl Session {
     }
     pub fn enabled(&self) -> bool {
         let s = self.0.state.borrow();
-        s.witnessed && s.pending.is_none() && s.graph.as_ref().is_some_and(|g| g.value.verbonden)
+        !s.admission_closed
+            && s.witnessed
+            && s.pending.is_none()
+            && s.graph.as_ref().is_some_and(|g| g.value.verbonden)
     }
     pub fn adapter(&self) -> SessionAdapter {
         SessionAdapter(self.clone())
@@ -149,6 +170,9 @@ impl Session {
     }
     fn submit(&self, origin: &Graph, input: Input) -> Result<Option<Request>, String> {
         let mut s = self.0.state.borrow_mut();
+        if s.admission_closed {
+            return Err("Application finalization has started; new commands are disabled.".into());
+        }
         if s.pending.is_some() {
             return Err("Another change is pending.".into());
         }

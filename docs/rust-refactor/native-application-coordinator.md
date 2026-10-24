@@ -124,3 +124,5 @@ crash/power-loss durability, packaging or release acceptance. Full fader gesture
 coalescing, partial-strip mute, independent output/Rec selections, recording/bus
 and settings/tray/autostart parity remain unfinished. No merge, release, version
 bump or JavaScript removal is included.
+
+The [finalization-aware shell follow-up](./native-finalization-shell.md) preserves this original coordinator review baseline and separately identifies its lifetime/admission/drain delta. Its new combined application logic requires independent review before startup adoption.

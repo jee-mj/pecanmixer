@@ -11,6 +11,7 @@ use pecan_core::{
         MAX_NATIVE_COMMANDS, MAX_NATIVE_IN_FLIGHT, NATIVE_SOURCE_HISTORY,
     },
 };
+use pecan_pipewire::shutdown::ShutdownReport;
 use std::{
     cell::RefCell,
     collections::{BTreeMap, VecDeque},
@@ -28,6 +29,9 @@ struct Fixture {
     sequencer: RefCell<EventSequencer>,
     frames: RefCell<VecDeque<HistoryGraph>>,
     requests: RefCell<VecDeque<FixtureRequest>>,
+    shutdown: Arc<std::sync::Mutex<Option<ShutdownReport>>>,
+    shutdown_requests: std::cell::Cell<usize>,
+    shutdown_failure: RefCell<Option<String>>,
 }
 #[derive(Clone)]
 pub struct FixtureDriver(Rc<Fixture>);
@@ -39,7 +43,31 @@ impl FixtureDriver {
             sequencer: RefCell::default(),
             frames: RefCell::default(),
             requests: RefCell::default(),
+            shutdown: Arc::default(),
+            shutdown_requests: std::cell::Cell::new(0),
+            shutdown_failure: RefCell::new(None),
         }))
+    }
+    /// Synthetic finalization only; no audio worker or file is involved.
+    pub fn complete_shutdown(&self, report: ShutdownReport) {
+        *self.0.shutdown.lock().unwrap() = Some(report);
+    }
+    pub fn shutdown_requests(&self) -> usize {
+        self.0.shutdown_requests.get()
+    }
+    pub fn fail_next_shutdown(&self, message: impl Into<String>) {
+        *self.0.shutdown_failure.borrow_mut() = Some(message.into());
+    }
+    pub(super) fn request_shutdown(
+        &self,
+    ) -> Result<Arc<std::sync::Mutex<Option<ShutdownReport>>>, String> {
+        self.0
+            .shutdown_requests
+            .set(self.0.shutdown_requests.get() + 1);
+        if let Some(error) = self.0.shutdown_failure.borrow_mut().take() {
+            return Err(error);
+        }
+        Ok(self.0.shutdown.clone())
     }
     pub(super) fn endpoint(&self) -> Rc<dyn Endpoint> {
         self.0.clone()

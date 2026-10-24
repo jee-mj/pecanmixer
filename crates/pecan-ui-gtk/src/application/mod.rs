@@ -4,11 +4,15 @@
 //! owner through reviewed asynchronous shutdown. `fixture()` has a separate
 //! synthetic endpoint: it never constructs a Graaf or connects to PipeWire.
 mod coordinator;
+mod drain;
 mod fixture;
+mod shell;
 mod view;
 
 pub use coordinator::{Request, Session, SessionAdapter, Status};
+pub use drain::SettingsSummary;
 pub use fixture::{FixtureDriver, FixtureRequest};
+pub use shell::{ApplicationShell, InstallFailure, ShellOptions};
 pub use view::NativeWorkspace;
 
 use pecan_core::{
@@ -51,18 +55,21 @@ struct Active {
 pub struct ApplicationOwner {
     mode: Mode,
     active: RefCell<Option<Active>>,
+    shell: RefCell<std::rc::Weak<ApplicationShell>>,
 }
 impl ApplicationOwner {
     pub fn native() -> Self {
         Self {
             mode: Mode::Native,
             active: RefCell::new(None),
+            shell: RefCell::new(std::rc::Weak::new()),
         }
     }
     pub fn fixture() -> Self {
         Self {
             mode: Mode::Fixture,
             active: RefCell::new(None),
+            shell: RefCell::new(std::rc::Weak::new()),
         }
     }
     pub fn activate(&self) -> Session {
