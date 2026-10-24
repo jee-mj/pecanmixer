@@ -8,6 +8,11 @@ use pecan_core::backend::{
 };
 use pecan_core::graph::{Momentopname, Opdracht};
 
+#[path = "native_commands.rs"]
+mod native;
+pub(crate) use native::LocalExecution;
+use pecan_core::native_command::NativeFailure;
+
 /// Bound both queued work and the number of commands dispatched per graph tick.
 pub(crate) const CAPACITY: usize = 256;
 /// Keep the final FIFO slot available for stop-all. It is appended in order;
@@ -25,12 +30,16 @@ struct State {
     objects: BTreeMap<u32, u64>,
     published_objects: BTreeMap<u32, u64>,
     stopped: bool,
+    origins: VecDeque<native::Origin>,
+    native: VecDeque<native::Work>,
+    next_native_id: u64,
 }
 
 struct QueuedCommand {
     command: BackendCommand,
     /// Captured under the admission lock; never rebound during execution.
     objects: Vec<(u32, Option<u64>)>,
+    native: Option<native::Tag>,
 }
 
 impl Default for Commands {
@@ -46,6 +55,9 @@ impl Default for Commands {
             objects: BTreeMap::new(),
             published_objects: BTreeMap::new(),
             stopped: false,
+            origins: VecDeque::new(),
+            native: VecDeque::new(),
+            next_native_id: 0,
         }))
     }
 }
@@ -65,6 +77,7 @@ impl Commands {
         if graph.stamp.epoch != state.graph.stamp.epoch {
             // Invalidate admission state and release old capacity under the
             // same lock. No producer can enqueue against a half-transition.
+            state.fail_all_native(NativeFailure::Disconnected);
             state.pending.clear();
         }
         if !graph.value.verbonden {
@@ -72,6 +85,8 @@ impl Commands {
         }
         state.published_objects = state.objects.clone();
         state.graph = graph.clone();
+        state.remember_origin();
+        state.observe_native();
         graph
     }
 
@@ -103,6 +118,7 @@ impl Commands {
     pub(crate) fn stop(&self) {
         let mut state = self.0.lock().unwrap();
         state.stopped = true;
+        state.fail_all_native(NativeFailure::Stopped);
         state.pending.clear();
     }
 
@@ -112,35 +128,86 @@ impl Commands {
     /// validation/execution. Producers never execute commands themselves.
     /// Cancellation discards queued work. One command already dequeued may
     /// still execute after cancellation; execution is not rolled back.
+    #[cfg(test)]
     pub(crate) fn drain(
         &self,
-        mut valid_objects: impl FnMut(&Opdracht) -> bool,
+        valid_objects: impl FnMut(&Opdracht) -> bool,
         mut execute: impl FnMut(Opdracht),
+    ) -> Vec<DispatchError> {
+        self.drain_with(
+            valid_objects,
+            |_| false,
+            |command| {
+                execute(command);
+                LocalExecution::Unreported
+            },
+        )
+    }
+
+    pub(crate) fn drain_with(
+        &self,
+        mut valid_objects: impl FnMut(&Opdracht) -> bool,
+        mut no_op: impl FnMut(&Opdracht) -> bool,
+        mut execute: impl FnMut(Opdracht) -> LocalExecution,
     ) -> Vec<DispatchError> {
         let mut rejected = Vec::new();
         for _ in 0..PER_TICK {
-            let next = {
+            let queued = {
                 let mut state = self.0.lock().unwrap();
                 if state.stopped {
                     break;
                 }
-                state.pending.pop_front().map(|queued| {
-                    validate_command(&queued.command, &state.graph)?;
-                    if queued.objects.iter().any(|(id, expected)| {
-                        expected.is_none() || state.objects.get(id) != expected.as_ref()
-                    }) {
-                        return Err(DispatchError::InvalidObject);
+                let Some(queued) = state.pending.pop_front() else {
+                    break;
+                };
+                let validation = validate_command(&queued.command, &state.graph);
+                let identity_ok = if queued.native.is_some() {
+                    native::objects_match(&queued.command.command, &queued.objects, &state.objects)
+                } else {
+                    queued.objects.iter().all(|(id, expected)| {
+                        expected.is_some() && state.objects.get(id) == expected.as_ref()
+                    })
+                };
+                if validation.is_err() || !identity_ok {
+                    if let Some(tag) = queued.native {
+                        state.fail_native(
+                            tag.id,
+                            if validation.is_err() {
+                                NativeFailure::Disconnected
+                            } else {
+                                NativeFailure::InvalidObject
+                            },
+                        );
+                    } else {
+                        rejected.push(validation.err().unwrap_or(DispatchError::InvalidObject));
                     }
-                    Ok(queued.command.command)
-                })
+                    continue;
+                }
+                if let Some(tag) = queued.native {
+                    if !state.claim_native(tag, std::time::Instant::now()) {
+                        continue;
+                    }
+                }
+                queued
             };
-            match next {
-                None => break,
-                Some(Err(error)) => rejected.push(error),
-                Some(Ok(command)) if !valid_objects(&command) => {
+            let confirmed_no_op = queued.native.is_some() && no_op(&queued.command.command);
+            let already_disconnected_link =
+                confirmed_no_op && matches!(&queued.command.command, Opdracht::Ontkoppel { .. });
+            if !already_disconnected_link && !valid_objects(&queued.command.command) {
+                if let Some(tag) = queued.native {
+                    self.native_known_rejection(tag, NativeFailure::InvalidObject);
+                } else {
                     rejected.push(DispatchError::InvalidObject);
                 }
-                Some(Ok(command)) => execute(command),
+                continue;
+            }
+            if confirmed_no_op {
+                self.native_finished(queued.native.unwrap(), LocalExecution::Unreported, true);
+                continue;
+            }
+            let execution = execute(queued.command.command);
+            if let Some(tag) = queued.native {
+                self.native_finished(tag, execution, false);
             }
         }
         rejected
@@ -172,7 +239,11 @@ impl State {
             .into_iter()
             .map(|id| (id, self.published_objects.get(&id).copied()))
             .collect();
-        self.pending.push_back(QueuedCommand { command, objects });
+        self.pending.push_back(QueuedCommand {
+            command,
+            objects,
+            native: None,
+        });
         Ok(())
     }
 }
@@ -219,3 +290,7 @@ fn referenced_objects(command: &Opdracht, graph: &Momentopname) -> BTreeSet<u32>
     }
     ids
 }
+
+#[cfg(test)]
+#[path = "native_command_tests.rs"]
+mod native_command_tests;
