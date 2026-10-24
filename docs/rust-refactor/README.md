@@ -18,7 +18,7 @@ The next [Stage 2 audio domain batch](./stage2-domain.md) adds pure audio projec
 
 The [first combined native batch](./native-batch-1.md) tracks integration, review findings and the remaining Stage 2–6 sequence.
 
-The [second native batch](./native-batch-2.md) adds the read-only patchbay and pure settings contract, with runtime persistence and lifecycle effects still separate.
+The [second native batch](./native-batch-2.md) adds the read-only patchbay and pure settings contract. The [third batch](./native-batch-3.md) adds backend recorder shutdown completion and the legacy tray quit adapter; native functional controls and settings runtime effects remain separate.
 
 ## Revision and provenance
 
