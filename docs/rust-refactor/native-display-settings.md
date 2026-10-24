@@ -5,8 +5,8 @@ This delta was independently reviewed at
 input-lifetime defect was separately corrected and reviewed at
 `7a12de4d755f9db667060f9c10d8533707489a97`. The
 [combined UI source candidate](./native-ui-source-batch.md) reconciles both without
-changing main startup or enabling a production owner. Its final integration gate
-remains separate from the constituent source reviews.
+changing main startup or enabling a production owner. Its constructor reconciliation and stronger input tests are now separately
+cleared; production startup/adoption remains a separate gate.
 
 ## Presentation contract
 

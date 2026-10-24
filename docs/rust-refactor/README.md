@@ -36,4 +36,4 @@ That recommendation is an architectural judgment, not a benchmark result. Static
 
 During the original research, no dependency installation, build, test suite, GUI, audio device, live PipeWire/WirePlumber restart, accessibility session, packaging run, binary-size measurement, latency measurement, CPU/memory benchmark, or feature-parity exercise was performed. The later implementation checks are listed separately in [native-slice.md](./native-slice.md). Runtime behavior, performance, distro availability, desktop integration, accessibility, packaging, and final license closure remain implementation-time verification work.
 
-The [combined native UI source candidate](./native-ui-source-batch.md) reconciles reviewed mixer gestures, display preferences/persistence and meter widgets; production startup and live controls/capture remain disabled pending their distinct gates.
+The [combined native UI source batch](./native-ui-source-batch.md) reconciles reviewed mixer gestures, display preferences/persistence and meter widgets; production startup and live controls/capture remain disabled pending their distinct gates.

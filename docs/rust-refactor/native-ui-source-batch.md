@@ -1,6 +1,6 @@
-# Combined native UI source candidate
+# Combined native UI source batch (draft)
 
-This candidate follows published backend head
+This reviewed source batch follows backend head
 `82d2f7d2546607cbbb44c07947218b6065100f0d`. It combines independently reviewed mixer
 control/gesture source, display preferences/serialized settings persistence and
 isolated meter widgets. **Main startup remains unchanged and read-only.** This
@@ -30,9 +30,14 @@ retains all modules. Meter, display, persistence and origin/keyboard source file
 otherwise match their reviewed candidates exactly. No backend/core/legacy or
 main-startup implementation changes are included.
 
-Final PR2 publication is gated on review of this constructor reconciliation and
-inclusion of the independently authored stronger held-key/off-widget release
-regressions. Passing the existing suites alone does not substitute for that gate.
+Independent review cleared the constructor reconciliation at
+`856ba2b7fffdfdc7540f16cb10bd78def6b2cb4b`, including hide/show and pending-input
+probes. The stronger regression delta
+`cd93e2ee53778620ecc71974736c856171f64341` is included: releases on an unrelated
+entry before/after acknowledgement cannot strand a fresh input, while held repeat
+remains cancelled. All five opt-in XTest cases pass in the combined tree.
+Constituent review, reconciliation review and final synthetic checks clear this
+source publication gate; they do not clear live application/desktop acceptance.
 
 ## Integration contract and remaining functional gates
 
@@ -51,8 +56,8 @@ Meter integration must feed graph before peaks; match exact epoch/revision; keep
 equal-stamp delivery order and wrapper lifetimes; use the domain's channel indices;
 explicitly rebind replacement sources; call `clear_peaks` when capture is absent;
 and deactivate off-screen widgets. The existing backend capture-retention identity
-defect is a separate pending correction. **Do not enable live capture based only
-on this widget-source review.** No causal server acknowledgement or performance
+correction is independently reviewed but remains outside this batch. **Do not
+enable live capture based only on this widget-source review.** No causal server acknowledgement or performance
 acceptance is inferred from synthetic meter frames.
 
 The [parity matrix](./native-parity-status.md) remains authoritative for unfinished
@@ -62,11 +67,12 @@ addition, version bump or JS removal is included.
 
 ## Checks and evidence boundary
 
-Pre-publication combined checks pass: 42 core + 53 backend + 10 legacy tests,
-59 GTK-package tests in each default/accessibility-test mode and 62 with XTest,
+Final combined checks pass: 42 core + 53 backend + 10 legacy tests,
+59 GTK-package tests in each default/accessibility-test mode and 64 with XTest,
 native GTK build and all five example checks. GTK runs use Xvfb/session bus with
 fatal criticals. Reviewed-source identity, scope/privacy and whitespace checks
-pass. These results do not replace the outstanding publication gate. Checks use
+pass. Native dependency/linked-library inspection finds no Tauri/Wry/WebKit/
+JavaScriptCore path. Tests run without Node/npm on PATH. Checks use
 only hand-authored synthetic graphs/settings and temporary files. No actual audio
 device names/IDs/topology, audio capture, user profile or private runtime logs are
 used. Real audio/hardware/restart, physical desktop/Wayland/AT-SPI/Orca, cross-app

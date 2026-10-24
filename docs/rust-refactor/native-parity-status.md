@@ -37,6 +37,6 @@ this public matrix or its fixtures. Real audio correctness, live restart behavio
 real-time performance, memory/CPU measurements and physical desktop acceptance
 remain distinct, unperformed gates.
 
-The [display settings candidate](./native-display-settings.md) preserves graph/origin state and applies no audio settings. Its original base focus defect was separately corrected; the combined source integration gate remains required before live controls.
+The [display settings candidate](./native-display-settings.md) preserves graph/origin state and applies no audio settings. Its original base focus defect was separately corrected; the combined source reconciliation is cleared while production ownership, history and live-control gates remain.
 
-The [combined native UI source batch](./native-ui-source-batch.md) records constructor reconciliation, the remaining publication gate and the separate pending backend capture-identity correction.
+The [combined native UI source batch](./native-ui-source-batch.md) records constructor reconciliation, the cleared source publication gate and the separately reviewed, unintegrated backend capture-identity correction.

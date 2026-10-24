@@ -92,11 +92,12 @@ No audio server, device, user profile or physical desktop was exercised. These
 window-contained synthetic keyboard checks do not establish physical input,
 Wayland, cross-application focus, assistive-technology or performance acceptance.
 
-The display-settings descendant `4e3115544a62b8b3756d83f9edcb421983242b10` remains
-immutable and has not received this correction. After independent clearance,
-cherry-pick the correction onto a descendant and push normally. Preserve both
-`PreferenceLayout` and the shared keyboard release observer if their constructor
-edits overlap; do not rebase/force-push either published review candidate.
+The original display-settings candidate `4e3115544a62b8b3756d83f9edcb421983242b10`
+remains immutable. The [combined source batch](./native-ui-source-batch.md) now
+reconciles its `PreferenceLayout` with the corrected shared keyboard release
+observer and passes the independently authored stronger off-widget release tests.
+The reconciliation was independently cleared; no published candidate was rebased
+or force-pushed. Production startup and history wiring remain separate gates.
 
 ## Unfinished parity and review gates
 
