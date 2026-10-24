@@ -5,6 +5,7 @@ use gtk::{glib, prelude::*};
 use pecan_core::{
     backend::EventSequencer, graph::Momentopname, inbox::LatestInbox, overview::OverviewState,
 };
+use pecan_ui_gtk::MixerOverview;
 
 #[derive(Default)]
 struct Options {
@@ -74,38 +75,13 @@ fn run() -> Result<glib::ExitCode, Box<dyn std::error::Error>> {
             window.present();
             return;
         }
-        let status = gtk::Label::builder()
-            .label("Disconnected · waiting for PipeWire")
-            .xalign(0.0)
-            .selectable(true)
-            .build();
-        let notices = gtk::Label::builder().xalign(0.0).wrap(true).build();
-        let rows = gtk::Box::new(gtk::Orientation::Vertical, 8);
-        let scroll = gtk::ScrolledWindow::builder()
-            .hexpand(true)
-            .vexpand(true)
-            .child(&rows)
-            .build();
-        let content = gtk::Box::new(gtk::Orientation::Vertical, 12);
-        content.set_margin_top(16);
-        content.set_margin_bottom(16);
-        content.set_margin_start(16);
-        content.set_margin_end(16);
-        content.append(
-            &gtk::Label::builder()
-                .label("Pecan Mixer · read-only GTK preview")
-                .xalign(0.0)
-                .build(),
-        );
-        content.append(&status);
-        content.append(&notices);
-        content.append(&scroll);
+        let view = Rc::new(RefCell::new(MixerOverview::new()));
         let window = gtk::ApplicationWindow::builder()
             .application(app)
             .title("Pecan Mixer — GTK preview")
             .default_width(900)
             .default_height(600)
-            .child(&content)
+            .child(view.borrow().widget())
             .build();
         let (inbox, wake) = LatestInbox::new(16);
         let observer = Rc::new(RefCell::new(None));
@@ -114,7 +90,9 @@ fn run() -> Result<glib::ExitCode, Box<dyn std::error::Error>> {
         } else {
             match pecan_pipewire::graaf::observe(inbox.clone()) {
                 Ok(handle) => *observer.borrow_mut() = Some(handle),
-                Err(error) => notices.set_text(&format!("Could not start observer: {error}")),
+                Err(error) => view
+                    .borrow()
+                    .show_message(&format!("Could not start observer: {error}")),
             }
         }
         let app_weak = app.downgrade();
@@ -123,65 +101,17 @@ fn run() -> Result<glib::ExitCode, Box<dyn std::error::Error>> {
             let mut first = true;
             while wake.recv().await.is_ok() {
                 let batch = inbox.drain();
-                if !batch.notices.is_empty() {
-                    notices.set_text(&format!("{:?}", batch.notices));
-                }
+                view.borrow().show_notices(&batch.notices);
                 if state.apply(batch) || first {
                     first = false;
-                    let view = state.overview();
-                    let rate = view
-                        .rate
-                        .map_or("unknown".into(), |rate| format!("{rate} Hz"));
-                    let quantum = view
-                        .quantum
-                        .map_or("unknown".into(), |quantum| quantum.to_string());
-                    status.set_text(&format!(
-                        "{} · rate {rate} · quantum {quantum} · {} nodes",
-                        if view.connected {
-                            "Connected"
-                        } else {
-                            "Disconnected"
-                        },
-                        view.nodes.len()
-                    ));
-                    while let Some(child) = rows.first_child() {
-                        rows.remove(&child);
-                    }
-                    for node in &view.nodes {
-                        let node_label = gtk::Label::builder()
-                            .label(format!(
-                                "{} [{}] · {}",
-                                node.label,
-                                node.id,
-                                node.class.as_deref().unwrap_or("unknown class")
-                            ))
-                            .xalign(0.0)
-                            .selectable(true)
-                            .wrap(true)
-                            .build();
-                        rows.append(&node_label);
-                        for port in &node.ports {
-                            let label = gtk::Label::builder()
-                                .label(format!(
-                                    "    {} {} [{}] · {:?}",
-                                    if port.input { "IN" } else { "OUT" },
-                                    port.label,
-                                    port.id,
-                                    port.kind
-                                ))
-                                .xalign(0.0)
-                                .selectable(true)
-                                .wrap(true)
-                                .build();
-                            rows.append(&label);
-                        }
-                    }
+                    let overview = state.overview();
+                    view.borrow_mut().update(&overview);
                     if options.smoke {
                         println!(
                             "GTK fixture widgets populated: connected={}, nodes={}, ports={}",
-                            view.connected,
-                            view.nodes.len(),
-                            view.nodes.iter().map(|n| n.ports.len()).sum::<usize>()
+                            overview.connected,
+                            overview.nodes.len(),
+                            overview.nodes.iter().map(|n| n.ports.len()).sum::<usize>()
                         );
                         if let Some(app) = app_weak.upgrade() {
                             app.quit();

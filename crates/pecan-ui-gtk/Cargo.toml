@@ -10,3 +10,8 @@ pecan-core = { path = "../pecan-core" }
 pecan-pipewire = { path = "../pecan-pipewire" }
 gtk = { package = "gtk4", version = "0.11", default-features = false }
 serde_json.workspace = true
+
+[features]
+# Only the optional accessibility assertions need GTK >= 4.10. The preview's
+# default build continues to use the base GTK 4 API.
+a11y-tests = ["gtk/v4_10"]
