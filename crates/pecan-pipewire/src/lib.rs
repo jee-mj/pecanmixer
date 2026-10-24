@@ -3,6 +3,7 @@
 mod commands;
 pub mod graaf;
 pub mod meter;
+mod meter_captures;
 pub mod midimeter;
 pub mod opname;
 pub mod shutdown;

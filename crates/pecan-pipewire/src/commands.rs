@@ -63,6 +63,12 @@ impl Default for Commands {
 }
 
 impl Commands {
+    /// Read-only registry metadata for worker-owned capture reconciliation.
+    /// Called on structural graph updates, never from an audio process callback.
+    pub(crate) fn registry_generations(&self) -> BTreeMap<u32, u64> {
+        self.0.lock().unwrap().objects.clone()
+    }
+
     pub(crate) fn current(&self) -> Stamped<Arc<Momentopname>> {
         self.0.lock().unwrap().graph.clone()
     }

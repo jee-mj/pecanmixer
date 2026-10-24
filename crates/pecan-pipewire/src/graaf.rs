@@ -38,6 +38,7 @@ use pw::types::ObjectType;
 use crate::commands::Commands;
 use crate::commands::LocalExecution;
 use crate::meter::{self, Meter};
+use crate::meter_captures::{self, Capture, Identity as CaptureIdentity};
 use crate::midimeter::{Activiteit, MidiMeter};
 use crate::opname::{self, Actief, Bericht, Bus, Klok, MidiBestand, Opnemer, Spoor};
 use crate::shutdown::Shutdown;
@@ -582,8 +583,9 @@ impl Staat {
         self.vuil = true;
     }
 
-    /// Welke nodes een meter horen te hebben: id → (serial, is sink, kanalen).
-    fn meterbaar(&self) -> BTreeMap<u32, (u64, bool, Vec<String>)> {
+    /// Worker-owned capture identity, including lifecycle changes hidden by
+    /// coalesced graph publication. Missing registry identity fails closed.
+    fn meterbaar(&self, generations: &BTreeMap<u32, u64>) -> BTreeMap<u32, CaptureIdentity> {
         let mut uit = BTreeMap::new();
         for k in self.knopen.values() {
             let klasse = k.klasse.as_deref().unwrap_or_default();
@@ -605,7 +607,21 @@ impl Staat {
             ps.sort_by_key(|p| (p.volgnummer.unwrap_or(p.id), p.id));
             let kanalen: Option<Vec<String>> = ps.iter().map(|p| p.kanaal.clone()).collect();
             if let Some(kanalen) = kanalen.filter(|k| !k.is_empty()) {
-                uit.insert(k.id, (serial, sink, kanalen));
+                let objects = std::iter::once(k.id)
+                    .chain(ps.iter().map(|p| p.id))
+                    .map(|id| Some((id, *generations.get(&id)?)))
+                    .collect::<Option<Vec<_>>>();
+                if let Some(objects) = objects {
+                    uit.insert(
+                        k.id,
+                        CaptureIdentity {
+                            serial,
+                            sink,
+                            channels: kanalen,
+                            objects,
+                        },
+                    );
+                }
             }
         }
         uit
@@ -842,7 +858,7 @@ fn sessie(
     );
 
     // Eén meter per node die geluid maakt of ontvangt.
-    let meters: Rc<RefCell<BTreeMap<u32, Meter>>> = Rc::default();
+    let meters: Rc<RefCell<BTreeMap<u32, Capture<Meter>>>> = Rc::default();
     // En één node die alle MIDI-uitgangen afluistert.
     let midi = Rc::new(RefCell::new(
         (MIDI && !read_only)
@@ -929,18 +945,19 @@ fn sessie(
                 let moet = if read_only {
                     BTreeMap::new()
                 } else {
-                    s.meterbaar()
+                    s.meterbaar(&opdrachten.registry_generations())
                 };
                 drop(s);
                 let mut m = meters.borrow_mut();
-                m.retain(|id, meter| moet.get(id).is_some_and(|(_, _, k)| *k == meter.kanalen));
-                for (id, (serial, sink, kanalen)) in moet {
-                    if let std::collections::btree_map::Entry::Vacant(plek) = m.entry(id) {
-                        if let Some(meter) = meter::maak(&core, id, serial, sink, kanalen) {
-                            plek.insert(meter);
-                        }
-                    }
-                }
+                meter_captures::reconcile(&mut m, moet, |id, identity| {
+                    meter::maak(
+                        &core,
+                        id,
+                        identity.serial,
+                        identity.sink,
+                        identity.channels.clone(),
+                    )
+                });
             } else {
                 drop(s);
             }
@@ -1007,7 +1024,10 @@ fn sessie(
                 opdrachten.expire_native(std::time::Instant::now());
             }
             let m = meters.borrow();
-            let mut pieken: Pieken = m.iter().map(|(id, meter)| (*id, meter.oogst())).collect();
+            let mut pieken: Pieken = m
+                .iter()
+                .map(|(id, meter)| (*id, meter.source.oogst()))
+                .collect();
             // De Rec bus meet zichzelf, onder zijn eigen node-id.
             if let Some((b, id)) = bus
                 .as_ref()
@@ -1970,3 +1990,7 @@ mod command_tests {
 #[cfg(test)]
 #[path = "shutdown_integration_tests.rs"]
 mod shutdown_integration_tests;
+
+#[cfg(test)]
+#[path = "meter_capture_tests.rs"]
+mod meter_capture_tests;
