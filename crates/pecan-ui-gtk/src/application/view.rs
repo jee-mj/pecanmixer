@@ -165,7 +165,9 @@ impl NativeWorkspace {
     pub(crate) fn poll_at(&self, now: std::time::Duration) {
         self.now.set(self.now.get().max(now));
         let batch = self.session.poll();
-        self.buses.borrow().poll();
+        let buses = self.buses.borrow().clone();
+        buses.poll();
+        buses.tick_levels(self.now.get());
         self.routes.poll();
         self.folders.borrow().poll(self.now.get());
         self.refresh();

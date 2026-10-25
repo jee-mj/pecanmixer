@@ -34,6 +34,7 @@ pub struct Capabilities {
     pub idle_configuration: Support,
     /// Same-layout levels, independent of routing/structural capabilities.
     pub idle_levels: Support,
+    pub active_levels: Support,
     pub routed_layout: Support,
     pub routed_add: Support,
     pub shrink_layout: Support,
@@ -45,6 +46,7 @@ impl Default for Capabilities {
         Self {
             idle_configuration: Support::Pending(Dependency::IdleConfigurationAdapter),
             idle_levels: Support::Pending(Dependency::IdleLevels),
+            active_levels: Support::Pending(Dependency::ActiveLevels),
             routed_layout: Support::Pending(Dependency::RoutedLayoutMigration),
             routed_add: Support::Pending(Dependency::RoutedLayoutMigration),
             shrink_layout: Support::Pending(Dependency::ChannelShrinkMigration),

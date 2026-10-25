@@ -3,6 +3,7 @@
 mod arming;
 mod elapsed;
 mod folder;
+mod levels_owner;
 mod migration;
 mod reconciliation;
 mod routing_owner;
@@ -41,6 +42,16 @@ impl TakePoll for Take {
     }
 }
 struct Fake {
+    levels_enabled: Cell<bool>,
+    gain_failures: RefCell<std::collections::VecDeque<Error>>,
+    gain_attempts: RefCell<Vec<IdleConfigIntent>>,
+    gains: RefCell<
+        Vec<(
+            pecan_core::history_identity::HistoryGraph,
+            IdleConfigIntent,
+            Rc<Config>,
+        )>,
+    >,
     config: RefCell<ConfigSnapshot>,
     latest_started: RefCell<Option<Rc<Take>>>,
     membership: Cell<RecordingRevision>,
@@ -69,6 +80,10 @@ struct Fake {
 impl Fake {
     fn new(epoch: u64) -> Rc<Self> {
         Rc::new(Self {
+            levels_enabled: Cell::new(false),
+            gain_failures: RefCell::default(),
+            gain_attempts: RefCell::default(),
+            gains: RefCell::default(),
             config: RefCell::new(ConfigSnapshot {
                 revision: ConfigRevision {
                     owner: 700,
@@ -204,6 +219,40 @@ impl Fake {
     }
 }
 impl Service for Fake {
+    fn supports_levels(&self) -> bool {
+        self.levels_enabled.get()
+    }
+    fn configure_levels(
+        &self,
+        origin: &pecan_core::history_identity::HistoryGraph,
+        intent: IdleConfigIntent,
+    ) -> Result<Rc<dyn ConfigPoll>, Error> {
+        self.gain_attempts.borrow_mut().push(intent.clone());
+        let failure = self.gain_failures.borrow_mut().pop_front();
+        if let Some(error) = failure {
+            let hook = self.hook.borrow_mut().take();
+            if let Some(hook) = hook {
+                hook();
+            }
+            return Err(error);
+        }
+        let receipt = Rc::new(Config {
+            report: RefCell::new(Some(ConfigReport {
+                ticket: intent.ticket,
+                expected: intent.expected,
+                progress: ConfigProgress::Queued,
+            })),
+            hook: RefCell::default(),
+        });
+        self.gains
+            .borrow_mut()
+            .push((origin.clone(), intent, receipt.clone()));
+        let hook = self.hook.borrow_mut().take();
+        if let Some(hook) = hook {
+            hook();
+        }
+        Ok(receipt)
+    }
     fn supports_migration(&self) -> bool {
         true
     }

@@ -127,6 +127,18 @@ pub enum Stop {
     Take(TakeKey),
 }
 pub trait Service {
+    fn supports_levels(&self) -> bool {
+        false
+    }
+    fn configure_levels(
+        &self,
+        _origin: &pecan_core::history_identity::HistoryGraph,
+        _intent: IdleConfigIntent,
+    ) -> Result<Rc<dyn ConfigPoll>, Error> {
+        Err(Error::Owner(
+            "Rec level configuration is unavailable.".into(),
+        ))
+    }
     fn supports_migration(&self) -> bool {
         false
     }
@@ -275,6 +287,19 @@ impl MigrationPoll for NativeMigration {
 }
 pub(crate) struct Native(pub Rc<pecan_pipewire::graaf::Graaf>);
 impl Service for Native {
+    fn supports_levels(&self) -> bool {
+        true
+    }
+    fn configure_levels(
+        &self,
+        origin: &pecan_core::history_identity::HistoryGraph,
+        intent: IdleConfigIntent,
+    ) -> Result<Rc<dyn ConfigPoll>, Error> {
+        self.0
+            .configure_bus_gains(origin, intent)
+            .map(|r| Rc::new(NativeConfig(r)) as Rc<dyn ConfigPoll>)
+            .map_err(Error::Configuration)
+    }
     fn supports_migration(&self) -> bool {
         true
     }

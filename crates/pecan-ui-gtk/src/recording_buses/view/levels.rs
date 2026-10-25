@@ -80,7 +80,10 @@ impl<O: Clone + 'static, R: Clone + Eq + 'static, T: Clone + Ord + 'static> BusC
             )));
         }
         if !self.0.model.borrow().snapshot().is_some_and(|s| {
-            s.connected && !s.closing && s.activity == Activity::Idle && s.configuration.is_some()
+            s.connected
+                && !s.closing
+                && matches!(s.activity, Activity::Idle | Activity::Recording)
+                && s.configuration.is_some()
         }) {
             return Err(ViewError::Model(Error::Disabled(
                 Availability::Unavailable(Unavailable::UnknownConfiguration),
@@ -308,8 +311,12 @@ impl<O: Clone + 'static, R: Clone + Eq + 'static, T: Clone + Ord + 'static> Stat
                 && s.is_some_and(|s| {
                     s.connected
                         && !s.closing
-                        && s.activity == Activity::Idle
-                        && s.capabilities.idle_levels == Support::Available
+                        && match s.activity {
+                            Activity::Idle => s.capabilities.idle_levels == Support::Available,
+                            Activity::Recording | Activity::Finalizing | Activity::Unknown => {
+                                s.capabilities.active_levels == Support::Available
+                            }
+                        }
                         && s.configuration.as_ref().is_some_and(|c| {
                             c.widths == w.capture.configuration.widths
                                 && c.definitions()

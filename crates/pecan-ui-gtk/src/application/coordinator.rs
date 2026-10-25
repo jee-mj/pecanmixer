@@ -513,6 +513,21 @@ impl Session {
             state.history_context = Rc::new(());
         }
     }
+    /// Another sample under the same local protocol lease. The existing history
+    /// allocator remains the sole ticket sequence; stale/closed leases cannot
+    /// allocate or silently acquire a replacement lease.
+    pub(crate) fn external_sample_ticket(&self, token: &Rc<()>) -> Result<u64, String> {
+        let mut state = self.0.state.borrow_mut();
+        if state.admission_closed
+            || !state
+                .external
+                .as_ref()
+                .is_some_and(|held| Rc::ptr_eq(held, token))
+        {
+            return Err("The original shared operation lease is unavailable.".into());
+        }
+        Ok(state.history.reserve_ticket())
+    }
 }
 impl State {
     fn recovery_ready(
