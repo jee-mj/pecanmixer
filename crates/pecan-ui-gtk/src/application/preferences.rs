@@ -1,5 +1,6 @@
 //! One preferences document, request-aware disk baseline, and one coalesced
 //! unsent edit. No filesystem, GTK, path discovery or audio effects here.
+mod rec;
 use crate::{
     settings_storage::LoadedSettings,
     settings_worker::{
@@ -7,6 +8,7 @@ use crate::{
     },
 };
 use pecan_core::settings::{NativeLoadStatus, SettingsV1};
+pub(crate) use rec::RecEdit;
 use std::collections::BTreeMap;
 #[derive(Clone, Debug)]
 enum Request {
@@ -97,10 +99,10 @@ impl PreferencesState {
             return self
                 .blocked
                 .clone()
-                .unwrap_or_else(|| "Loading display preferences…".into());
+                .unwrap_or_else(|| "Loading preferences…".into());
         }
         if !self.persistent {
-            return "Display preferences are in memory; no settings file was supplied.".into();
+            return "Preferences are in memory; no settings file was supplied.".into();
         }
         if let Some(error) = &self.blocked {
             return format!(
@@ -108,19 +110,19 @@ impl PreferencesState {
             );
         }
         if self.recovery_required() {
-            return format!("Settings input preserved ({:?}); review recovery before saving. Local display edits stay in memory.",self.loaded.as_ref().unwrap().status());
+            return format!("Settings input preserved ({:?}); review recovery before saving. Local edits stay in memory.",self.loaded.as_ref().unwrap().status());
         }
         if self.paused {
             return "Reloaded disk baseline; local edits retained. Choose Save local edits to publish them.".into();
         }
         if self.queue_full {
-            return "Settings queue full; latest unsent display edit retained.".into();
+            return "Settings queue full; latest unsent preference edit retained.".into();
         }
         if !self.pending.is_empty() {
             return "Saving/loading preferences…".into();
         }
         if self.dirty {
-            return "Display changes waiting to save.".into();
+            return "Preference changes waiting to save.".into();
         }
         if self
             .loaded
@@ -129,8 +131,12 @@ impl PreferencesState {
         {
             "Settings file missing; defaults in memory until an edit is saved.".into()
         } else {
-            "Display preferences saved.".into()
+            "Preferences saved.".into()
         }
+    }
+    pub(super) fn edit_rec(&mut self, edit: RecEdit) -> Result<(), String> {
+        let next = edit.apply(&self.document)?;
+        self.edit(next)
     }
     pub(super) fn edit(&mut self, next: SettingsV1) -> Result<(), String> {
         if !self.editing_allowed() {
@@ -328,7 +334,7 @@ impl PreferencesState {
     pub(super) fn unsaved_error(&self) -> Option<String> {
         self.dirty.then(|| {
             format!(
-                "Final display edits were not saved; local document retained. {}",
+                "Final preference edits were not saved; local document retained. {}",
                 self.blocked.clone().unwrap_or_else(|| {
                     "Explicit reload/recovery or save confirmation is required.".into()
                 })

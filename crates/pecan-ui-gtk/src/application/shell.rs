@@ -13,7 +13,7 @@ use crate::{
 use gtk::{gio, glib, prelude::*};
 use pecan_pipewire::shutdown::{Shutdown, ShutdownReport};
 use std::{
-    cell::{Cell, RefCell},
+    cell::RefCell,
     io,
     rc::Rc,
     sync::{Arc, Mutex},
@@ -91,7 +91,7 @@ pub struct ApplicationShell {
     drain: RefCell<Option<(RequestId, SettingsDrain)>>,
     preferences: RefCell<super::preferences::PreferencesState>,
     preference_panel: DisplayPanel,
-    preferences_applied: Cell<Option<(u64, bool)>>,
+    preferences_applied: RefCell<Option<(DisplayPreferences, bool)>>,
     recovery_review: RefCell<Option<(u64, u64, SettingsOperation)>>,
     preferences_notice: RefCell<Option<String>>,
     status: gtk::Label,
@@ -221,7 +221,7 @@ impl ApplicationShell {
             drain: RefCell::new(None),
             preferences: RefCell::new(preferences),
             preference_panel,
-            preferences_applied: Cell::new(None),
+            preferences_applied: RefCell::new(None),
             recovery_review: RefCell::new(None),
             preferences_notice: RefCell::new(None),
             status,
@@ -241,6 +241,7 @@ impl ApplicationShell {
                 s.render_preferences();
             }
         }));
+        shell.bind_rec_preferences(&shell.workspace.bus_owner());
         let weak = Rc::downgrade(&shell);
         shell.preference_panel.bind(Rc::new(move |action| {
             if let Some(s) = weak.upgrade() {
@@ -316,8 +317,17 @@ impl ApplicationShell {
     pub fn bus_owner(&self) -> Rc<super::BusOwner> {
         self.workspace.bus_owner()
     }
+    fn bind_rec_preferences(self: &Rc<Self>, buses: &super::BusOwner) {
+        let weak = Rc::downgrade(self);
+        buses.bind_preference_edits(Rc::new(move |edit| {
+            weak.upgrade()
+                .ok_or("Application preferences are unavailable.".to_string())?
+                .edit_rec_preferences(edit)
+        }));
+    }
     #[cfg(test)]
-    pub(crate) fn attach_test_buses(&self, buses: Rc<super::BusOwner>) {
+    pub(crate) fn attach_test_buses(self: &Rc<Self>, buses: Rc<super::BusOwner>) {
+        self.bind_rec_preferences(&buses);
         self.workspace.attach_test_buses(buses);
     }
     pub fn mailbox(&self) -> Arc<ActionMailbox> {
@@ -358,6 +368,19 @@ impl ApplicationShell {
     }
     pub fn preferences(&self) -> super::preferences::PreferencesState {
         self.preferences.borrow().clone()
+    }
+    pub(crate) fn edit_rec_preferences(
+        &self,
+        edit: super::preferences::RecEdit,
+    ) -> Result<(), String> {
+        if !self.policy.borrow().mutations_allowed() {
+            return Err("Finalization has disabled preference editing.".into());
+        }
+        self.preferences.borrow_mut().edit_rec(edit)?;
+        self.recovery_review.borrow_mut().take();
+        *self.preferences_notice.borrow_mut() = None;
+        self.render_preferences();
+        Ok(())
     }
     pub fn edit_display(&self, edit: DisplayEdit) -> Result<(), String> {
         if !self.policy.borrow().mutations_allowed() {
@@ -422,11 +445,11 @@ impl ApplicationShell {
             .set_sensitive(self.policy.borrow().mutations_allowed());
         let p = self.preferences.borrow();
         let editable = p.editing_allowed() && self.policy.borrow().mutations_allowed();
-        let key = (p.view_revision(), editable);
-        if self.preferences_applied.get() != Some(key) {
-            self.workspace
-                .apply_display(DisplayPreferences::from(p.document()), editable);
-            self.preferences_applied.set(Some(key));
+        let key = (DisplayPreferences::from(p.document()), editable);
+        let apply = self.preferences_applied.borrow().as_ref() != Some(&key);
+        if apply {
+            self.workspace.apply_display(key.0.clone(), editable);
+            *self.preferences_applied.borrow_mut() = Some(key);
         }
         let reviewed = self
             .recovery_review

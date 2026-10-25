@@ -68,7 +68,7 @@ impl MigrationPoll for Migration {
         report
     }
 }
-fn routed() -> (Rc<BusOwner>, Rc<Fake>, FixtureDriver, BTreeMap<u32, u64>) {
+pub(super) fn routed() -> (Rc<BusOwner>, Rc<Fake>, FixtureDriver, BTreeMap<u32, u64>) {
     let (owner, fake, driver) = setup();
     let mut graph = graph();
     let node = graph.knopen.iter_mut().find(|n| n.id == 30).unwrap();

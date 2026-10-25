@@ -5,6 +5,7 @@ mod elapsed;
 mod folder;
 mod levels_owner;
 mod migration;
+mod rec_preferences;
 mod reconciliation;
 mod routing_owner;
 use super::*;

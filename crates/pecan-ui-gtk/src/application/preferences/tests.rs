@@ -199,3 +199,59 @@ fn missing_path_mode_is_memory_only_and_drain_disables_edit_without_discarding_d
     assert!(p.edit(doc(230.)).is_err());
     assert_eq!(p.document(), &doc(220.));
 }
+
+#[test]
+fn rec_writeback_old_save_queue_full_and_display_interleaving_preserve_latest_document() {
+    let d = Dir::new();
+    let mut p = PreferencesState::new(true);
+    loaded(&mut p, &d, 0, &doc(170.));
+    p.edit_rec(RecEdit::Db {
+        bus: "rec-1-2".into(),
+        db: -6.,
+    })
+    .unwrap();
+    let first = p.document().clone();
+    admitted(&mut p, 1, first.clone());
+    for n in 0..1000 {
+        p.edit_rec(RecEdit::Db {
+            bus: "rec-1-2".into(),
+            db: -10. - (n % 30) as f64,
+        })
+        .unwrap();
+    }
+    let edited = crate::display_settings::DisplayEdit::DestinationWidth(Some(333.))
+        .apply(p.document())
+        .unwrap();
+    p.edit(edited).unwrap();
+    p.edit_rec(RecEdit::Mute {
+        bus: "rec-1-2".into(),
+        mute: true,
+    })
+    .unwrap();
+    let latest = p.document().clone();
+    p.event(&SettingsEvent::Saved {
+        request: 1,
+        snapshot: d.snapshot(&first),
+    });
+    assert_eq!(p.document(), &latest);
+    assert!(p.dirty());
+    let next = p.document().clone();
+    let err = p
+        .submit_with(SettingsOperation::Save(next), |operation| {
+            Err(SubmissionError {
+                reason: SubmissionFailure::QueueFull,
+                operation,
+            })
+        })
+        .unwrap_err();
+    assert_eq!(err.reason, SubmissionFailure::QueueFull);
+    assert_eq!(p.document(), &latest);
+    assert_eq!(p.document().preferences().destination_width_px, Some(333.));
+    assert!(p.document().preferences().buses.midi);
+    admitted(&mut p, 2, latest.clone());
+    p.event(&SettingsEvent::Saved {
+        request: 2,
+        snapshot: d.snapshot(&latest),
+    });
+    assert!(!p.dirty());
+}

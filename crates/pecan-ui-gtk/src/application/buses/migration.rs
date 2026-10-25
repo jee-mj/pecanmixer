@@ -273,8 +273,19 @@ impl BusOwner {
         self.validate(origin)?;
         self.idle()?;
         let mut expected = before.clone();
+        let preference =
+            super::super::preferences::RecEdit::configuration(&action, &before.buses, &buses)
+                .map_err(Error::Owner)?;
         expected.buses = buses;
         let (ticket, lease) = self.session.reserve_external().map_err(Error::Owner)?;
+        if let Err(error) = self.record_preference(preference) {
+            self.session.release_external(&lease);
+            return Err(error);
+        }
+        if let Err(error) = self.validate(origin) {
+            self.session.release_external(&lease);
+            return Err(error);
+        }
         let request = Request(Rc::new(()));
         {
             let mut d = self.data.borrow_mut();
