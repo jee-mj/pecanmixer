@@ -12,6 +12,8 @@ mod preferences;
 mod routes;
 mod shell;
 pub(crate) mod telemetry;
+/// Isolated recording-directory/folder/elapsed presentation; no owner wiring.
+pub mod transport;
 mod view;
 
 pub use buses::{
