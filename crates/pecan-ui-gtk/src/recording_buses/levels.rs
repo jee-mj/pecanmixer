@@ -81,18 +81,23 @@ impl<O: Clone, R, T: Clone> Model<O, R, T> {
         {
             return Ok(Off(Unavailable::MissingBus));
         }
-        // No active gain backend adapter has been reviewed. Layout/arming
-        // support cannot accidentally enable this independent capability.
-        match s.activity {
-            Activity::Unknown => return Ok(Off(Unavailable::UnknownActivity)),
-            Activity::Recording | Activity::Finalizing => {
-                return Ok(PendingCapability(Dependency::ActiveLevels))
-            }
-            Activity::Idle => {}
-        }
         let state = config.state(bus);
         if !state.db.is_finite() {
             return Err(Error::Domain(BusError::NonFiniteGain));
+        }
+        // Active levels require their own reviewed endpoint capability;
+        // layout/arming support cannot enable it.
+        match s.activity {
+            Activity::Unknown => return Ok(Off(Unavailable::UnknownActivity)),
+            Activity::Recording => {
+                return Ok(match &s.capabilities.active_levels {
+                    Support::Available => Available,
+                    Support::Pending(d) => PendingCapability(*d),
+                    Support::Unavailable(e) => Off(Unavailable::Adapter(e.clone())),
+                });
+            }
+            Activity::Finalizing => return Ok(PendingCapability(Dependency::ActiveLevels)),
+            Activity::Idle => {}
         }
         match &s.capabilities.idle_levels {
             Support::Available => Ok(Available),

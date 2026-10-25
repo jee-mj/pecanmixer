@@ -2,6 +2,7 @@ use super::*;
 impl BusOwner {
     pub(super) fn publish(&self) {
         let graph = self.session.graph();
+        let witness = self.session.witnessed_graph();
         let closing = self.session.admission_closed();
         let busy = self.session.busy();
         let (publication, context, tracks, configuration) = {
@@ -80,6 +81,7 @@ impl BusOwner {
                 error,
                 busy,
                 invalid: d.protocol_invalid,
+                level_witness: witness.is_some(),
             };
             if d.publication.as_ref() == Some(&publication) {
                 return;
@@ -108,6 +110,7 @@ impl BusOwner {
             let context = Origin(Rc::new(Context {
                 owner: self.authority.clone(),
                 graph: graph.clone(),
+                witness: witness.clone(),
                 config: d.config.clone(),
                 membership: d.membership,
                 root: d.root.clone(),
@@ -126,6 +129,9 @@ impl BusOwner {
                 .map_or_else(Mixer::default, |g| Mixer::build(&g.value, &definitions)),
         );
         let mut capabilities = ui::Capabilities::default();
+        let levels = self.level_support();
+        capabilities.idle_levels = levels.clone();
+        capabilities.active_levels = levels;
         capabilities.idle_configuration = if self.service.is_none() {
             ui::Support::Unavailable("No recording/configuration endpoint is attached.".into())
         } else if busy && self.data.borrow().operation.is_none() {
@@ -379,10 +385,11 @@ impl BusOwner {
 pub(super) fn coherent(d: &Data) -> bool {
     d.operation.as_ref().is_none_or(|work| {
         !work.reconcile_requested
-            && work.completion.as_ref().is_none_or(|completed| {
-                d.config
-                    .as_ref()
-                    .is_some_and(|now| revision_covers(now.revision, completed.revision))
-            })
+            && (work.levels.is_some() && !work.terminal
+                || work.completion.as_ref().is_none_or(|completed| {
+                    d.config
+                        .as_ref()
+                        .is_some_and(|now| revision_covers(now.revision, completed.revision))
+                }))
     })
 }

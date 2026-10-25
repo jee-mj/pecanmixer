@@ -280,7 +280,9 @@ impl BusOwner {
             let mut d = self.data.borrow_mut();
             Self::remember_arming(&mut d);
             Self::remember_migration(&mut d);
+            Self::remember_levels(&mut d);
             d.operation = Some(ConfigWork {
+                levels: None,
                 request: request.clone(),
                 ticket,
                 expected: config.revision,

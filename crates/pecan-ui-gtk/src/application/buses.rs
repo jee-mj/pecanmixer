@@ -2,6 +2,7 @@
 //! Local readback is not graph observation; writer exit is not joined completion.
 mod arming;
 pub(super) mod folder;
+mod levels;
 mod migration;
 mod routing;
 mod service;
@@ -33,6 +34,7 @@ pub struct Origin(Rc<Context>);
 struct Context {
     owner: Rc<()>,
     graph: Option<Graph>,
+    witness: Option<pecan_core::history_identity::HistoryGraph>,
     config: Option<ConfigSnapshot>,
     membership: Option<RecordingRevision>,
     root: Option<PathBuf>,
@@ -48,6 +50,7 @@ impl PartialEq for Request {
 }
 impl Eq for Request {}
 struct ConfigWork {
+    levels: Option<levels::Work>,
     migration: Option<migration::Work>,
     arming: Option<arming::Work>,
     request: Request,
@@ -80,6 +83,7 @@ struct Publication {
     error: Option<String>,
     busy: bool,
     invalid: bool,
+    level_witness: bool,
 }
 struct Data {
     config: Option<ConfigSnapshot>,
@@ -102,6 +106,8 @@ struct Data {
     retired: VecDeque<Rc<dyn TakePoll>>,
     past_failures: Vec<String>,
     migrations: VecDeque<pecan_pipewire::bus_migration::MigrationReport>,
+    level_reports: VecDeque<ConfigReport>,
+    level_recovery: bool,
 }
 pub struct BusOwner {
     pub(super) session: Session,
@@ -179,6 +185,8 @@ impl BusOwner {
                 retired: VecDeque::new(),
                 past_failures: vec![],
                 migrations: VecDeque::new(),
+                level_reports: VecDeque::new(),
+                level_recovery: false,
             }),
             polling: Cell::new(false),
             root,
@@ -207,6 +215,12 @@ impl BusOwner {
                     Ok(ui::Handoff::UiOnly)
                 }
             }
+        });
+        let weak = Rc::downgrade(&owner);
+        owner.view.bind_levels(move |event| {
+            weak.upgrade()
+                .ok_or("Bus owner is no longer available.")?
+                .level_event(event)
         });
         let weak = Rc::downgrade(&owner);
         owner.input.notify(move || {
@@ -430,7 +444,9 @@ impl BusOwner {
         let request = Request(Rc::new(()));
         Self::remember_arming(&mut self.data.borrow_mut());
         Self::remember_migration(&mut self.data.borrow_mut());
+        Self::remember_levels(&mut self.data.borrow_mut());
         self.data.borrow_mut().operation = Some(ConfigWork {
+            levels: None,
             arming: None,
             migration: None,
             request: request.clone(),
@@ -650,11 +666,11 @@ impl BusOwner {
     pub fn refresh(&self) {
         {
             let mut d = self.data.borrow_mut();
-            if let Some(work) = d
-                .operation
-                .as_mut()
-                .filter(|w| w.terminal && w.migration.as_ref().is_none_or(|m| m.released))
-            {
+            if let Some(work) = d.operation.as_mut().filter(|w| {
+                w.terminal
+                    && w.migration.as_ref().is_none_or(|m| m.released)
+                    && w.levels.as_ref().is_none_or(|l| l.released)
+            }) {
                 // A request to inspect is not evidence that inspection worked.
                 // Keep the receipt and its barrier across busy/stale reads.
                 work.reconcile_requested = true;
@@ -737,6 +753,7 @@ impl BusOwner {
         }
         self.poll_arming();
         self.poll_migration(inspected.as_ref());
+        self.poll_levels(inspected.as_ref());
         let receipts: Vec<_> = {
             let mut d = self.data.borrow_mut();
             let mut receipts: Vec<_> = d
@@ -790,6 +807,7 @@ impl BusOwner {
             .borrow()
             .operation
             .as_ref()
+            .filter(|o| o.levels.is_none())
             .and_then(|o| o.receipt.clone().map(|r| (o.request.clone(), r)));
         if let Some((request, report)) =
             pending.and_then(|(request, r)| r.report().map(|report| (request, report)))
@@ -818,6 +836,10 @@ impl BusOwner {
         if self.finish_migration_publication() {
             self.publish();
         }
+        if self.finish_level_publication() {
+            self.publish();
+        }
+        self.recover_level_input();
     }
     fn reconcile(&self, requested: Option<&Request>, inspected: Option<&ConfigSnapshot>) {
         let (Some(requested), Some(inspected)) = (requested, inspected) else {
@@ -843,6 +865,16 @@ impl BusOwner {
         if ready {
             Self::remember_arming(&mut d);
             Self::remember_migration(&mut d);
+            Self::remember_levels(&mut d);
+            if d.operation.as_ref().is_some_and(|w| {
+                w.levels.is_some()
+                    && matches!(
+                        w.progress,
+                        ui::Progress::PartiallyApplied(_) | ui::Progress::Unconfirmed(_)
+                    )
+            }) {
+                d.level_recovery = true;
+            }
             d.operation = None;
             d.error = None;
         }
@@ -939,6 +971,7 @@ impl BusOwner {
         let mut errors = self.data.borrow().past_failures.clone();
         self.arming_finalization_errors(joined_failed, &mut errors)?;
         self.migration_finalization_errors(joined_failed, &mut errors)?;
+        self.level_finalization_errors(joined_failed, &mut errors)?;
         if self.data.borrow().protocol_invalid {
             errors.push(
                 "Recording/configuration identity was invalid; completion remains unconfirmed."
@@ -951,6 +984,7 @@ impl BusOwner {
             .borrow()
             .operation
             .as_ref()
+            .filter(|w| w.levels.is_none())
             .and_then(|w| w.receipt.clone().map(|r| (w.ticket, w.expected, r)));
         if let Some((ticket, expected, receipt)) = configuration {
             match receipt.report(){
