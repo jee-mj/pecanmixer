@@ -1100,3 +1100,6 @@ fn expected_tail_retirement_inside_resize_remains_a_valid_staged_shrink() {
     assert_eq!(result.configuration.local.unwrap().channels, 4);
     assert!(result.configuration.configuration.is_some());
 }
+
+#[path = "migration_add_tests.rs"]
+mod add;

@@ -23,6 +23,7 @@ pub const OBSERVATION_LIMIT: Duration = Duration::from_secs(2);
 pub const TOTAL_LIMIT: Duration = Duration::from_secs(30);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LayoutAction {
+    AddStereo,
     Split { bus: String },
     Join { bus: String },
     Remove { bus: String },
@@ -93,6 +94,10 @@ pub struct MigrationReport {
     pub new_observed: Option<Stamp>,
     pub old_observed: Option<Stamp>,
     pub ports_observed: Option<Stamp>,
+    /// Authenticated owned node/final input generations for appended ports.
+    /// Present only after a successful growth observation; local resize alone
+    /// cannot supply this proof. Retain across ordinary graph/cache revisions.
+    pub observed_inputs: Option<pecan_core::history_identity::HistoryGraph>,
     pub resize: Option<ChannelResizeResult>,
     pub local_readback: Option<BusReadback>,
     pub cancellation_requested: bool,
@@ -176,6 +181,9 @@ pub(crate) struct Work {
     pub serial: Option<u64>,
     pub node_generation: u64,
     pub ports: Vec<Port>,
+    /// At most the two AddStereo suffix ports, latched at first coherent
+    /// publication. Never replace a latched identity with a later generation.
+    pub appended: Vec<Port>,
     pub source_ports: Vec<Port>,
     pub source_nodes: BTreeMap<u32, (u64, Option<u64>)>,
     pub affected: BTreeSet<u32>,
