@@ -13,6 +13,7 @@ struct State<O> {
     status: gtk::Label,
     actions: gtk::Box,
     folder: RefCell<Option<gtk::Button>>,
+    folder_live: RefCell<Option<Rc<Cell<bool>>>>,
     handler: RefCell<Option<Rc<Handler<O>>>>,
     input: Rc<ActivationInput>,
     offered: RefCell<Option<Rc<Projection<O>>>>,
@@ -68,6 +69,7 @@ impl<O: Clone + 'static> TransportControls<O> {
             status,
             actions,
             folder: RefCell::default(),
+            folder_live: RefCell::default(),
             handler: RefCell::default(),
             input: input.clone(),
             offered: RefCell::default(),
@@ -116,7 +118,7 @@ impl<O: Clone + 'static> TransportControls<O> {
         })?;
         self.0.check_time(p.observed_at)?;
         *self.0.offered.borrow_mut() = Some(p);
-        self.0.input.retire();
+        self.0.retire_folder();
         if let Some(button) = self.0.folder.borrow().as_ref() {
             button.set_sensitive(false);
         }
@@ -192,6 +194,14 @@ impl<O: Clone + 'static> TransportControls<O> {
     }
 }
 impl<O: Clone + 'static> State<O> {
+    fn retire_folder(&self) {
+        // Input retirement only cancels held activations. Also revoke retained
+        // idle/detached callbacks, even when the model binding is unchanged.
+        if let Some(live) = self.folder_live.borrow_mut().take() {
+            live.set(false);
+        }
+        self.input.retire();
+    }
     fn check_time(&self, at: Duration) -> Result<(), Error> {
         let m = self.model.borrow();
         if m.current
@@ -221,7 +231,7 @@ impl<O: Clone + 'static> State<O> {
     fn render(self: &Rc<Self>) {
         #[cfg(test)]
         self.renders.set(self.renders.get() + 1);
-        self.input.retire();
+        self.retire_folder();
         let restore = self.folder.borrow().as_ref().is_some_and(|b| b.has_focus());
         if let Some(window) = self.root.root().and_downcast::<gtk::Window>() {
             if GtkWindowExt::focus(&window).is_some_and(|w| w.is_ancestor(&self.actions)) {
@@ -247,7 +257,8 @@ impl<O: Clone + 'static> State<O> {
                     "No last take folder supplied · Folder uses the recording directory".into()
                 }),
         );
-        let attached = self.handler.borrow().is_some();
+        let handler = self.handler.borrow().clone();
+        let attached = handler.is_some();
         let fallback = if !attached {
             "Folder action unavailable"
         } else if p.is_some_and(|p| p.closing) {
@@ -276,9 +287,10 @@ impl<O: Clone + 'static> State<O> {
         set_name(&button, "Open recording folder");
         button.set_tooltip_text(Some("Open the last take folder within the recording directory; otherwise open the recording directory"));
         button.set_sensitive(enabled);
-        if let Some(binding) = binding {
+        if let (Some(binding), Some(handler)) = (binding, handler) {
             let weak = Rc::downgrade(self);
             let live = Rc::new(Cell::new(true));
+            *self.folder_live.borrow_mut() = Some(live.clone());
             self.input.capture(&button, live.clone());
             button.connect_clicked(move |button| {
                 let Some(s) = weak.upgrade() else { return };
@@ -286,11 +298,10 @@ impl<O: Clone + 'static> State<O> {
                     || !button.is_sensitive()
                     || s.input.blocked()
                     || s.offered.borrow().is_some()
+                    || s.unavailable.borrow().is_some()
                 {
                     return;
                 }
-                let handler = s.handler.borrow().clone();
-                let Some(handler) = handler else { return };
                 let result = s.model.borrow_mut().request_folder(&binding);
                 let Ok(request) = result else { return };
                 let token = request.token.clone();
