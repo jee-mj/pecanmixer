@@ -106,3 +106,40 @@ entrypoint candidate. Detailed capture reset/availability signals and live
 acceptance remain unfinished. Fixture
 population/counters do not establish audio correctness, real-time/CPU/latency
 budgets, physical display throughput, Wayland or desktop accessibility acceptance.
+
+## Configuration reprojection caller contract (candidate)
+
+The application telemetry boundary now offers `apply_definitions(session, batch,
+definitions)`, taking validated `BusDef` values from the Session's adopted bus
+configuration. Its cache detects a definition change without rescanning the graph
+on unchanged peak-only ticks. Configuration-only changes use the retained exact
+graph, rebuild node/audio-port registry bindings from its accepted witness, and
+reuse `rebind_current` before applying this batch's peaks. A graph and new
+definitions in the same batch are projected before peaks as well. No stamp or
+graph Arc is reconstructed, and there is no second inbox consumer.
+
+Existing meter keys retain their GTK wrappers; removed keys are retired. Patchbay
+mini-meters retain their module mapping on configuration-only changes. This uses
+the adapter's existing conservative reconciliation rule: definition changes clear
+shared samples/hold/clipping before accepting fresh samples, including unaffected
+sources. It introduces no capture-health or sample-age inference.
+
+Production adoption is **pending a read-only Session accessor**. The current
+application wrapper still supplies startup defaults; this candidate does not
+claim live configuration adoption. The requested minimal interface is
+`Session::bus_definitions() -> Option<Vec<BusDef>>`, backed by the validated
+adopted configuration. Then the wrapper can pass that value to
+`apply_definitions` instead of constructing defaults. Session/history and routing
+remain unchanged here; the owning integrator must provide/review this seam.
+
+The two added synthetic workspace checks cover configuration-only split, add,
+join and remove, stable unaffected widgets, same-stamp peak ordering, coalesced
+unchanged-frame storms and changed/missing port generations. They explicitly
+supply definitions through the candidate boundary, rather than asserting that
+the production wrapper already uses them. No hardware, audio service, real user
+configuration or private topology is involved.
+
+This candidate passes all 360 all-feature GTK cases, including seven application
+telemetry checks, plus native build, formatting and whitespace checks. These
+checks establish the supplied-definition boundary; production accessor/wrapper
+adoption and its end-to-end workspace check remain pending integration work.

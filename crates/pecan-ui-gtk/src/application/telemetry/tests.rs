@@ -4,7 +4,7 @@ use crate::application::{ApplicationOwner, FixtureDriver};
 use crate::meters::{MeterKey, MeterSurface, MeterWidget};
 use pecan_core::{graph::Momentopname, inbox::InboxBatch};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     time::{Duration, Instant},
 };
 
@@ -231,4 +231,167 @@ fn actual_viewport_clipping_excludes_mapped_offscreen_meters_until_scrolled() {
     window.0.set_visible(false);
     pump(20);
     assert!(!crate::application::telemetry::on_screen(&meter));
+}
+
+fn recording_graph() -> (Momentopname, BTreeMap<u32, u64>) {
+    let mut g = graph();
+    let mut node = g.knopen[1].clone();
+    node.id = 30;
+    node.serial = Some(1030);
+    node.naam = pecan_core::domain::audio::REC_NODE.into();
+    node.volume = Some(vec![1.; 4]);
+    g.knopen.push(node);
+    let mut identities = generations();
+    identities.insert(30, 7);
+    for channel in 0..4_u32 {
+        let mut port = g.poorten[2].clone();
+        port.id = 31 + channel;
+        port.knoop = 30;
+        port.naam = format!("rec_{}", channel + 1);
+        port.volgnummer = Some(channel);
+        port.kanaal = Some(format!("AUX{channel}"));
+        g.poorten.push(port);
+        identities.insert(31 + channel, 8 + u64::from(channel));
+    }
+    (g, identities)
+}
+fn definitions(widths: &[usize]) -> pecan_core::domain::buses::BusConfig {
+    pecan_core::domain::buses::BusConfig {
+        widths: widths.into(),
+        states: Default::default(),
+        midi: false,
+    }
+}
+fn adopt_projection(view: &NativeWorkspace, widths: &[usize], batch: &InboxBatch) {
+    let config = definitions(widths);
+    view.session
+        .adopt_buses(&view.session.graph().unwrap(), &config)
+        .unwrap();
+    view.telemetry.borrow_mut().apply_definitions(
+        &view.session,
+        batch,
+        Some(config.definitions().unwrap()),
+    );
+}
+fn recording_keys(view: &NativeWorkspace) -> BTreeSet<String> {
+    view.telemetry
+        .borrow()
+        .adapter
+        .meters()
+        .filter(|(spec, _)| spec.key.surface == MeterSurface::Mixer && spec.key.node == 30)
+        .map(|(spec, _)| spec.key.item.clone())
+        .collect()
+}
+fn recording_meter(view: &NativeWorkspace, key: &str) -> MeterWidget {
+    view.telemetry
+        .borrow()
+        .adapter
+        .meters()
+        .find(|(spec, _)| spec.key.surface == MeterSurface::Mixer && spec.key.item == key)
+        .unwrap()
+        .1
+        .clone()
+}
+
+#[gtk::test]
+fn configuration_only_split_add_join_remove_reprojects_retained_meters_without_new_graph() {
+    let (view, driver, _window) = setup();
+    let (g, identities) = recording_graph();
+    let accepted = driver.publish(g, identities);
+    view.poll();
+    let (_, source) = meter(&view, MeterSurface::Mixer, 10, 0);
+    let (_, mini) = meter(&view, MeterSurface::Patchbay, 30, 0);
+    let stereo = recording_meter(&view, "bus|rec-1-2");
+    adopt_projection(&view, &[1, 1], &InboxBatch::default());
+    assert_eq!(
+        recording_keys(&view),
+        ["bus|rec-1".into(), "bus|rec-2".into()].into()
+    );
+    assert!(!stereo.reading().bound);
+    let mono = recording_meter(&view, "bus|rec-1");
+    adopt_projection(&view, &[1, 1, 2], &InboxBatch::default());
+    assert_eq!(recording_meter(&view, "bus|rec-1").widget(), mono.widget());
+    let added = recording_meter(&view, "bus|rec-3-4");
+    adopt_projection(&view, &[2, 2], &InboxBatch::default());
+    assert!(!mono.reading().bound);
+    assert_eq!(
+        recording_meter(&view, "bus|rec-3-4").widget(),
+        added.widget()
+    );
+    adopt_projection(&view, &[2], &InboxBatch::default());
+    assert_eq!(recording_keys(&view), ["bus|rec-1-2".into()].into());
+    assert!(!added.reading().bound);
+    assert_eq!(
+        meter(&view, MeterSurface::Mixer, 10, 0).1.widget(),
+        source.widget()
+    );
+    assert_eq!(
+        meter(&view, MeterSurface::Patchbay, 30, 0).1.widget(),
+        mini.widget()
+    );
+    assert_eq!(
+        view.telemetry.borrow().adapter.stamp(),
+        Some(accepted.stamp)
+    );
+    assert!(driver.take_requests().is_empty());
+}
+
+#[gtk::test]
+fn configuration_rebind_precedes_equal_stamp_peaks_and_unchanged_frames_do_not_reproject() {
+    let (view, driver, _window) = setup();
+    let (g, identities) = recording_graph();
+    driver.publish(g, identities);
+    view.poll();
+    let (_, source) = meter(&view, MeterSurface::Mixer, 10, 0);
+    let stamp = view.session.graph().unwrap().stamp;
+    driver.publish_peaks([(10, vec![1.2, 0.2]), (30, vec![0.1, 0.2, 0.3, 0.4])].into());
+    let batch = view.session.poll();
+    assert!(batch.graph.is_none());
+    adopt_projection(&view, &[1, 1], &batch);
+    pump(60);
+    assert!(view.telemetry.borrow().report.peaks_accepted);
+    assert!(source.reading().has_frame && source.reading().clipped);
+    let count = view.telemetry.borrow().source_projections;
+    let definitions = definitions(&[1, 1]).definitions().unwrap();
+    for _ in 0..1000 {
+        driver.publish_peaks([(10, vec![0.25, 0.1])].into());
+    }
+    let batch = view.session.poll();
+    view.telemetry
+        .borrow_mut()
+        .apply_definitions(&view.session, &batch, Some(definitions));
+    assert_eq!(view.telemetry.borrow().source_projections, count);
+    assert_eq!(view.telemetry.borrow().adapter.stamp(), Some(stamp));
+    assert_eq!(
+        meter(&view, MeterSurface::Mixer, 10, 0).1.widget(),
+        source.widget()
+    );
+    assert!(view.telemetry.borrow().report.peaks_accepted);
+    assert!(driver.take_requests().is_empty());
+
+    let (g, mut identities) = recording_graph();
+    identities.insert(11, 100);
+    driver.publish(g.clone(), identities.clone());
+    driver.publish_peaks([(10, vec![0.25, 0.1])].into());
+    let batch = view.session.poll();
+    adopt_projection(&view, &[2], &batch);
+    pump(60);
+    assert!(view.telemetry.borrow().report.graph_accepted);
+    assert!(view.telemetry.borrow().report.peaks_accepted);
+    assert!(source.reading().bound && source.reading().has_frame);
+    assert!(
+        !source.reading().clipped,
+        "new port generation must reset old clipping"
+    );
+    assert_eq!(
+        meter(&view, MeterSurface::Mixer, 10, 0).1.widget(),
+        source.widget()
+    );
+    identities.remove(&12);
+    driver.publish(g, identities);
+    driver.publish_peaks([(10, vec![1.2, 0.1])].into());
+    let batch = view.session.poll();
+    adopt_projection(&view, &[1, 1], &batch);
+    assert!(!source.reading().bound);
+    assert!(meter(&view, MeterSurface::Mixer, 20, 0).1.reading().bound);
 }

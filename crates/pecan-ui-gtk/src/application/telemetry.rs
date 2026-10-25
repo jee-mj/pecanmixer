@@ -4,7 +4,10 @@ use super::Session;
 use crate::meters::{MeterKey, MeterSources, MeterSurface, TelemetryAdapter, TelemetryReport};
 use gtk::prelude::*;
 use pecan_core::{
-    domain::audio::{self, Side},
+    domain::{
+        audio::{self, Side},
+        buses::BusDef,
+    },
     graph::Soort,
     history_identity::RegistryBinding,
     inbox::InboxBatch,
@@ -21,24 +24,55 @@ pub(crate) struct Identity {
 pub(crate) struct Telemetry {
     pub(crate) adapter: TelemetryAdapter<Identity>,
     modules: BTreeMap<String, (u32, bool)>,
+    definitions: Option<Vec<BusDef>>,
     pub(crate) report: TelemetryReport,
+    #[cfg(test)]
+    pub(super) source_projections: usize,
 }
 impl Default for Telemetry {
     fn default() -> Self {
         Self {
             adapter: TelemetryAdapter::default(),
             modules: BTreeMap::new(),
+            definitions: None,
             report: Default::default(),
+            #[cfg(test)]
+            source_projections: 0,
         }
     }
 }
 impl Telemetry {
     pub(crate) fn apply(&mut self, session: &Session, batch: &InboxBatch) {
-        if batch.graph.is_none() {
+        self.apply_definitions(
+            session,
+            batch,
+            Some(
+                super::default_idle_configuration()
+                    .buses
+                    .definitions()
+                    .expect("validated native defaults"),
+            ),
+        );
+    }
+    /// Supply validated Session-adopted definitions, not a new backend/config
+    /// authority. This consumes the same already-drained batch exactly once.
+    pub(crate) fn apply_definitions(
+        &mut self,
+        session: &Session,
+        batch: &InboxBatch,
+        definitions: Option<Vec<BusDef>>,
+    ) {
+        let changed = self.definitions != definitions;
+        if batch.graph.is_none() && !changed {
             // Authority was bound at the accepted graph. Peak/receipt-only
             // ticks do not rescan the graph, rebuild sources or reset samples.
             self.report = self.adapter.apply_batch(batch, None);
             return;
+        }
+        self.definitions = definitions;
+        #[cfg(test)]
+        {
+            self.source_projections += 1;
         }
         let frame = session.witnessed_graph();
         let graph = session.graph();
@@ -64,18 +98,45 @@ impl Telemetry {
                 }
             }
         }
-        let buses = super::default_idle_configuration()
-            .buses
-            .definitions()
-            .expect("validated native defaults");
-        self.report = self.adapter.apply_batch(
-            batch,
-            sources.map(|(graph, _)| MeterSources {
-                graph,
+        let meter_sources = || {
+            Some(MeterSources {
+                graph: sources?.0,
                 node_bindings: &bindings,
-                buses: &buses,
-            }),
-        );
+                buses: self.definitions.as_deref()?,
+            })
+        };
+        if changed {
+            // Projection reconciliation precedes this batch's peaks. Never
+            // clear a newly accepted equal-stamp frame after publishing it.
+            if batch.graph.is_some() {
+                self.adapter.clear_samples();
+            }
+            self.report = self.adapter.apply_batch(
+                &InboxBatch {
+                    graph: batch.graph.clone(),
+                    ..Default::default()
+                },
+                meter_sources(),
+            );
+            if !self.report.graph_accepted {
+                if let Some(sources) = meter_sources() {
+                    self.adapter.rebind_current(sources);
+                } else {
+                    self.adapter.reset_sources();
+                }
+            }
+            let peaks = self.adapter.apply_batch(
+                &InboxBatch {
+                    peaks: batch.peaks.clone(),
+                    ..Default::default()
+                },
+                None,
+            );
+            self.report.peaks_accepted = peaks.peaks_accepted;
+            self.report.projection_error = peaks.projection_error;
+        } else {
+            self.report = self.adapter.apply_batch(batch, meter_sources());
+        }
         if self.report.graph_accepted {
             self.modules.clear();
             if let Some(graph) = &batch.graph {
