@@ -1,4 +1,5 @@
 //! Synthetic saved proposals and native-owner generations only; no audio/files.
+mod recording_skip;
 use super::*;
 use pecan_core::{
     graph::{BusOpname, Kabel, Opties, Soort},

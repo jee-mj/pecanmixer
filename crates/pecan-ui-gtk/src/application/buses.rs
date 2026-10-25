@@ -605,6 +605,12 @@ impl BusOwner {
         };
         self.session.release_external(&lease);
         let Started { receipt, no_op } = result?;
+        // Successful admission owns recording even if its queued receipt joins
+        // before the first UI poll. Preserve the captured epoch, not a later
+        // reader's epoch, so reconnect can still recover independently.
+        if backend.supports_restore() {
+            self.skip_recording_restore_epoch(config.revision);
+        }
         let report = receipt.report();
         if !no_op && report.as_ref().is_some_and(|r| r.source != expected) {
             self.data
