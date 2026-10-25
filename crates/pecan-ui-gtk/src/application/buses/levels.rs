@@ -726,9 +726,6 @@ impl BusOwner {
             return;
         };
         if l.failed.is_none() {
-            if l.desired != l.committed {
-                return;
-            }
             if w.completion
                 .as_ref()
                 .is_some_and(|c| !same_readback(fresh, c))
@@ -745,6 +742,9 @@ impl BusOwner {
                 l.failed = Some(ui::Progress::Unconfirmed(
                     "Current Rec readback superseded the local level completion.".into(),
                 ));
+            }
+            if l.failed.is_none() && l.desired != l.committed {
+                return;
             }
         }
         w.progress = l.failed.clone().unwrap_or_else(|| {

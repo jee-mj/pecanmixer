@@ -102,9 +102,9 @@ physical desktop/performance acceptance. Backend origin review does not itself
 clear the new owner logic: independent review of this candidate is required
 before publishing it to the draft PR2 branch.
 
-## Candidate check results
+## Original candidate check results
 
-The final source passes 394 default GTK tests and 439 feature GTK tests
+The original `11b3046` source passes 394 default GTK tests and 439 feature GTK tests
 (`a11y-tests,x11-input-tests,tray-bus-tests`), including all 18 new owner cases.
 The synchronous reentrant rejection regression fails before preserving the
 already established diagnostic and passes afterward. Native build, formatting,
@@ -130,3 +130,31 @@ invocation used the already available tool; no installation was needed. No
 current environment blocker remains. Independent owner review and the backend
 fixture failure remain integration gates. The published PR2 base has its own
 successful exact-head hosted run; candidate hosted results are separate.
+
+## Superseded unsent-target correction
+
+Independent review found two recovery deadlocks in `11b3046`: after a -6 dB
+sample completed with a final -18 dB target still unsent, a newer known config
+or invalidated logical metadata could leave Applying and its shared lease held
+indefinitely. The existing next-sample guard correctly refused the mismatched
+readback, but the final-target guard returned before classifying that superseding
+state as uncertainty. Repeated Refresh could not make the old target valid.
+
+The runtime correction only moves the existing superseded-readback classification
+before the unsent-target guard. A newer incompatible state becomes current
+uncertainty; the original native report remains historical and unchanged, the
+final target is not replayed and no prefix Undo is manufactured. Its accepted
+terminal publication releases the lease. Explicit Refresh uses fresh inspection;
+unknown metadata still requires explicit initialization. A genuinely older
+readback continues to wait, then admits the final target with the original
+witness once its actual matching inspection arrives.
+
+Both new known/unknown-state regressions fail on the original source and pass
+on the correction. All 21 focused owner cases pass in default mode, including
+the unchanged original 18 and the older-readback final-flush control. All 442
+feature GTK tests and the rebuilt native executable pass; formatting and scope
+checks pass. The full default suite, backend, legacy and CLI checks were not
+repeated for this six-line ordering delta; their original receipts remain above.
+The backend readability fixture has a separately reviewed follow-up outside this
+owner branch, to preserve during eventual integration. This corrected owner still
+requires independent re-review and is not included in the PR2 fixture checkpoint.
