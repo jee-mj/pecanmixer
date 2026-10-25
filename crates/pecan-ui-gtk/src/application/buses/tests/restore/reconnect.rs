@@ -403,3 +403,118 @@ fn restore_reconnect_closed_history_is_bounded_and_old_tickets_are_not_reused() 
     assert!(state.retired_completed.iter().all(|w| w.ticket < next));
     assert_eq!(state.retired_completed.len(), 16);
 }
+
+fn recording_during_retirement_callback(receipt_callback: bool, extra_active_tick: bool) {
+    let (owner, fake, driver) = setup_restore();
+    // Make the normal user Arm edit leave a legitimately armed recording bus.
+    fake.config
+        .borrow_mut()
+        .configuration
+        .as_mut()
+        .unwrap()
+        .buses
+        .states
+        .entry("rec-1-2".into())
+        .or_default()
+        .armed = false;
+    owner.poll();
+    let request = arm(&owner);
+    let old = fake.complete_config(0, LocalConfigOutcome::Applied, true);
+    owner.poll();
+    reconnect(&owner, &fake, &driver);
+    let weak_owner = Rc::downgrade(&owner);
+    let weak_fake = Rc::downgrade(&fake);
+    let callback = Box::new(move || {
+        let owner = weak_owner.upgrade().unwrap();
+        let fake = weak_fake.upgrade().unwrap();
+        let expected_config = fake.config.borrow().revision;
+        fake.start_all(RecordingStart {
+            ticket: 900,
+            origin: owner.session.graph().unwrap(),
+            expected_config,
+            root: std::env::temp_dir().join("pecan-reconnect-callback-recording-synthetic"),
+        })
+        .unwrap();
+        fake.started(0, 900);
+        fake.config.borrow_mut().recording = true;
+        owner.poll();
+    }) as Box<dyn Fn()>;
+    if receipt_callback {
+        *fake.configs.borrow()[0].1.hook.borrow_mut() = Some(callback);
+    } else {
+        *fake.read_hook.borrow_mut() = Some(callback);
+    }
+    owner.restore_preferences(&preferences());
+    assert_eq!(
+        owner.recording_status()[0].progress,
+        RecordingProgress::StartedLocally
+    );
+    assert_eq!(
+        owner.data.borrow().operation.as_ref().unwrap().request,
+        request
+    );
+    assert!(owner.restore.borrow().retired_completed.is_empty());
+    if extra_active_tick {
+        owner.restore_preferences(&preferences());
+    }
+    // No further restore call while active in the regression cases. Joining
+    // cannot turn the already observed recording into a deferred settings effect.
+    fake.joined(0, None);
+    fake.config.borrow_mut().recording = false;
+    owner.poll();
+    for _ in 0..5 {
+        owner.restore_preferences(&preferences());
+    }
+    assert_eq!(
+        fake.restore_origins.borrow().len(),
+        0,
+        "callback-observed recording must latch the epoch skip in that same call"
+    );
+    assert_eq!(
+        owner.data.borrow().operation.as_ref().unwrap().request,
+        request
+    );
+    assert_eq!(owner.configuration_report(), Some(old));
+    assert_eq!(
+        owner.recording_status()[0].progress,
+        RecordingProgress::JoinedSuccess
+    );
+    assert!(button(owner.widget(), "Stop all").is_sensitive());
+}
+#[gtk::test]
+fn restore_reconnect_service_callback_ownership_observation_needs_no_extra_tick() {
+    recording_during_retirement_callback(false, false);
+}
+#[gtk::test]
+fn restore_reconnect_receipt_callback_ownership_observation_needs_no_extra_tick() {
+    recording_during_retirement_callback(true, false);
+}
+#[gtk::test]
+fn restore_reconnect_extra_active_tick_ownership_skip_control() {
+    recording_during_retirement_callback(false, true);
+}
+
+#[gtk::test]
+fn restore_reconnect_recording_readback_observation_needs_no_cached_active_tick() {
+    let (owner, fake, driver) = setup_restore();
+    let request = arm(&owner);
+    let old = fake.complete_config(0, LocalConfigOutcome::Applied, true);
+    owner.poll();
+    reconnect(&owner, &fake, &driver);
+    assert!(!owner.data.borrow().config.as_ref().unwrap().recording);
+    fake.config.borrow_mut().recording = true;
+    // Only the retirement inspection observes this active flag; do not publish
+    // another owner tick while it is active.
+    owner.restore_preferences(&preferences());
+    fake.config.borrow_mut().recording = false;
+    owner.poll();
+    for _ in 0..5 {
+        owner.restore_preferences(&preferences());
+    }
+    assert!(fake.restore_origins.borrow().is_empty());
+    assert_eq!(
+        owner.data.borrow().operation.as_ref().unwrap().request,
+        request
+    );
+    assert_eq!(owner.configuration_report(), Some(old));
+}
