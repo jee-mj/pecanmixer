@@ -32,7 +32,7 @@ remains separate.
 | Cable create/remove/move, selection/delete/cancel (`src/Patchbay.tsx`, `src/handelingen.ts`) | Reviewed keyboard/pointer libraries attached to reviewed coordinator source | Physical-input acceptance |
 | Patch module positioning and reconnect behavior (`Plekken`, `ModuleKaart`) | Reviewed session movement/rearrange and reconnect aliases on retained view | Session-layout and physical-input acceptance |
 | Undo/redo queue and keyboard shortcuts (`src/geschiedenis.ts`, `src/handelingen.ts`, `src/App.tsx`) | Reviewed generation/selector guards, shared receipts, immutable button activation and observed gesture history; standard window Ctrl/Meta+Z, Shift+Z and Y bindings preserve native editor history and allow later autorepeat activations | Busy/stale shortcut activations are dropped; JS queued input and physical/audio acceptance remain |
-| Add/remove/link buses, Rec gain/mute/arming (`src/bussen.ts`, `Mixer`) | Bus owner mounts typed idle config/readback and correlated controls; Session/routing/meters use adopted definitions; corrected dynamic arming is wired through shared owner admission/retained receipts; idle routed split/join/remove use reviewed retained migration receipts; reviewed Rec gain/mute owner retains original witness, one-flight/coalesced targets and final flush for idle/known native recording, without graph Undo | General saved-layout restore/clock effects and immediate configuration-driven history reconciliation; routed Add and observed-port/desktop acceptance; active structural edits remain a user-decision gate |
+| Add/remove/link buses, Rec gain/mute/arming (`src/bussen.ts`, `Mixer`) | Bus owner mounts typed idle config/readback and correlated controls; Session/routing/meters use adopted definitions; corrected dynamic arming is wired through shared owner admission/retained receipts; idle routed Add/split/join/remove use reviewed retained migration receipts, original source proofs and authenticated final-input witnesses; reviewed Rec gain/mute owner retains original witness, one-flight/coalesced targets and final flush for idle/known native recording, without graph Undo | General saved-layout restore/clock effects and immediate configuration-driven history reconciliation; explicit partial append repair and observed-port/desktop acceptance; active structural edits remain a user-decision gate |
 | Record/stop, per-bus start/stop, elapsed time, folder action (`src/Transport.tsx`, `src/api.ts`) | Bus owner adds explicit-root all-armed/per-bus start, captured stable stop IDs, retained receipts and quit diagnostics; Folder is mounted with latest-start authority and off-UI preparation/launch/reaping; reviewed elapsed producer/adapter preserve measurement age and use the existing clock/oldest-take formatter | Live elapsed/recording/desktop acceptance and sample alignment remain unproven; all-armed membership is preflight only, not atomic CAS |
 | MIDI clock/start-stop, MIDI tabs/route/activity (`src/MidiMixer.tsx`, `src/midi.ts`, `src/MidiMeter.tsx`) | Legacy MIDI feature flag remains disabled | Preserve disabled status; separately define/verify any enabled MIDI parity scope |
 | Meter ballistics/peak hold, per-channel rendering (`src/meters.ts`, `src/Meter.tsx`) | Entrypoint uses Session-adopted definitions for same-graph split/add/join/remove reprojection; retained wrappers, registry bindings, graph-before-peaks and visibility gating remain | Capture freshness/availability protocol and live/animation acceptance remain |
@@ -70,7 +70,7 @@ The [settings result/display bridge candidate](./native-settings-bridge.md) reta
 
 The [native entrypoint adoption candidate](./native-startup-adoption.md) wires one owner/shell, explicit path or memory settings, functional mixer/patchbay and authenticated accepted-batch telemetry. Its entrypoint wiring has independently cleared and is public at `20e9f90c`. The subsequent bus/configuration/recording owner wiring below has a separate integration record.
 
-The [bus/configuration/recording owner candidate](./native-bus-owner-adapter.md) adds a shared ticket/admission lease, exact edited revision handoffs, retained native receipts and common-quit diagnostic audit. Its original busy-Refresh finding is corrected at `cb24a2ba`; independent re-review clears all nine original probes and three additional recovery/authentication probes. The reviewed dynamic-arming owner/UI follow-up now adopts the arming library. Reviewed idle routed split/join/remove now use the retained migration owner; routed Add remains unavailable. Structural edits during recording/finalization remain gated pending the user's product decision. Module positions match the original session-only behavior; durable persistence is not required for parity.
+The [bus/configuration/recording owner candidate](./native-bus-owner-adapter.md) adds a shared ticket/admission lease, exact edited revision handoffs, retained native receipts and common-quit diagnostic audit. Its original busy-Refresh finding is corrected at `cb24a2ba`; independent re-review clears all nine original probes and three additional recovery/authentication probes. The reviewed dynamic-arming owner/UI follow-up now adopts the arming library. Reviewed idle routed Add/split/join/remove now use the retained migration owner, including direct retention of the observed final-input witness for Add. Structural edits during recording/finalization remain gated pending the user's product decision. Module positions match the original session-only behavior; durable persistence is not required for parity.
 
 The [routing surface](../../crates/pecan-ui-gtk/src/routing/README.md) and correction
 `8240f71b` retain configuration uncertainty across zero-effect route rejection.
@@ -116,8 +116,8 @@ The [reviewed idle migration owner](./native-idle-migration-owner.md) adopts the
 existing backend for idle routed split/join/remove, retaining actual receipts,
 readbacks and graph-before-release evidence. Independent re-review clears
 `5c131247`, including reconcilable lost-epoch completion and matched owner/widget
-terminal barriers. Routed Add and active-recording structural policy remain
-separate gates.
+terminal barriers. The separately reviewed routed Add owner below extends this
+path; active-recording structural policy remains a separate gate.
 
 The independently reviewed [idle AddStereo backend](./native-idle-add-stereo.md)
 now appends two authenticated suffix inputs through the existing migration
@@ -125,15 +125,19 @@ protocol while preserving original route endpoints. Its retained
 `MigrationReport::observed_inputs` supplies final node/input generations directly;
 the owner must combine that with its original prefix/source proof, actual fresh
 configuration and accepted terminal presentation. Backend inclusion alone does
-not enable the separate `routed_add` capability. Routed Add owner adoption and
-partial repair remain separate review gates; active structural edits remain
-unavailable pending the user's product decision.
+not enable the separate `routed_add` capability. The reviewed owner below now
+adopts those proofs. Explicit partial repair and active structural edits remain
+gated; the active structural policy awaits the user's product decision.
 
-A separate [routed Add owner candidate](./native-routed-add-owner-candidate.md)
+The independently reviewed [routed Add owner](./native-routed-add-owner-candidate.md)
 adopts that retained backend witness through the existing migration lease and
-accepted-presentation barrier. It is not in PR2 before independent review. This
-candidate alone supplies no hardware/audio acceptance or active structural-edit
-policy, and partial repair remains separate.
+accepted-presentation barrier. Exact source `6e0cc8fd` clears 151 owner checks per
+mode and four additional replacement/stale/retired/reconnect/foreign-route probes.
+Its append succeeds only with Observed, zero in-progress calls, exact fresh
+readback and accepted current presentation; original prefix/source generations
+and the retained final-input witness must both match. No evicted observation
+frame lookup or replacement-origin rebinding is used. Partial repair and active
+structural policy remain separate, and no hardware/audio acceptance is implied.
 
 The reviewed [Folder owner adoption](./native-folder-owner.md) mounts
 the corrected helper with actual latest-start receipt authority and explicit

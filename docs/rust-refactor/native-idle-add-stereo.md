@@ -3,9 +3,11 @@
 Candidate base: PR2 `48597f762112ef7dd6c5c0280bf92181c76e7027`.
 This extends the existing migration protocol with `LayoutAction::AddStereo`.
 It adds no sequencer, worker, serialized DTO/IPC, domain policy, dependency or
-version change. Native UI routed Add remains disabled until owner adoption is
-implemented and independently reviewed. The only UI source edit supplies the new
-field/exhaustive variant in an injected test constructor; it enables no behavior.
+version change. This backend checkpoint alone enabled no native UI behavior; its
+only UI edit supplied the new field/exhaustive variant in a test constructor.
+The separately [reviewed routed Add owner](./native-routed-add-owner-candidate.md)
+now adopts this protocol. Partial repair and active structural policy remain
+separate gates.
 
 ## Contract
 
@@ -112,8 +114,9 @@ audio, physical desktop and performance acceptance remain unrun.
 Local validation passed 76 core, 240 backend (including the ten new Add groups),
 ten legacy library and 16 headless GTK migration checks. All-feature GTK test
 compilation, scoped Rust formatting and whitespace checks pass. The GTK checks
-still assert that routed Add has no owner capability. Full native CI and
-independent review remain separate receipts; no live UI adoption is claimed.
+at this initial backend checkpoint still assert that routed Add has no owner
+capability. Subsequent backend/owner review and adoption receipts are recorded
+below and in the linked owner record; these initial checks implied no UI adoption.
 
 ## Reviewed backend integration
 
@@ -130,7 +133,9 @@ byte for byte. Login-context, reconnect and all other owner runtime source remai
 unchanged; only integration coverage notes are added. No dependency, version,
 new worker/sequencer or live capability enablement is included. A separate owner
 candidate must retain the supplied completion witness directly and pass its own
-independent review before routed Add is enabled.
+independent review before routed Add is enabled. The linked owner record now
+supplies that separately cleared adoption at `6e0cc8fd`; partial repair is not
+included.
 
 Fresh combined checks pass 86 validator controls, 76 core, 240 backend, 546
 all-feature GTK and 492 default GTK tests, plus ten legacy library tests and all
