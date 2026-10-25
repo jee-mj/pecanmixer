@@ -1,6 +1,7 @@
 //! Controlled UI-side projections only. No native constructor, capture, writer
 //! file, real tray or user directory is used.
 mod arming;
+mod elapsed;
 mod folder;
 mod migration;
 mod reconciliation;
@@ -126,6 +127,7 @@ impl Fake {
             failure: None,
             complete: false,
             take: None,
+            elapsed_at: None,
             directory: None,
             tracks: vec![],
         }))));

@@ -72,6 +72,7 @@ fn child(fake: &Fake, arm: usize, bus: &str) -> Rc<Take> {
         failure: None,
         complete: false,
         take: None,
+        elapsed_at: None,
         directory: None,
         tracks: vec![],
     }))));
@@ -244,6 +245,7 @@ fn sibling_children_with_same_source_survive_opening_snapshot_omission_and_late_
         failure: Some(RecordingError::InvalidInput),
         complete: true,
         take: None,
+        elapsed_at: None,
         directory: None,
         tracks: vec![],
     });

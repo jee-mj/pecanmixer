@@ -24,7 +24,20 @@ impl BusOwner {
                 })
                 .flatten()
                 .filter(|_| coherent);
-            let statuses: Vec<_> = d.takes.iter().map(|t| t.status.clone()).collect();
+            // Timing updates belong to the retained transport presentation,
+            // not edit authority. Do not rebind bus controls on every sample.
+            let statuses: Vec<_> = d
+                .takes
+                .iter()
+                .map(|t| {
+                    let mut status = t.status.clone();
+                    status.elapsed_at = None;
+                    for track in &mut status.tracks {
+                        track.elapsed = None;
+                    }
+                    status
+                })
+                .collect();
             let owned = statuses.iter().filter(|t| !t.complete).collect::<Vec<_>>();
             let activity = if d.unknown_owned || !d.orphans.is_empty() {
                 ui::Activity::Unknown

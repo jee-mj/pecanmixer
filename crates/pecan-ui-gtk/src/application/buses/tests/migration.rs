@@ -688,6 +688,7 @@ fn rejected_bus_publication_cannot_release_observed_migration_ownership() {
                 failure: None,
                 complete: true,
                 take: Some(TakeKey::Synthetic(id)),
+                elapsed_at: None,
                 directory: None,
                 tracks: vec![ui::Track {
                     identity: TrackKey::Synthetic(900),

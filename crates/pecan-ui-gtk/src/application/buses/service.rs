@@ -71,6 +71,9 @@ pub struct TakeStatus {
     pub take: Option<TakeKey>,
     pub directory: Option<std::path::PathBuf>,
     pub tracks: Vec<ui::Track<TrackKey>>,
+    /// Measurement instant for track elapsed values, retained across caching.
+    /// No instant means no running timing authority, even if a phase is old.
+    pub elapsed_at: Option<std::time::Instant>,
 }
 #[derive(Clone)]
 pub struct ArmingStatus {
@@ -183,7 +186,10 @@ impl TakePoll for NativeTake {
                     .map_or(ui::TrackPhase::Unconfirmed, |t| match &t.phase {
                         NativeTrackPhase::Opening => ui::TrackPhase::Starting,
                         NativeTrackPhase::Open => {
-                            if r.started_once {
+                            if r.stop_requested || r.track_stops & (1_u64 << track.id.index()) != 0
+                            {
+                                ui::TrackPhase::Finalizing
+                            } else if r.started_once {
                                 ui::TrackPhase::Recording
                             } else {
                                 ui::TrackPhase::WriterReady
@@ -202,11 +208,21 @@ impl TakePoll for NativeTake {
                         }
                         NativeTrackPhase::Unconfirmed => ui::TrackPhase::Unconfirmed,
                     });
+                let elapsed = r
+                    .elapsed
+                    .as_ref()
+                    .filter(|_| phase == ui::TrackPhase::Recording)
+                    .and_then(|elapsed| {
+                        elapsed
+                            .running_tracks
+                            .contains(&track.id)
+                            .then_some(elapsed.duration)
+                    });
                 ui::Track {
                     identity: TrackKey::Native(track.id),
                     bus_key: track.key.clone(),
                     phase,
-                    elapsed: None,
+                    elapsed,
                 }
             })
             .collect();
@@ -220,6 +236,7 @@ impl TakePoll for NativeTake {
             take: writer.map(|w| TakeKey::Native(w.take)),
             directory: writer.and_then(|w| w.directory.clone()),
             tracks,
+            elapsed_at: r.elapsed.as_ref().map(|elapsed| elapsed.observed_at),
         })
     }
 }

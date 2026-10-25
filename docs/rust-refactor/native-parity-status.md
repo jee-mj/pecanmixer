@@ -123,3 +123,9 @@ worker-based preparation/launch/reaping. Independent correction review clears
 correlation before launch. It is included in the matrix above. Active elapsed
 stays unavailable; a real producer is the next transport prerequisite, not a
 UI-arrival stopwatch.
+
+The separate [elapsed adapter candidate](./native-elapsed-adoption-candidate.md)
+adopts independently reviewed producer `38db4706` through retained measurement
+instants and the existing transport clock. It compensates different observation
+ages without restamping cached reports or rebinding edit controls. This new UI
+delta awaits independent review and is not completed PR2 timing acceptance.

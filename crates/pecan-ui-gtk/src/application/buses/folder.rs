@@ -1,7 +1,7 @@
 //! Read-only folder authority, independent of graph revisions and timing ticks.
 use super::*;
 use crate::application::transport;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[derive(Clone)]
 pub(crate) struct FolderOrigin(Rc<Context>);
@@ -19,7 +19,15 @@ impl FolderOrigin {
 }
 impl BusOwner {
     pub(crate) fn folder_snapshot(&self, now: Duration) -> transport::Snapshot<FolderOrigin> {
+        self.folder_snapshot_at(now, Instant::now())
+    }
+    pub(super) fn folder_snapshot_at(
+        &self,
+        now: Duration,
+        sampled_at: Instant,
+    ) -> transport::Snapshot<FolderOrigin> {
         let closing = self.session.admission_closed();
+        let graph = self.session.graph();
         let mut d = self.data.borrow_mut();
         let latest = d.latest_started.as_ref().map(|(r, _)| r.clone());
         let status = d.latest_started.as_ref().and_then(|(_, s)| s.clone());
@@ -87,6 +95,39 @@ impl BusOwner {
             }
             if takes.len() < 80 {
                 takes.push(status);
+            }
+        }
+        // Normalize each actual measurement to this one clock sample before
+        // choosing the oldest take. Cached reports keep their original instant
+        // in Data; neither delivery nor another sibling can refresh their age.
+        for take in &mut takes {
+            let current_source = graph
+                .as_ref()
+                .is_some_and(|g| g.value.verbonden && g.stamp.epoch == take.source.epoch)
+                && d.config.as_ref().is_some_and(|c| {
+                    c.connected
+                        && c.revision.owner == take.source.owner
+                        && c.revision.epoch == take.source.config_epoch
+                });
+            let age = take
+                .elapsed_at
+                .filter(|_| {
+                    fresh
+                        && current_source
+                        && !take.complete
+                        && !d.all_stopped
+                        && !take.take.is_some_and(|id| d.stopped_takes.contains(&id))
+                        && take.progress == RecordingProgress::StartedLocally
+                        && take.failure.is_none()
+                })
+                .and_then(|at| sampled_at.checked_duration_since(at));
+            for track in &mut take.tracks {
+                track.elapsed = (track.phase == ui::TrackPhase::Recording
+                    && !d.stopped.contains(&track.identity))
+                .then_some(track.elapsed)
+                .flatten()
+                .zip(age)
+                .and_then(|(elapsed, age)| elapsed.checked_add(age));
             }
         }
         transport::Snapshot {

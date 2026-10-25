@@ -43,6 +43,7 @@ pub(super) fn take(root: &Path, id: u64, elapsed: Option<Duration>) -> BusRecord
         failure: None,
         complete: false,
         take: Some(BusTakeKey::Synthetic(id)),
+        elapsed_at: None,
         directory: Some(root.join(format!("Take {id}"))),
         tracks: vec![Track {
             identity: BusTrackKey::Synthetic(id),
