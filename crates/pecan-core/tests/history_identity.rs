@@ -78,6 +78,91 @@ fn mute(c: &mut Controller, node: u32) -> u64 {
     .ticket
 }
 
+fn layout_frame(r: &Registry, c: &Controller) -> HistoryGraph {
+    HistoryGraph::from_registry(
+        c.graph().unwrap().clone(),
+        r.authority.clone(),
+        r.generations.clone(),
+    )
+}
+
+#[test]
+fn layout_reconciliation_preserves_unaffected_history_graph_and_ticket_sequence() {
+    let mut r = Registry::new();
+    let mut c = r.start();
+    let ticket = mute(&mut c, 20);
+    r.done(&mut c, ticket);
+    let frame = layout_frame(&r, &c);
+    let changed = c.buses.change_coupling(0).unwrap();
+    c.reconcile_buses(&frame, changed.clone()).unwrap();
+    assert_eq!(c.buses, changed);
+    assert_eq!(c.lengths(), (1, 0));
+    assert_eq!(c.graph().unwrap().stamp, frame.graph().stamp);
+    assert!(Arc::ptr_eq(&c.graph().unwrap().value, &frame.graph().value));
+    assert_eq!(c.reduce(Input::Undo).unwrap().unwrap().ticket, ticket + 1);
+}
+
+#[test]
+fn layout_reconciliation_rejects_copied_foreign_stale_and_invalid_authority_without_mutation() {
+    let mut r = Registry::new();
+    let mut c = r.start();
+    let ticket = mute(&mut c, 20);
+    r.done(&mut c, ticket);
+    let frame = layout_frame(&r, &c);
+    let before = c.buses.clone();
+    let changed = before.change_coupling(0).unwrap();
+    let mut stale = frame.graph().clone();
+    stale.stamp.revision -= 1;
+    for wrong in [
+        HistoryGraph::from_registry(frame.graph().clone(), Arc::new(()), r.generations.clone()),
+        HistoryGraph::from_registry(
+            Stamped {
+                stamp: frame.graph().stamp,
+                value: Arc::new((*frame.graph().value).clone()),
+            },
+            r.authority.clone(),
+            r.generations.clone(),
+        ),
+        HistoryGraph::from_registry(stale, r.authority.clone(), r.generations.clone()),
+    ] {
+        assert_eq!(
+            c.reconcile_buses(&wrong, changed.clone()),
+            Err(DomainError::IdentityUnavailable)
+        );
+        assert_eq!(c.buses, before);
+        assert_eq!(c.lengths(), (1, 0));
+        assert!(Arc::ptr_eq(&c.graph().unwrap().value, &frame.graph().value));
+    }
+    let mut invalid = before.clone();
+    invalid.widths = vec![0];
+    assert_eq!(
+        c.reconcile_buses(&frame, invalid),
+        Err(DomainError::InvalidBusConfig)
+    );
+    assert_eq!(c.buses, before);
+    assert_eq!(c.lengths(), (1, 0));
+}
+
+#[test]
+fn layout_reconciliation_does_not_discard_or_complete_pending_work() {
+    let mut r = Registry::new();
+    let mut c = r.start();
+    let ticket = mute(&mut c, 20);
+    let frame = layout_frame(&r, &c);
+    let before = c.buses.clone();
+    let changed = before.change_coupling(0).unwrap();
+    assert_eq!(
+        c.reconcile_buses(&frame, changed.clone()),
+        Err(DomainError::Busy)
+    );
+    assert!(c.busy());
+    assert_eq!(c.buses, before);
+    assert_eq!(c.lengths(), (0, 0));
+    r.done(&mut c, ticket);
+    c.reconcile_buses(&layout_frame(&r, &c), changed).unwrap();
+    assert_eq!(c.lengths(), (1, 0));
+}
+
 #[test]
 fn numeric_ids_without_a_registry_witness_cannot_authorize_undo() {
     let mut r = Registry::new();

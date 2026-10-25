@@ -18,6 +18,13 @@ while preserving unrelated channels and stored muted dB; these local edits do
 not enter graph Undo. Immediate configuration-driven history reconciliation
 remains separate.
 
+A separate [same-frame history candidate](./native-history-layout-candidate.md)
+reconciles the existing guards at normal authenticated bus-definition adoption,
+using the retained current witness without a fabricated revision or command.
+It preserves unaffected steps and existing shared-work gates. It is not in PR2
+before independent review; explicit recovery and queued-input parity are outside
+that candidate.
+
 | Original behavior and source | Rust/native state | Remaining gate |
 |---|---|---|
 | Graph subscription, disconnect/reconnect, rate/quantum (`src/api.ts`, `src/App.tsx`) | Reviewed exact-frame owner/coordinator/finalization shell source | Live audio/desktop acceptance |

@@ -287,7 +287,19 @@ impl Session {
         {
             return Err("Bus definitions changed while shared work is pending.".into());
         }
-        state.history.buses = buses.clone();
+        let frame = state
+            .frame
+            .as_ref()
+            .filter(|frame| {
+                frame.graph().stamp == origin.stamp
+                    && Arc::ptr_eq(&frame.graph().value, &origin.value)
+            })
+            .cloned()
+            .ok_or("Bus definitions require the retained current native witness.")?;
+        state
+            .history
+            .reconcile_buses(&frame, buses.clone())
+            .map_err(|e| format!("History layout reconciliation unavailable: {e:?}"))?;
         state.history_context = Rc::new(());
         Ok(())
     }
