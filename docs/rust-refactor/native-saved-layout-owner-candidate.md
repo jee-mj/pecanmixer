@@ -1,8 +1,9 @@
-# Saved Rec layout owner candidate
+# Reviewed saved Rec layout owner
 
 Base: reviewed PR2 `e989371ac671a25171fb087a63281a9b8a44d971`.
-This candidate awaits independent owner review; it is not an additional PR or
-a claim of full parity or physical audio acceptance.
+Corrected source `466d56bf74b79c822b69a6c54c20eb0a64e1a792` is independently
+cleared and adopted here without runtime reconciliation. This is not an
+additional PR or a claim of full parity or physical audio acceptance.
 
 ## Legacy behavior and bounded adoption
 
@@ -127,3 +128,34 @@ environment blocker remains. The complete aggregate, legacy examples and physica
 acceptance are not repeated for this narrow correction; the initial receipts
 above remain historical. Corrected candidate hosted CI and unchanged independent
 review probes remain separate gates before PR2 integration.
+
+## Independent clearance and adoption
+
+Independent review clears corrected `466d56bf`: all five unchanged independent
+probes and all 171 bus-owner checks in each feature mode pass. The queued
+ownership/admission/reentry contract gap is closed and later idle epochs remain
+eligible. [Exact candidate CI40181631946](https://github.com/jee-mj/pecanmixer/actions/runs/40181631946)
+succeeds. Source commits `05841309` then `466d56bf` apply cleanly onto reviewed
+PR2 `e989371a`; all runtime/test source matches the reviewed candidate exactly.
+Only adoption/coverage notes differ. Combined validation and exact published-head
+hosted receipts are checked separately for this integration.
+
+Fresh combined cloud validation passes 86 validator controls, 79 core, 253
+backend and 578 all-feature GTK tests, plus 524 default GTK tests, ten legacy
+library tests and compilation of all five legacy examples. Formatting, native
+build, three headless fixtures, three controlled smokes and Cargo/ELF closure
+audits pass with zero Node attempts. Host and explicit-target workspace packages
+are cleaned and rebuilt before this gate. Privacy/scope checks verify authored
+generic fixtures and unchanged core/backend/legacy, manifests/lockfile,
+dependencies, settings schema and versions. There are no final failed local
+checks or environment/dependency blockers. Exact published-head hosted evidence
+is recorded separately in the PR description, without claiming hardware/audio,
+physical desktop or performance acceptance.
+
+User-facing automatic restore now covers valid initial/memory settings and idle
+reconnect, including unknown logical metadata, same-capacity routed regrouping
+and nondecreasing growth preserving existing endpoint pairs. It retains existing
+recording/user-work/protected-input/reload/quit gates, original prefix/source and
+final suffix evidence, and accepted terminal/readback presentation before lease
+release. There is no preference writeback, graph Undo, automatic retry/repair,
+shrink, topology replay or active-recording structural policy in this adoption.

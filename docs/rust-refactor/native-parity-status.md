@@ -40,13 +40,13 @@ are outside that follow-up.
 | Cable create/remove/move, selection/delete/cancel (`src/Patchbay.tsx`, `src/handelingen.ts`) | Reviewed keyboard/pointer libraries attached to reviewed coordinator source | Physical-input acceptance |
 | Patch module positioning and reconnect behavior (`Plekken`, `ModuleKaart`) | Reviewed session movement/rearrange and reconnect aliases on retained view | Session-layout and physical-input acceptance |
 | Undo/redo queue and keyboard shortcuts (`src/geschiedenis.ts`, `src/handelingen.ts`, `src/App.tsx`) | Reviewed generation/selector guards, shared receipts, immutable button activation, observed gesture history and same-frame configuration-adoption guard reconciliation; standard window Ctrl/Meta+Z, Shift+Z and Y bindings preserve native editor history and allow later autorepeat activations | Busy/stale shortcut activations are dropped; JS queued input and physical/audio acceptance remain |
-| Add/remove/link buses, Rec gain/mute/arming (`src/bussen.ts`, `Mixer`) | Bus owner mounts typed idle config/readback and correlated controls; Session/routing/meters use adopted definitions; corrected dynamic arming is wired through shared owner admission/retained receipts; idle routed Add/split/join/remove use reviewed retained migration receipts, original source proofs and authenticated final-input witnesses; reviewed Rec gain/mute owner retains original witness, one-flight/coalesced targets and final flush for idle/known native recording, without graph Undo | General saved-layout restore/clock effects and explicit-recovery history reconciliation; explicit partial append repair and observed-port/desktop acceptance; active structural edits remain a user-decision gate |
+| Add/remove/link buses, Rec gain/mute/arming (`src/bussen.ts`, `Mixer`) | Bus owner mounts typed idle config/readback and correlated controls; Session/routing/meters use adopted definitions; corrected dynamic arming is wired through shared owner admission/retained receipts; idle routed Add/split/join/remove use reviewed retained migration receipts, original source proofs and authenticated final-input witnesses; reviewed Rec gain/mute owner retains original witness, one-flight/coalesced targets and final flush for idle/known native recording, without graph Undo | Saved-layout shrink/topology replay, clock effects and explicit-recovery history reconciliation; explicit partial append repair and observed-port/desktop acceptance; active structural edits remain a user-decision gate |
 | Record/stop, per-bus start/stop, elapsed time, folder action (`src/Transport.tsx`, `src/api.ts`) | Bus owner adds explicit-root all-armed/per-bus start, captured stable stop IDs, retained receipts and quit diagnostics; Folder is mounted with latest-start authority and off-UI preparation/launch/reaping; reviewed elapsed producer/adapter preserve measurement age and use the existing clock/oldest-take formatter | Live elapsed/recording/desktop acceptance and sample alignment remain unproven; all-armed membership is preflight only, not atomic CAS |
 | MIDI clock/start-stop, MIDI tabs/route/activity (`src/MidiMixer.tsx`, `src/midi.ts`, `src/MidiMeter.tsx`) | Legacy MIDI feature flag remains disabled | Preserve disabled status; separately define/verify any enabled MIDI parity scope |
 | Meter ballistics/peak hold, per-channel rendering (`src/meters.ts`, `src/Meter.tsx`) | Entrypoint uses Session-adopted definitions for same-graph split/add/join/remove reprojection; retained wrappers, registry bindings, graph-before-peaks and visibility gating remain | Capture freshness/availability protocol and live/animation acceptance remain |
 | Hide/show strips/rows and reconnect names (`src/App.tsx`, `Mixer`) | Reviewed display panel/filter/save bridge; full graph/origin/history retained | Transient IDs must not become durable identity; reconnect/desktop acceptance |
 | Row height and destination split preferences (`useRijGewichten`, `Greep`, `Deling`) | Reviewed adjacent-pair/split resize/reset input and request-aware save triggers | Physical input acceptance |
-| Saved buses, hidden keys, clock preference and layout (`leesBussen`, `leesKlok`, `leesVerborgen`) | Versioned contract/storage plus display bridge and accepted Rec layout/dB/mute/arming writeback through the existing coalesced worker/final drain; latest intent survives backend failure and older saves, while saved MIDI/clock/display values are preserved; independently reviewed matching-capacity idle startup/reconnect restore uses original authority and post-report presentation barriers | General growth/shrink/routed restore, pending/uncertain prior-work recovery, explicit reload/recovery policy, import and clock effects remain gated; no user profile access performed |
+| Saved buses, hidden keys, clock preference and layout (`leesBussen`, `leesKlok`, `leesVerborgen`) | Versioned contract/storage plus display bridge and accepted Rec layout/dB/mute/arming writeback through the existing coalesced worker/final drain; latest intent survives backend failure and older saves, while saved MIDI/clock/display values are preserved; reviewed once-per-epoch idle startup/reconnect restore includes unknown metadata, same-capacity routed initialization/regrouping and nondecreasing growth, retaining original authority/pairs/suffix evidence through fresh readback and accepted presentation | Shrink/topology replay, automatic failed-prefix repair, pending/uncertain prior-work recovery, explicit reload/recovery policy, import and clock effects remain gated; no user profile access performed |
 | Tray open/close/quit, autostart/single instance (`src-tauri/src/tray.rs`, `autostart.rs`, `lib.rs`) | Reviewed shell and explicit-context desktop worker/tray/CLI controls; generated login arguments retain the same authorized root, executable assertion and settings/recording paths; one retained worker/drain and result-bound controls; ordinary launch only inspects and explicit changes protect legacy entries | Existing rootless entries need explicit update; complete session/process arbitration, native packaging identity and actual desktop/login acceptance remain |
 | Graceful recorder shutdown/error/timeout handling | Reviewed backend/legacy completion and native hold/tagged-handle/off-UI settings drain | Live recording/quit acceptance; no fsync/crash-durability claim |
 | Accessible controls, keyboard navigation, responsive layout (`src/*.tsx`, `src/styles.css`) | Synthetic native names/focus/layout checks; control candidate | End-to-end keyboard/AT-SPI/Orca, physical Wayland/X11, scale/theme/distro acceptance |
@@ -170,7 +170,8 @@ witness and known Rec identity/ownership; one shared lease spans coalesced
 samples, actual readback, final flush and matched terminal presentation. Newer
 superseding state becomes explicit uncertainty without replay; genuinely older
 readback waits. Refresh archives the original outcome before fresh admission;
-unknown logical metadata additionally requires explicit initialization. Stored
+unknown logical metadata requires authenticated initialization, now available
+through the eligible idle saved-layout restore below. Stored
 dB/mute/arming and unselected channels are preserved, with no graph Undo for
 these local edits. Opening, unknown ownership and finalizing fresh input remain
 gated; active-recording structural edits and hardware acceptance remain separate.
@@ -189,9 +190,10 @@ backend completion. Passive readback and default initialization never save or
 restore it. Original MIDI/clock/display values survive, older saves cannot
 replace newer edits, and common quit drains the final desired document off UI.
 Saved intent is not proof of applied audio. The separately reviewed bounded
-restore below adopts original-generation full-config authority; broader metadata
-initialization, safe shrink/routed growth and explicit recording/reload policy
-remain separate. Writeback and shortcut bindings alone add no audio restore.
+restore below adopts original-generation authority for initialization or
+nondecreasing growth without moving routes. Shrink, topology replay and explicit
+recording/reload policy remain separate. Writeback and shortcut bindings alone
+add no audio restore.
 
 The [reviewed full-config origin API](./native-full-config-origin.md) retains
 original Rec node/input generations alongside configuration CAS, with no weaker
@@ -204,19 +206,30 @@ regrouping/initialization or nondecreasing growth, including unknown logical/
 transport metadata. Original HistoryGraph/configuration/membership authority,
 existing endpoint pairs, final suffix generations and partial uncertainty remain
 bound through the existing migration engine. Corrected `7e940a97` accounts for
-transport changes in local outcome and revision publication. This library alone
-does not broaden the startup/settings owner, add automatic repair/reload, shrink
-or topology replay, or decide active-recording structural behavior. Those owner
-and policy gates remain unfinished.
+transport changes in local outcome and revision publication. The independently
+reviewed owner follow-up below now adopts this primitive. Automatic repair/reload,
+shrink, topology replay and active-recording structural behavior remain gated.
 
-The independently reviewed [bounded Rec restore owner](./native-rec-restore-candidate.md)
-uses that strong API for valid initial or memory preferences and matching local
+The initial independently reviewed [bounded Rec restore owner](./native-rec-restore-candidate.md)
+uses strong authority for valid initial or memory preferences and matching local
 channel capacity. It retains original input identity, actual receipt and shared
 lease through post-report readback and accepted presentation. This does not add
 general layout migration, active-recording reload/structural policy, clock effects,
 profile import or automatic recording. Corrected owner `3c318cee` independently
 clears original foreign-route probes while preserving the owned routed-layout
 gate. Its source is adopted without runtime reconciliation onto `f9fc8e7c`.
+
+The independently reviewed [saved-layout owner follow-up](./native-saved-layout-owner-candidate.md)
+extends that existing once-per-epoch idle startup/reconnect path to unknown
+metadata, equal-capacity routed initialization/regrouping and nondecreasing
+growth, preserving existing endpoint pairs. Corrected `466d56bf` retains original
+HistoryGraph/CAS/membership, prefix/source and actual final suffix generations,
+zero-in-progress terminal receipts, subsequent fresh authenticated readback and
+accepted presentation before releasing the same Session lease. Queued recording
+ownership latches the captured epoch at admission/inspection without poisoning a
+later idle epoch. No settings schema/writeback, graph Undo, audio recording,
+automatic repair/retry, shrink/topology replay or active structural policy is
+added. Local/observed evidence is not audio/server acceptance.
 
 The [reviewed desktop helper library](./native-desktop-library-integration.md)
 preserves explicit native settings/recording launch arguments and a distinct
@@ -228,7 +241,7 @@ The independently reviewed [reconnect-after-completed-edits owner](./native-rec-
 addresses the retained successful user-operation gate on `d0d8f23f`. It requires
 closed original receipts, released ownership and fresh authenticated idle
 presentation before archiving old work and capturing current preferences for a
-new request. Pending/uncertain work, recording reload and general layouts remain
+new request. Pending/uncertain work, recording reload and shrinking/topology replay remain
 gated. Corrected `91afa807` is integrated with the unchanged pure desktop helper.
 Recording observed by the owner latches its existing epoch skip even if nested
 polling publishes joined state before returning; a later epoch can recover.

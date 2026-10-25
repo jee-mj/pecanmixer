@@ -6,6 +6,9 @@ adoption is included and existing generic configuration gates are unchanged.
 Corrected source `7e940a978d7edd13b318e0831796e24a0d39a84e` independently clears
 the narrow re-review below; this remains a backend primitive, not broader saved
 settings restoration in the executable.
+The separately [reviewed owner adoption](./native-saved-layout-owner-candidate.md)
+now mounts the bounded idle startup/reconnect path; the library contract and
+remaining shrink/repair/active-structural exclusions below still apply.
 
 ## API and admission
 
