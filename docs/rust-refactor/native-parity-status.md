@@ -35,6 +35,18 @@ Undo/Redo entries immediately without waiting for another graph publication,
 preserving unrelated steps, actual frozen outcomes and all pending-work gates.
 No rollback, failed-prefix Undo, command, ticket or revision is invented.
 
+The independently reviewed [sequential reset follow-up](./native-large-route-reset-candidate.md)
+executes Back to auto beyond 32 commands and its captured inverse under one
+retained history operation. Native children remain at most 32 commands, with
+original authority checks between children, real retained reports and one final
+acknowledgment. Partial effects stop future batches and require explicit
+recovery. After reconnect and actual closure, metadata initialization becomes
+eligible on the next normal clock tick after graph acceptance, not immediately;
+the failed parent remains retained and routing still needs explicit recovery.
+Three of four unchanged independent probes passed; the immediate-readiness
+expectation passed only after adding that normal tick. Extra closure/epoch/clock
+probes and the exact reviewed candidate's hosted CI passed.
+
 | Original behavior and source | Rust/native state | Remaining gate |
 |---|---|---|
 | Graph subscription, disconnect/reconnect, rate/quantum (`src/api.ts`, `src/App.tsx`) | Reviewed exact-frame owner/coordinator/finalization shell source | Live audio/desktop acceptance |
@@ -45,7 +57,7 @@ No rollback, failed-prefix Undo, command, ticket or revision is invented.
 | Drag/fine drag, wheel grouping, rounding, double-click reset (`Fader`) | Reviewed policy and owner coordinator; ordinary refresh preserves desired keyboard position; unconfirmed held input requires release | Physical input acceptance |
 | Independent output destination and Rec-bus selections (`bewerkt`, `bewerkteBus`, `kiesBewerkt` in `src/App.tsx`) | Bus owner and routing page share independent choices without audio commands; Session/meters use the same adopted definitions and normal/explicit recovery reconcile existing history guards | Reconnect/layout acceptance |
 | Normal/manual/custom route states and green/R toggles (`BronStrip`, `schakel`, `schakelRoute`) | Mounted routing shares selections/configuration, history and actual reports; explicit recovery checks original-receipt closure, current authenticated inspection and released history; custom routes open the patchbay | Busy/unknown inspection remains gated; server convergence and audio/input acceptance are unproven |
-| Back to auto / manual route count (`telHandwerk`, `terugNaarAutoStap`) | Mounted count/confirmation uses shared observed history and explicit failure recovery; original-generation restore witnesses survive target-clear transitions | Reset batches over 32 commands and audio/input acceptance |
+| Back to auto / manual route count (`telHandwerk`, `terugNaarAutoStap`) | Mounted count/confirmation and bounded sequential reset/inverse use one captured history step, at most 32 native commands per child, original-generation witnesses, retained real reports, combined observation and explicit partial recovery | 16,384 planned-action / 512-child / 30-second bounds; clock-driven reconnect initialization; audio/input and policy-manager acceptance |
 | Cable create/remove/move, selection/delete/cancel (`src/Patchbay.tsx`, `src/handelingen.ts`) | Reviewed keyboard/pointer libraries attached to reviewed coordinator source | Physical-input acceptance |
 | Patch module positioning and reconnect behavior (`Plekken`, `ModuleKaart`) | Reviewed session movement/rearrange and reconnect aliases on retained view | Session-layout and physical-input acceptance |
 | Undo/redo queue and keyboard shortcuts (`src/geschiedenis.ts`, `src/handelingen.ts`, `src/App.tsx`) | Reviewed generation/selector guards, shared receipts, immutable button activation, observed gesture history and same-frame normal/explicit-recovery guard reconciliation; standard window Ctrl/Meta+Z, Shift+Z and Y bindings preserve native editor history and allow later autorepeat activations | Busy/stale shortcut activations are dropped; JS queued input and physical/audio acceptance remain |
@@ -75,7 +87,7 @@ Pending product policies remain unchanged.
 | Feature | Remaining behavior | Already implemented |
 |---|---|---|
 | Rapid Undo/Redo | Legacy `geschiedenis.ts` queues operations with 250 ms spacing. Native busy/stale activations currently drop; equivalent queued intent behavior is not ported. | Guarded history, standard shortcuts, observed gesture steps and normal/explicit-recovery reconciliation. |
-| Large routing changes | Back to auto exceeding 32 planned commands is counted but rejected before dispatch. It needs bounded execution retaining one history intent and truthful partial outcomes, rather than raising the native limit. | Normal/Rec/custom routing, patchbay editing and supported single-batch reset. |
+| Large routing changes | Reset/inverse execution is now bounded at 16,384 planned actions, 512 real children and 30 seconds. Partial effects need explicit recovery; other oversized actions retain their single-intent limit. Live audio/input and policy-manager acceptance remain unperformed. | Back to auto beyond 32 commands, one inverse/history acknowledgment, original witness validation between children and retained real outcomes; normal/Rec/custom routing and patchbay editing. |
 | Saved Rec configuration and edit recovery | A saved layout smaller than current capacity (including a one-channel saved layout at initial two-channel startup) is not automatically restored. Partial bus edits still require an explicit repair workflow; external reload/apply policy remains gated. Legacy does not persist a graph topology, so arbitrary topology replay is not added as a parity requirement. | Once-per-epoch idle initialization/regrouping/growth preserving existing pairs, gain/mute/arming writeback and retained actual receipts. |
 | Changing layout during recording | Add/remove/coupling while recording remains disabled pending an explicit product decision about segmentation versus disabling those edits. | Recording/start/stop, active gains/mute, dynamic arming, elapsed display, Folder and finalization. |
 | Everyday desktop launch and upgrade | Normal launch currently uses memory preferences unless a settings path is supplied; recording needs an explicit root, and login controls need explicit native-artifact/config-root context. Finish intended default locations, existing-preference migration and process/context behavior as part of native packaging/usage, without implicit profile takeover. | One owner/window, explicit-path settings, reviewed tray/login controls and preserved login arguments. |

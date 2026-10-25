@@ -119,7 +119,7 @@ crate-only visibility changes: window releases, focus loss and retirement preven
 held Space/Return/pointer input from activating replacement controls. Tab remains
 navigation, Escape cancels a draft, and stale detached callbacks are inert.
 
-The native intent limit remains 32 commands. The large-reset candidate adds a
+The native intent limit remains 32 commands. The reviewed large-reset follow-up adds a
 Session-owned sequential workflow for Back to auto and its captured inverse:
 at most 16,384 planned actions, 512 retained real child receipts, one child in
 flight and 30 seconds total. It preserves unlink/target/restore ordering, one
@@ -135,7 +135,10 @@ replacement, timeout or finalization stops future children; existing explicit
 recovery waits for actual closure and fresh graph/config inspection. No rollback,
 automatic retry or failed-prefix Undo is created. See
 [the candidate contract](../../../../docs/rust-refactor/native-large-route-reset-candidate.md)
-for focused synthetic evidence and review status.
+for focused synthetic evidence and independent review. After reconnect, a closed
+old-epoch hold releases on the next normal clock tick after graph acceptance;
+metadata initialization is not immediately eligible inside that acceptance call.
+The failed parent remains retained and routing still needs explicit recovery.
 
 Rec routing here does not start/stop recording,
 arm buses, migrate layouts or change settings. Active-recording structural policy

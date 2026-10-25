@@ -1,7 +1,7 @@
-# Sequential Back-to-auto candidate
+# Reviewed sequential Back-to-auto reset
 
-Based on `261fd352d1cd4055afd47a721cb4e88be456182c`. This candidate requires
-independent review before PR2 adoption. It addresses resets exceeding the existing
+Based on `261fd352d1cd4055afd47a721cb4e88be456182c`. This integration adopts
+independently reviewed `a7b9eb6b` plus corrected `3d0c1351`. It addresses resets exceeding the existing
 32-command native intent limit, including their Undo/Redo, without changing that
 backend limit, command DTOs, dependencies, versions, configuration or settings.
 
@@ -66,7 +66,18 @@ connected, authenticated epoch is accepted. It preserves same-epoch holds and
 never releases while a child is open. This permits the existing explicit
 metadata initialization path; the routing view still retains the failed parent
 and requires its separate explicit reconciliation afterward. No routing action
-is replayed or acknowledged by initializing metadata.
+is replayed or acknowledged by initializing metadata. Eligibility is
+clock-driven: after accepting the newer graph, the next normal clock tick
+releases the closed old-epoch hold. Initialization is not immediately eligible
+inside the same graph-acceptance call.
+
+Independent re-review clears this clock-driven contract. Of four unchanged
+probes, three passed and one expected immediate initialization readiness and
+failed that timing expectation. Adding only the next normal clock tick made it
+pass. Three extra closure/epoch/clock probes, 16 focused checks per feature mode,
+39 Session checks and exact-candidate CI
+[40187466654](https://github.com/jee-mj/pecanmixer/actions/runs/40187466654)
+passed. This is not a claim that all four unchanged probes passed verbatim.
 
 The routing UI retains its parent request throughout child progress, including
 while recording. It displays observed planned actions and retained child count,
@@ -113,7 +124,18 @@ The recovery correction passes all 16 focused checks, 597 all-feature GTK/input/
 D-Bus checks, 543 default-feature GTK checks, native build and formatting/diff
 checks. Core/backend, legacy, example and dependency-audit checks above were not
 repeated for this UI-only correction; their source and dependency files are
-unchanged. Independent re-review is still required.
+unchanged. The independent re-review result and timing qualification are recorded
+above.
+
+Fresh combined integration checks pass 86 validator controls, 79 core tests,
+253 backend tests, 597 all-feature GTK/input/D-Bus checks, 543 default-feature
+GTK checks and 10 legacy unit checks. All five existing audio examples compile
+without running. Native build, formatting, three headless fixtures, three GTK
+smokes and Cargo/ELF audits pass, with zero guarded JavaScript-tooling attempts.
+Host and explicit-target workspace packages were cleaned before rebuilding.
+Runtime/test source matches reviewed `3d0c1351` exactly; only adoption/coverage
+notes differ. Exact published-head hosted results are reported with PR2;
+hardware and final acceptance remain separate.
 
 Physical desktop, audio hardware, policy-manager behavior under actual load,
 recording continuity and performance remain untested. The user decision for
