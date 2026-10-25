@@ -119,8 +119,10 @@ includes the separately reviewed correction `37a79f6c`; its exact-head PR run
 Larger resets remain rejected above 32 commands. Dynamic arming, staged idle
 migration UI, active-recording structural policy, bus-edit history, saved audio
 settings and complete transport/session/distribution work remain separate.
-Configuration-driven meter reprojection is not added here; the existing telemetry
-factory still uses startup bus definitions. Source inspection also identifies a
+At this routing checkpoint, telemetry still used startup bus definitions. The
+subsequent [meter follow-up](../../crates/pecan-ui-gtk/src/meters/adapter/README.md)
+now reads the same adopted definitions as Session's mixer projection. Source
+inspection also identifies a
 follow-up for same-stamp bus-definition changes: retained history guards revalidate
 against new definitions at execution/new graph, but no new configuration-history
 reducer/pruning API is introduced. No fictitious graph revision is manufactured.

@@ -107,7 +107,7 @@ acceptance remain unfinished. Fixture
 population/counters do not establish audio correctness, real-time/CPU/latency
 budgets, physical display throughput, Wayland or desktop accessibility acceptance.
 
-## Configuration reprojection caller contract (candidate)
+## Configuration reprojection caller contract (reviewed integration)
 
 The application telemetry boundary now offers `apply_definitions(session, batch,
 definitions)`, taking validated `BusDef` values from the Session's adopted bus
@@ -131,12 +131,13 @@ channel projection and missing serial/port-generation authority. Its wrapper
 still supplied startup defaults, so this clearance alone did not establish
 production adoption.
 
-The separate integration candidate adds the read-only crate-private
+The separate integration at `a4225824` adds the read-only crate-private
 `Session::bus_definitions() -> Option<Vec<BusDef>>`, derived from exactly the
 adopted configuration used by `volume_model`. The ordinary telemetry wrapper now
 passes that value to `apply_definitions`; it supplies no new configuration/graph
-authority, consumer, timer or audio command. This accessor/wiring delta requires
-independent review before PR2 publication. Core/backend, routing, history
+authority, consumer, timer or audio command. Independent review clears the delta
+with eight telemetry cases and an additional authority control, including the
+unchanged old-wrapper failure reproduction. Core/backend, routing, history
 reduction/admission and application polling order remain unchanged.
 
 The two added synthetic workspace checks cover configuration-only split, add,
@@ -160,7 +161,17 @@ The accessor/wiring candidate passes **361 all-feature and 319 default GTK
 tests**, native build, formatting and whitespace checks on isolated cloud
 Xvfb/private D-Bus. Its only production changes beyond `6e2daac6` are the
 read-only accessor and wrapper call. Core/backend/legacy suites and the aggregate
-validator were not repeated for this GTK-only delta. Independent review of this
-delta remains required; no PR2 adoption or hardware/desktop acceptance is implied.
+validator were not repeated for that GTK-only candidate. Source review is now
+cleared; combined publication checks are recorded separately below.
 Capture freshness/availability limits and configuration-driven history
 reconciliation remain separate.
+
+Combined integration onto routing checkpoint `fafda497` passes the locked native
+aggregate: **86 validator controls, 72 core, 192 backend and 361 all-feature GTK
+tests**, formatting/build, Cargo/ELF closure checks, three headless fixtures and
+three controlled smokes. It records zero Node-tool attempts. The unchanged
+candidate source also passed 319 default GTK tests and hosted run
+[40145860099](https://github.com/jee-mj/pecanmixer/actions/runs/40145860099)
+at exact head `a4225824`. All program source remains identical to that reviewed
+candidate, including the original workspace poll order. The separate
+execution-closure/recovery work is excluded from this checkpoint.
