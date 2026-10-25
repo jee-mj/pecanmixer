@@ -12,6 +12,7 @@ impl Migration {
         let configuration = fake.config.borrow().clone();
         let mut proposed = configuration.configuration.clone().unwrap();
         let key = match &intent.action {
+            LayoutAction::AddStereo => unreachable!("idle Add owner adoption remains gated"),
             LayoutAction::Split { bus }
             | LayoutAction::Join { bus }
             | LayoutAction::Remove { bus } => bus,
@@ -49,6 +50,7 @@ impl Migration {
                 new_observed: None,
                 old_observed: None,
                 ports_observed: None,
+                observed_inputs: None,
                 resize: None,
                 local_readback: None,
                 cancellation_requested: false,

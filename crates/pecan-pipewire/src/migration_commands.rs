@@ -97,18 +97,22 @@ impl Commands {
             .buses
             .definitions()
             .map_err(|_| MigrationError::InvalidInput)?;
-        let key = match &intent.action {
+        let definition = match &intent.action {
+            LayoutAction::AddStereo => None,
             LayoutAction::Split { bus }
             | LayoutAction::Join { bus }
-            | LayoutAction::Remove { bus } => bus,
+            | LayoutAction::Remove { bus } => {
+                if bus.len() > 256 {
+                    return Err(MigrationError::InvalidInput);
+                }
+                Some(
+                    definitions
+                        .iter()
+                        .find(|d| &d.key == bus)
+                        .ok_or(MigrationError::InvalidInput)?,
+                )
+            }
         };
-        if key.len() > 256 {
-            return Err(MigrationError::InvalidInput);
-        }
-        let definition = definitions
-            .iter()
-            .find(|d| &d.key == key)
-            .ok_or(MigrationError::InvalidInput)?;
         let count: usize = definitions.iter().map(|d| d.channels.len()).sum();
         if count != local.channels {
             return Err(MigrationError::InvalidObject);
@@ -168,19 +172,28 @@ impl Commands {
         let mut desired = BTreeSet::new();
         let mut affected = BTreeSet::new();
         match intent.action {
-            LayoutAction::Split { .. } if definition.coupling == Some(Coupling::Split) => {
+            LayoutAction::AddStereo => {
                 proposed.buses = before
                     .buses
-                    .change_coupling(definition.index)
+                    .add()
+                    .map_err(|_| MigrationError::InvalidInput)?;
+                affected.extend(ports.iter().map(|p| p.id));
+                desired.extend(incoming.iter().map(|l| (l.uit_poort, l.in_poort)));
+            }
+            LayoutAction::Split { .. } if definition.unwrap().coupling == Some(Coupling::Split) => {
+                proposed.buses = before
+                    .buses
+                    .change_coupling(definition.unwrap().index)
                     .map_err(|_| MigrationError::InvalidInput)?
             }
-            LayoutAction::Join { .. } if definition.coupling == Some(Coupling::Join) => {
+            LayoutAction::Join { .. } if definition.unwrap().coupling == Some(Coupling::Join) => {
                 proposed.buses = before
                     .buses
-                    .change_coupling(definition.index)
+                    .change_coupling(definition.unwrap().index)
                     .map_err(|_| MigrationError::InvalidInput)?
             }
             LayoutAction::Remove { .. } => {
+                let definition = definition.unwrap();
                 // The pure policy only sees the exact validated owner. It cannot select a
                 // foreign same-name Rec instance earlier in the full snapshot.
                 let scoped = Momentopname {
@@ -298,6 +311,7 @@ impl Commands {
             new_observed: None,
             old_observed: None,
             ports_observed: None,
+            observed_inputs: None,
             resize: None,
             local_readback: None,
             cancellation_requested: false,
@@ -310,6 +324,7 @@ impl Commands {
             serial: owned.serial,
             node_generation,
             ports,
+            appended: Vec::new(),
             source_ports,
             source_nodes,
             affected,
@@ -360,7 +375,10 @@ impl Commands {
             state.migration = Some(w);
             return;
         }
-        if let Err(error) = state.validate_migration(&w) {
+        if let Err(error) = state
+            .capture_appended_inputs(&mut w)
+            .and_then(|_| state.validate_migration(&w))
+        {
             state.finish_migration(w, error);
             return;
         }
@@ -451,7 +469,25 @@ impl Commands {
                 ))
             }
             MigrationProgress::AwaitingPorts if fresh && state.final_ports(&w) => {
-                w.receipt.0.lock().unwrap().ports_observed = Some(state.graph.stamp);
+                let mut report = w.receipt.0.lock().unwrap();
+                report.ports_observed = Some(state.graph.stamp);
+                if w.channels > w.ports.len() {
+                    let generations = std::iter::once((w.node, w.node_generation))
+                        .chain(
+                            w.ports
+                                .iter()
+                                .chain(&w.appended)
+                                .map(|p| (p.id, p.generation)),
+                        )
+                        .collect();
+                    report.observed_inputs =
+                        Some(pecan_core::history_identity::HistoryGraph::from_registry(
+                            state.graph.clone(),
+                            state.history_authority.clone(),
+                            generations,
+                        ));
+                }
+                drop(report);
                 state.config.snapshot.configuration = Some(w.proposed.clone());
                 state.config.snapshot.transport = Some(w.options.clone());
                 state.config.bump();
@@ -750,7 +786,10 @@ impl Commands {
         // alone cannot authenticate objects replaced during its callbacks.
         // Recheck the captured surviving graph scope after the last accessor,
         // before assigning its readback or publishing a local-only completion.
-        if let Err(reason) = state.validate_migration_graph(&w) {
+        if let Err(reason) = state
+            .capture_appended_inputs(&mut w)
+            .and_then(|_| state.validate_migration_graph(&w))
+        {
             w.local_applied = true;
             state.config.snapshot.local = None;
             state.config.snapshot.configuration = None;
@@ -882,6 +921,77 @@ impl State {
         }
         self.validate_migration_graph(w)
     }
+    fn capture_appended_inputs(&self, w: &mut Work) -> Result<(), MigrationError> {
+        if w.channels <= w.ports.len()
+            || self.stopped
+            || !self.graph.value.verbonden
+            || self.graph.stamp.epoch != w.source.epoch
+        {
+            return Ok(());
+        }
+        // Authenticate the DTO's publication, not an addition/removal that the
+        // registry already knows but has not published. Keep every latched
+        // suffix generation fixed, including across coalesced replacements.
+        for (id, generation) in std::iter::once((w.node, w.node_generation)).chain(
+            w.ports
+                .iter()
+                .chain(&w.appended)
+                .map(|p| (p.id, p.generation)),
+        ) {
+            if self.objects.get(&id) != Some(&generation)
+                || self.published_objects.get(&id) != Some(&generation)
+            {
+                return Err(MigrationError::InvalidObject);
+            }
+        }
+        if w.appended.iter().any(|p| !port_matches(p, self)) {
+            return Err(MigrationError::InvalidObject);
+        }
+        let mut names = BTreeSet::new();
+        let mut ids = BTreeSet::new();
+        for p in self
+            .graph
+            .value
+            .poorten
+            .iter()
+            .filter(|p| p.knoop == w.node && p.ingang && p.soort == Soort::Audio)
+        {
+            if !names.insert(&p.naam) || !ids.insert(p.id) {
+                return Err(MigrationError::ExternalConflict);
+            }
+            if w.ports.iter().any(|old| old.id == p.id) {
+                continue;
+            }
+            if !w.local_applied
+                || !(w.ports.len()..w.channels).any(|i| p.naam == format!("rec_{}", i + 1))
+            {
+                return Err(MigrationError::ExternalConflict);
+            }
+            if let Some(old) = w.appended.iter().find(|old| old.name == p.naam) {
+                if old.id != p.id {
+                    return Err(MigrationError::InvalidObject);
+                }
+                continue;
+            }
+            if w.appended.len() >= w.channels - w.ports.len() {
+                return Err(MigrationError::ExternalConflict);
+            }
+            let generation = *self
+                .published_objects
+                .get(&p.id)
+                .filter(|g| self.objects.get(&p.id) == Some(*g))
+                .ok_or(MigrationError::InvalidObject)?;
+            w.appended.push(Port {
+                id: p.id,
+                node: w.node,
+                name: p.naam.clone(),
+                input: true,
+                kind: Soort::Audio,
+                generation,
+            });
+        }
+        Ok(())
+    }
     fn validate_migration_graph(&self, w: &Work) -> Result<(), MigrationError> {
         if self.objects.get(&w.node) != Some(&w.node_generation)
             || !self
@@ -902,6 +1012,7 @@ impl State {
                 w.ports.len()
             })
             .chain(&w.source_ports)
+            .chain(&w.appended)
         {
             if !port_matches(p, self) {
                 return Err(MigrationError::InvalidObject);
@@ -924,6 +1035,7 @@ impl State {
                 && p.ingang
                 && p.soort == Soort::Audio
                 && !w.ports.iter().any(|old| old.id == p.id)
+                && !w.appended.iter().any(|new| new.id == p.id)
         }) {
             return Err(MigrationError::ExternalConflict);
         }
@@ -969,9 +1081,11 @@ impl State {
             .filter(|p| p.knoop == w.node && p.ingang && p.soort == Soort::Audio)
             .collect();
         actual.len() == w.channels
+            && (w.channels <= w.ports.len() || w.appended.len() == w.channels - w.ports.len())
             && w.ports
                 .iter()
                 .take(w.channels)
+                .chain(&w.appended)
                 .all(|p| port_matches(p, self))
             && w.ports
                 .iter()
@@ -1039,7 +1153,9 @@ fn current_pairs(w: &Work, graph: &Momentopname) -> BTreeSet<Pair> {
     graph
         .kabels
         .iter()
-        .filter(|l| l.in_knoop == w.node && w.affected.contains(&l.in_poort))
+        .filter(|l| {
+            l.in_knoop == w.node && (w.channels > w.ports.len() || w.affected.contains(&l.in_poort))
+        })
         .map(|l| (l.uit_poort, l.in_poort))
         .collect()
 }
@@ -1082,7 +1198,13 @@ fn touches(
         | Opdracht::ZetTransport(_)
         | Opdracht::Start
         | Opdracht::StartBus(_) => true,
-        Opdracht::Verbind { uit, naar } => ports.iter().any(|p| p.id == *uit || p.id == *naar),
+        Opdracht::Verbind { uit, naar } => {
+            ports.iter().any(|p| p.id == *uit || p.id == *naar)
+                || graph
+                    .poorten
+                    .iter()
+                    .any(|p| p.knoop == node && (p.id == *uit || p.id == *naar))
+        }
         Opdracht::Ontkoppel { kabel } => graph
             .kabels
             .iter()
