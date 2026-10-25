@@ -825,7 +825,9 @@ fn all_additions_must_attach_and_writer_readiness_alone_never_releases_removals(
     let result = decide(&mut f, &request);
     assert!(result.is_success());
     assert!(second.try_report().unwrap().started_once);
-    assert!(old.try_report().unwrap().stop_requested);
+    // Stopping makes the writer finalize, which can briefly make status busy.
+    // Assert the first readable result, without pumping or waiting for true.
+    assert!(until(&old, |_| true).stop_requested);
     let a = first.try_report().unwrap().writer.unwrap().take;
     let b = second.try_report().unwrap().writer.unwrap().take;
     assert_ne!(a, b);
