@@ -1,3 +1,4 @@
+mod queued_history;
 mod reset;
 #[path = "volume.rs"]
 pub(super) mod volume;
@@ -121,7 +122,7 @@ impl Request {
             Receipt::Sequence(r) => RequestReport::Sequence(r.borrow().report()),
         }
     }
-    fn execution(&self) -> NativeExecution {
+    pub(crate) fn execution(&self) -> NativeExecution {
         match &self.1 {
             Receipt::Native(r) => r.execution(),
             Receipt::Sequence(r) => r.borrow().execution(),

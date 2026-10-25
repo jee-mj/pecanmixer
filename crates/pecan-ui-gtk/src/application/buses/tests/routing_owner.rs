@@ -1,4 +1,5 @@
 //! Real owner/controller handoffs using only injected synthetic services.
+mod history_queue;
 mod large_reset;
 mod recovery;
 use super::*;

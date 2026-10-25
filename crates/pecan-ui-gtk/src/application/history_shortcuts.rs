@@ -1,10 +1,10 @@
 //! Standard window-scoped GTK activations matching src/App.tsx keydowns.
 //!
-//! Each delivered activation synchronously selects the current guarded history
-//! button; that button retains its immutable origin/context and Session guards.
-//! Autorepeat may invoke another Undo/Redo after acknowledgement or focus return,
-//! as in JS. Busy/stale activations are dropped, never queued or retried (the JS
-//! history queue is not reproduced). Pointer/Space/Enter lifetime guards remain
+//! Each delivered activation validates the current rendered context and enqueues
+//! a direction on the one workspace history queue, as in JS. Execution selects
+//! the then-current guarded history through Session, after receipt/graph barriers
+//! and minimum spacing. Stale/blocked input is rejected, never retried. Pointer/
+//! Space/Enter lifetime guards remain
 //! separate. There is no global pressed-key tracking or platform input hook.
 use gtk::{gdk, glib, prelude::*};
 use std::{cell::RefCell, rc::Rc};

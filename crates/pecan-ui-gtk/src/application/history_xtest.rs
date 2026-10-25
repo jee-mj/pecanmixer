@@ -198,6 +198,7 @@ fn complete(s: &Session, d: &FixtureDriver, origin: &Graph, gens: &BTreeMap<u32,
         }
     }
     let frame = d.publish(graph, gens.clone());
+    req.reporter.seal_execution();
     req.reporter.set(NativeProgress::Observed {
         stamp: frame.stamp,
         counts: Counts::default(),

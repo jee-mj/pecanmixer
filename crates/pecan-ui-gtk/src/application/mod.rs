@@ -9,6 +9,7 @@ mod drain;
 mod fixture;
 mod folders;
 mod history_input;
+mod history_queue;
 mod history_shortcuts;
 mod mixer;
 mod preferences;

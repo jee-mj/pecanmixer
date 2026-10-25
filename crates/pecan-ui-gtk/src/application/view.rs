@@ -33,6 +33,8 @@ pub struct NativeWorkspace {
     now: Cell<std::time::Duration>,
     routes: Rc<super::routes::Routes>,
     session: Session,
+    history_queue: super::history_queue::HistoryQueue,
+    history_recovery: RefCell<Option<(super::Request, gtk::Button)>>,
     history: gtk::Box,
     buttons: RefCell<Option<HistoryButtons>>,
     history_input: Rc<HistoryInput>,
@@ -105,6 +107,8 @@ impl NativeWorkspace {
                 folders: RefCell::new(folders),
                 now: Cell::new(std::time::Duration::ZERO),
                 routes,
+                history_queue: super::history_queue::HistoryQueue::new(session.clone()),
+                history_recovery: RefCell::default(),
                 session,
                 history,
                 buttons: RefCell::new(None),
@@ -180,6 +184,7 @@ impl NativeWorkspace {
         buses.tick_levels(self.now.get());
         self.routes.poll();
         self.folders.borrow().poll(self.now.get());
+        self.history_queue.tick();
         self.refresh();
         let mut telemetry = self.telemetry.borrow_mut();
         telemetry.apply(&self.session, &batch);
@@ -193,21 +198,20 @@ impl NativeWorkspace {
         );
     }
     fn history_shortcut(&self, undo: bool) {
-        // Use exactly the same immutable context/origin and Session admission
-        // checks as a fresh button activation; never queue a new history model.
-        if !self.session.enabled() || self.history_input.held() || self.history_input.blocked() {
+        // GTK/JS keydowns are direction intents (even at an empty stack), but
+        // a stale rendered context or a held button cannot become fresh input.
+        if self.history_input.held() || self.history_input.blocked() {
             return;
         }
-        let button = self.buttons.borrow().as_ref().map(|buttons| {
-            if undo {
-                buttons.undo.clone()
-            } else {
-                buttons.redo.clone()
-            }
+        let current = self.buttons.borrow().as_ref().is_some_and(|buttons| {
+            buttons.live.get() && Rc::ptr_eq(&buttons.context, &self.session.history_context())
         });
-        if let Some(button) = button.filter(|button| button.is_sensitive()) {
-            button.emit_clicked();
+        if current {
+            if let Some(graph) = self.session.graph() {
+                *self.error.borrow_mut() = self.history_queue.enqueue(&graph, undo).err();
+            }
         }
+        self.refresh();
     }
     fn history_button(
         &self,
@@ -240,11 +244,7 @@ impl NativeWorkspace {
                 *view.error.borrow_mut() =
                     Some("History changed; start a fresh activation.".into());
             } else if let Some(origin) = &origin {
-                let result = if undo {
-                    view.session.undo(origin)
-                } else {
-                    view.session.redo(origin)
-                };
+                let result = view.history_queue.enqueue(origin, undo);
                 *view.error.borrow_mut() = result.err();
             }
             view.refresh();
@@ -293,9 +293,14 @@ impl NativeWorkspace {
                 context.clone(),
                 live.clone(),
             );
-            let enabled = self.session.enabled() && !self.history_input.blocked();
-            undo.set_sensitive(enabled && undo_label.is_some());
-            redo.set_sensitive(enabled && redo_label.is_some());
+            let enabled = self
+                .session
+                .graph()
+                .as_ref()
+                .is_some_and(|g| self.history_queue.accepting(g))
+                && !self.history_input.blocked();
+            undo.set_sensitive(enabled && (undo_label.is_some() || self.history_queue.has_work()));
+            redo.set_sensitive(enabled && (redo_label.is_some() || self.history_queue.has_work()));
             self.history.append(&undo);
             self.history.append(&redo);
             if !self.history_input.held() {
@@ -317,9 +322,47 @@ impl NativeWorkspace {
                 live,
             });
         } else if let Some(buttons) = self.buttons.borrow().as_ref() {
-            let enabled = self.session.enabled() && !self.history_input.blocked();
-            buttons.undo.set_sensitive(enabled && undo_label.is_some());
-            buttons.redo.set_sensitive(enabled && redo_label.is_some());
+            let enabled = self
+                .session
+                .graph()
+                .as_ref()
+                .is_some_and(|g| self.history_queue.accepting(g))
+                && !self.history_input.blocked();
+            buttons
+                .undo
+                .set_sensitive(enabled && (undo_label.is_some() || self.history_queue.has_work()));
+            buttons
+                .redo
+                .set_sensitive(enabled && (redo_label.is_some() || self.history_queue.has_work()));
+        }
+        // One real failed request, inspected through the existing bus/config
+        // authority. Retired callbacks cannot recover a newer failure.
+        let recovery = self.history_queue.recovery();
+        let replace = match (&*self.history_recovery.borrow(), &recovery) {
+            (None, None) => false,
+            (Some((old, _)), Some(new)) => !old.same_request(new),
+            _ => true,
+        };
+        if replace {
+            if let Some((_, button)) = self.history_recovery.borrow_mut().take() {
+                self.history.remove(&button);
+            }
+            if let Some(request) = recovery {
+                let button = gtk::Button::with_label("Inspect and refresh history status");
+                button.set_widget_name("history-recovery");
+                let weak = self.weak.clone();
+                let captured = request.clone();
+                button.connect_clicked(move |_| {
+                    if let Some(view) = weak.upgrade() {
+                        let buses = view.buses.borrow().clone();
+                        *view.error.borrow_mut() =
+                            view.history_queue.recover(&captured, &buses).err();
+                        view.refresh();
+                    }
+                });
+                self.history.append(&button);
+                *self.history_recovery.borrow_mut() = Some((request, button));
+            }
         }
     }
     fn refresh(&self) {
@@ -346,7 +389,12 @@ impl NativeWorkspace {
         self.refresh_history();
         self.status
             .set_text(&self.error.borrow().as_ref().map_or_else(
-                || status.message(),
+                || {
+                    self.history_queue.message().map_or_else(
+                        || status.message(),
+                        |q| format!("{} · {q}", status.message()),
+                    )
+                },
                 |e| format!("{} · {e}", status.message()),
             ));
     }

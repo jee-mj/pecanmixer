@@ -63,6 +63,14 @@ impl HistoryGraph {
     pub(crate) fn same_owner(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.authority, &other.authority)
     }
+    /// Connection continuity only. Individual history entries still require
+    /// their own registry/semantic guards against the execution-time frame.
+    pub fn same_connection(&self, other: &Self) -> bool {
+        self.graph.value.verbonden
+            && other.graph.value.verbonden
+            && self.graph.stamp.epoch == other.graph.stamp.epoch
+            && self.same_owner(other)
+    }
 }
 
 /// Opaque registry authority, not a DTO/serial/name-derived identity. Construct

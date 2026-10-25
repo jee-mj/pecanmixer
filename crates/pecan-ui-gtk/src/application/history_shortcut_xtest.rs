@@ -77,20 +77,27 @@ fn xtest_application_history_standard_repeat_after_acknowledgement_captures_curr
     }
 }
 #[gtk::test]
-fn xtest_application_history_busy_activation_is_dropped_without_queued_retry() {
+fn xtest_application_history_busy_activation_is_queued_once_without_another_keydown() {
     let mut f = fixture(true);
     focus(&f);
     f.input.key(CTRL, true);
     f.input.key(Z, true);
     f.input.key(Z, false);
     assert!(f.s.busy());
-    f.input.key(Y, true); // rejected while Undo is pending
+    f.input.key(Y, true); // direction queued while Undo is pending
     f.input.key(Y, false);
     f.origin = complete(&f.s, &f.d, &f.origin, &f.gens);
     f.view.poll();
     assert!(f.d.take_requests().is_empty());
-    // A later delivered activation is a new attempt, not a retry of that event.
-    f.input.key(Y, true);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    while !f.s.busy() && std::time::Instant::now() < deadline {
+        settle(10);
+        f.view.poll();
+    }
+    assert!(
+        f.s.busy(),
+        "queued Redo executes on the existing clock, with no new keydown"
+    );
     assert_request(&f, 20, false);
     f.input.key(Y, false);
     f.input.key(CTRL, false);
