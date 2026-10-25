@@ -36,6 +36,7 @@ pub struct NativeWorkspace {
     history: gtk::Box,
     buttons: RefCell<Option<HistoryButtons>>,
     history_input: Rc<HistoryInput>,
+    _history_shortcuts: Rc<super::history_shortcuts::HistoryShortcuts>,
     status: gtk::Label,
     error: RefCell<Option<String>>,
     patch_gate: RefCell<Option<(bool, Option<String>)>>,
@@ -85,26 +86,35 @@ impl NativeWorkspace {
         root.append(&pages);
         let history_input = HistoryInput::new();
         history_input.observe(&root);
-        let view = Rc::new_cyclic(|weak| Self {
-            root,
-            mixer,
-            patchbay: RefCell::new(patchbay),
-            telemetry: RefCell::default(),
-            pages,
-            buses: RefCell::new(buses),
-            #[cfg(test)]
-            recording_page,
-            folders: RefCell::new(folders),
-            now: Cell::new(std::time::Duration::ZERO),
-            routes,
-            session,
-            history,
-            buttons: RefCell::new(None),
-            history_input,
-            status,
-            error: RefCell::new(None),
-            patch_gate: RefCell::new(None),
-            weak: weak.clone(),
+        let view = Rc::new_cyclic(|weak: &Weak<Self>| {
+            let action = weak.clone();
+            let shortcuts = super::history_shortcuts::HistoryShortcuts::new(&root, move |undo| {
+                if let Some(view) = action.upgrade() {
+                    view.history_shortcut(undo);
+                }
+            });
+            Self {
+                root,
+                mixer,
+                patchbay: RefCell::new(patchbay),
+                telemetry: RefCell::default(),
+                pages,
+                buses: RefCell::new(buses),
+                #[cfg(test)]
+                recording_page,
+                folders: RefCell::new(folders),
+                now: Cell::new(std::time::Duration::ZERO),
+                routes,
+                session,
+                history,
+                buttons: RefCell::new(None),
+                history_input,
+                _history_shortcuts: shortcuts,
+                status,
+                error: RefCell::new(None),
+                patch_gate: RefCell::new(None),
+                weak: weak.clone(),
+            }
         });
         let weak = Rc::downgrade(&view);
         view.routes.bind_navigation(move || {
@@ -182,6 +192,23 @@ impl NativeWorkspace {
             self.patchbay.borrow().widget().upcast_ref(),
         );
     }
+    fn history_shortcut(&self, undo: bool) {
+        // Use exactly the same immutable context/origin and Session admission
+        // checks as a fresh button activation; never queue a new history model.
+        if !self.session.enabled() || self.history_input.held() || self.history_input.blocked() {
+            return;
+        }
+        let button = self.buttons.borrow().as_ref().map(|buttons| {
+            if undo {
+                buttons.undo.clone()
+            } else {
+                buttons.redo.clone()
+            }
+        });
+        if let Some(button) = button.filter(|button| button.is_sensitive()) {
+            button.emit_clicked();
+        }
+    }
     fn history_button(
         &self,
         undo: bool,
@@ -193,6 +220,11 @@ impl NativeWorkspace {
         let verb = if undo { "Undo" } else { "Redo" };
         let button =
             gtk::Button::with_label(&label.map_or_else(|| verb.into(), |s| format!("{verb} {s}")));
+        button.set_tooltip_text(Some(if undo {
+            "Undo (Ctrl/Meta+Z outside input fields)"
+        } else {
+            "Redo (Ctrl/Meta+Shift+Z or Ctrl/Meta+Y outside input fields)"
+        }));
         let input_live = Rc::new(Cell::new(true));
         self.history_input.capture(&button, input_live.clone());
         let weak = self.weak.clone();
