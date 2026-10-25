@@ -219,16 +219,18 @@ impl BusOwner {
     }
     fn skip_recording_restore_epoch(&self, revision: ConfigRevision) {
         let mut state = self.restore.borrow_mut();
-        if state
+        let newly_skipped = state
             .attempted
-            .is_none_or(|old| old.owner == revision.owner && old.epoch <= revision.epoch)
-        {
+            .is_none_or(|old| old.owner == revision.owner && old.epoch < revision.epoch);
+        if newly_skipped {
             state.attempted = Some(revision);
         }
         drop(state);
-        self.restore_message("Automatic Rec restore skipped for this epoch: recording ownership is active or unresolved.");
+        if newly_skipped {
+            self.restore_message("Automatic Rec restore skipped for this epoch: recording ownership is active or unresolved.");
+        }
     }
-    fn recording_blocks_restore(&self) -> bool {
+    pub(super) fn recording_blocks_restore(&self) -> bool {
         let (occupied, scope) = {
             let d = self.data.borrow();
             let occupied = d.unknown_owned

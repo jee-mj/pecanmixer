@@ -404,7 +404,11 @@ fn restore_reconnect_closed_history_is_bounded_and_old_tickets_are_not_reused() 
     assert_eq!(state.retired_completed.len(), 16);
 }
 
-fn recording_during_retirement_callback(receipt_callback: bool, extra_active_tick: bool) {
+fn recording_during_retirement_callback(
+    receipt_callback: bool,
+    extra_active_tick: bool,
+    join_inside_callback: bool,
+) {
     let (owner, fake, driver) = setup_restore();
     // Make the normal user Arm edit leave a legitimately armed recording bus.
     fake.config
@@ -438,6 +442,11 @@ fn recording_during_retirement_callback(receipt_callback: bool, extra_active_tic
         fake.started(0, 900);
         fake.config.borrow_mut().recording = true;
         owner.poll();
+        if join_inside_callback {
+            fake.joined(0, None);
+            fake.config.borrow_mut().recording = false;
+            owner.poll();
+        }
     }) as Box<dyn Fn()>;
     if receipt_callback {
         *fake.configs.borrow()[0].1.hook.borrow_mut() = Some(callback);
@@ -447,7 +456,11 @@ fn recording_during_retirement_callback(receipt_callback: bool, extra_active_tic
     owner.restore_preferences(&preferences());
     assert_eq!(
         owner.recording_status()[0].progress,
-        RecordingProgress::StartedLocally
+        if join_inside_callback {
+            RecordingProgress::JoinedSuccess
+        } else {
+            RecordingProgress::StartedLocally
+        }
     );
     assert_eq!(
         owner.data.borrow().operation.as_ref().unwrap().request,
@@ -459,9 +472,11 @@ fn recording_during_retirement_callback(receipt_callback: bool, extra_active_tic
     }
     // No further restore call while active in the regression cases. Joining
     // cannot turn the already observed recording into a deferred settings effect.
-    fake.joined(0, None);
-    fake.config.borrow_mut().recording = false;
-    owner.poll();
+    if !join_inside_callback {
+        fake.joined(0, None);
+        fake.config.borrow_mut().recording = false;
+        owner.poll();
+    }
     for _ in 0..5 {
         owner.restore_preferences(&preferences());
     }
@@ -480,18 +495,30 @@ fn recording_during_retirement_callback(receipt_callback: bool, extra_active_tic
         RecordingProgress::JoinedSuccess
     );
     assert!(button(owner.widget(), "Stop all").is_sensitive());
+    if join_inside_callback {
+        reconnect(&owner, &fake, &driver);
+        owner.restore_preferences(&preferences());
+        owner.restore_preferences(&preferences());
+        assert_eq!(
+            fake.restore_origins.borrow().len(),
+            1,
+            "the recording skip belongs only to its observed epoch"
+        );
+    }
 }
 #[gtk::test]
 fn restore_reconnect_service_callback_ownership_observation_needs_no_extra_tick() {
-    recording_during_retirement_callback(false, false);
+    for nested_join in [false, true] {
+        recording_during_retirement_callback(false, false, nested_join);
+    }
 }
 #[gtk::test]
 fn restore_reconnect_receipt_callback_ownership_observation_needs_no_extra_tick() {
-    recording_during_retirement_callback(true, false);
+    recording_during_retirement_callback(true, false, false);
 }
 #[gtk::test]
 fn restore_reconnect_extra_active_tick_ownership_skip_control() {
-    recording_during_retirement_callback(false, true);
+    recording_during_retirement_callback(false, true, false);
 }
 
 #[gtk::test]
