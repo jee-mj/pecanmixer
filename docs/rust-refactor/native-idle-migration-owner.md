@@ -77,3 +77,44 @@ native owner's routed Add gate is independently asserted. Legacy unit/example
 suites were not rerun for this GTK-only slice; their sources and dependencies are
 unchanged. Hosted candidate checks and independent review are separate pending
 gates. No physical/hardware acceptance follows from these synthetic checks.
+
+## Two owner review corrections
+
+Independent review blocked initial `a4f2e12b` despite its passing synthetic suite
+and hosted run. An old-epoch successful receipt could remain in an impossible
+observation wait after reconnect. Separately, a backend Rejected report could
+clear the widget's awaited request while fresh owner inspection was still busy.
+The shared lease prevented a second dispatch; no unsafe audio mutation was shown.
+
+The correction is confined to terminal projection. A valid backend terminal
+report stays in the UI waiting phase until zero in-progress calls and fresh
+owner readback satisfy the same owner barrier. This includes rejection, partial
+and unconfirmed results, whose actual reports remain retained/readable while
+waiting. No matching widget acknowledgement or fresh edit precedes that barrier.
+
+A completed result whose native epoch/connection was lost before publication is
+shown as current reconcilable uncertainty after fresh readback, retaining its
+original outcome, stamp and configuration. It is not relabelled Observed in the
+new epoch. Explicit fresh inspection can release the old operation without
+replay, rollback or prefix history. Unknown metadata still requires explicit
+initialization before recording. Same-epoch observations that have not arrived
+continue waiting normally; busy inspection and nonzero in-progress calls keep
+their original ownership. No backend sequencing or admission policy changes.
+
+Both new targeted probes fail before correction and pass afterward. They cover
+old Applied/NoOp/Observed results across reconnect, retained original reports,
+fresh-action recovery and unknown metadata; and rejected/partial/unconfirmed
+widget delivery across three busy inspection/Refresh cycles followed by genuine
+fresh readback. All 69 focused owner cases pass. Routed Add and active/opening/
+finalizing/unknown structural-edit gates, Stop all and common quit are preserved.
+Independent re-review remains required before PR2 integration.
+
+Corrected-source final checks pass: 69 focused owner cases, 347 default GTK cases,
+and the native aggregate with 86 validator controls, 74 core, 196 backend and
+390 all-feature GTK tests, formatting/build/audits, three headless fixtures and
+three controlled GTK smokes. Zero Node-tool attempts are recorded. Native
+workspace artifacts were rebuilt for both host and explicit target to exclude a
+stale shared-cache backend binary from a separate candidate; that earlier cached
+run is not used as migration evidence. Legacy suites were not repeated for this
+UI-only correction. No final failed source-matched check or environment blocker
+remains. Hosted validation and independent re-review remain separate gates.

@@ -715,3 +715,154 @@ fn rejected_bus_publication_cannot_release_observed_migration_ownership() {
         ui::Progress::Observed
     );
 }
+
+#[gtk::test]
+fn reviewed_reconnect_turns_old_success_into_reconcilable_uncertainty_without_replaying() {
+    for outcome in [
+        MigrationOutcome::AppliedLocally,
+        MigrationOutcome::NoOpLocally,
+        MigrationOutcome::Observed,
+    ] {
+        let (owner, fake, driver, gens) = routed();
+        let action = if outcome == MigrationOutcome::Observed {
+            ui::Action::Remove {
+                bus: "rec-1-2".into(),
+            }
+        } else {
+            ui::Action::Split {
+                bus: "rec-1-2".into(),
+            }
+        };
+        edit(&owner, action).unwrap();
+        complete(&fake, 0, outcome, true);
+        let target = if outcome == MigrationOutcome::Observed {
+            let frame = removed(&owner, &driver, &gens);
+            fake.migrations.borrow()[0]
+                .1
+                .report
+                .borrow_mut()
+                .as_mut()
+                .unwrap()
+                .ports_observed = Some(frame.stamp);
+            (*frame.value).clone()
+        } else {
+            (*owner.session.graph().unwrap().value).clone()
+        };
+        let original = fake.migrations.borrow()[0]
+            .1
+            .report
+            .borrow()
+            .clone()
+            .unwrap();
+        let mut disconnected = target.clone();
+        disconnected.verbonden = false;
+        driver.publish(disconnected, gens.clone());
+        owner.session.poll();
+        let connected = driver.publish(target, gens);
+        owner.session.poll();
+        assert_ne!(connected.stamp.epoch, original.source.epoch);
+        {
+            let mut config = fake.config.borrow_mut();
+            config.revision.epoch = connected.stamp.epoch;
+            config.revision.revision = 1;
+            if outcome == MigrationOutcome::Observed {
+                config.configuration = None;
+            }
+        }
+        owner.poll();
+        assert!(
+            !owner.session.busy(),
+            "old epoch success must release only as displayed current uncertainty"
+        );
+        assert!(matches!(
+            owner.data.borrow().operation.as_ref().unwrap().progress,
+            ui::Progress::Unconfirmed(_)
+        ));
+        for _ in 0..3 {
+            owner.refresh();
+            owner.poll();
+        }
+        assert!(owner.data.borrow().operation.is_none());
+        assert!(!owner.session.busy());
+        assert_eq!(fake.migrations.borrow().len(), 1);
+        assert!(driver.take_requests().is_empty());
+        let retained = owner.migration_report().unwrap();
+        assert_eq!(retained.source, original.source);
+        assert_eq!(retained.expected_config, original.expected_config);
+        assert_eq!(retained.progress, original.progress);
+        assert_eq!(retained.configuration, original.configuration);
+        if outcome == MigrationOutcome::Observed {
+            assert!(
+                owner.start(&owner.origin().unwrap(), None).is_err(),
+                "fresh unknown metadata needs explicit initialization"
+            );
+            assert!(fake.configs.borrow().is_empty());
+        } else {
+            edit(
+                &owner,
+                ui::Action::Join {
+                    bus: "rec-1".into(),
+                },
+            )
+            .unwrap();
+            assert_eq!(
+                fake.migrations.borrow()[1].0.origin.stamp.epoch,
+                connected.stamp.epoch
+            );
+        }
+    }
+}
+#[gtk::test]
+fn reviewed_terminal_failure_cannot_acknowledge_widget_until_owner_readback_barrier() {
+    for outcome in [
+        MigrationOutcome::Rejected,
+        MigrationOutcome::PartiallyApplied,
+        MigrationOutcome::Unconfirmed,
+    ] {
+        let (owner, fake, _, _) = routed();
+        button(owner.widget(), "Split stereo").emit_clicked();
+        let request = owner.view.awaited_request().unwrap();
+        {
+            let receipt = fake.migrations.borrow()[0].1.clone();
+            let mut report = receipt.report.borrow_mut();
+            let report = report.as_mut().unwrap();
+            report.progress = MigrationProgress::Completed(outcome);
+            report.failure = Some(MigrationError::Cancelled);
+        }
+        fake.busy.set(true);
+        for _ in 0..3 {
+            owner.poll();
+            owner.refresh();
+            assert_eq!(
+                owner.view.awaited_request(),
+                Some(request.clone()),
+                "terminal presentation must wait with its owner"
+            );
+            assert!(!button(owner.widget(), "Split stereo").is_sensitive());
+            assert!(owner.session.busy());
+            assert!(!owner.data.borrow().operation.as_ref().unwrap().terminal);
+            assert_eq!(
+                owner.data.borrow().operation.as_ref().unwrap().progress,
+                ui::Progress::AwaitingObservation
+            );
+            assert_eq!(
+                owner.migration_report().unwrap().progress,
+                MigrationProgress::Completed(outcome)
+            );
+            assert!(button(owner.widget(), "Stop all").is_sensitive());
+        }
+        fake.busy.set(false);
+        owner.poll();
+        assert!(owner.view.awaited_request().is_none());
+        assert!(!owner.session.busy());
+        assert!(owner.data.borrow().operation.as_ref().unwrap().terminal);
+        assert_eq!(fake.migrations.borrow().len(), 1);
+        if outcome == MigrationOutcome::Rejected {
+            assert!(button(owner.widget(), "Split stereo").is_sensitive());
+        } else {
+            assert!(!button(owner.widget(), "Split stereo").is_sensitive());
+            owner.refresh();
+            assert!(owner.data.borrow().operation.is_none());
+        }
+    }
+}

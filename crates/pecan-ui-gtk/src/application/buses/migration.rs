@@ -385,6 +385,10 @@ impl BusOwner {
             |e| format!("{e:?}"),
         );
         work.progress = match report.progress {
+            // A backend terminal report is not yet an owner terminal
+            // publication. Keep the widget's request until fresh readback and
+            // zero in-progress evidence satisfy the same owner barrier.
+            _ if report.is_decided() && !work.terminal => ui::Progress::AwaitingObservation,
             MigrationProgress::Queued => ui::Progress::Queued,
             MigrationProgress::AwaitingNew
             | MigrationProgress::AwaitingOld
@@ -409,7 +413,15 @@ impl BusOwner {
                 let exact = current.is_some_and(|c| {
                     c == &report.configuration && c.configuration.as_ref() == Some(&m.proposed)
                 });
-                if !decided || !fresh || !covers {
+                let lost_authority = graph
+                    .as_ref()
+                    .is_some_and(|g| !g.value.verbonden || g.stamp.epoch != m.source.epoch);
+                if lost_authority {
+                    // The old observation cannot arrive in a new epoch. Keep
+                    // its report intact and expose current uncertainty so a
+                    // fresh explicit inspection can reconcile without replay.
+                    ui::Progress::Unconfirmed("Original migration completed, but its native epoch/connection was lost before owner publication. Inspect current state before retry; the original report is retained.".into())
+                } else if !covers {
                     work.terminal = false;
                     ui::Progress::AwaitingObservation
                 } else if !exact
