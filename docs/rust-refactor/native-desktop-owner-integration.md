@@ -52,12 +52,13 @@ alone is not combined-head evidence.
 
 ## Remaining user-facing boundary
 
-The generated native login command carries explicit settings/recording paths and
-hidden/tray flags, but not the desktop-management context. A login-started process
-has no management controls until quit and relaunch with that explicit context.
+At this `bc438072` checkpoint, generated commands omitted desktop-management
+context. The independently reviewed [login-context follow-up](./native-desktop-login-continuity.md)
+now preserves it alongside settings/recording paths and hidden/tray flags.
+Existing rootless entries remain untouched until an explicit update/refresh.
 Context/session arbitration, native artifact/packaging proof and actual login
 acceptance remain unfinished. Executable percent is explicitly unsupported.
-This integration is not full autostart/session parity.
+Neither checkpoint establishes full autostart/session parity.
 
 Fixture/headless/smoke modes reject desktop context before constructing resources.
 The tests use authored synthetic executable paths, unique temporary directories

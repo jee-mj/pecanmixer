@@ -20,13 +20,14 @@ unselected. Ordinary launch, including explicit-context launch, only inspects.
 Enable/update, disable and executable refresh require a separately accepted user
 control action. Debug refresh retains the helper's no-I/O behavior.
 
-The reviewed generated login command currently carries only settings/recording
-paths and hidden/tray flags. It does **not** carry the desktop-management context.
-A login-started process therefore has no desktop controls until it is quit and
-relaunched with that explicit context. This candidate does not infer a root from
-stored paths or forward context from a secondary process. Persisted management
-context, process/session arbitration, AppImage/native packaging identity and real
-login acceptance remain separate work. This is not full autostart parity.
+At `bc438072`, generated login commands carried settings/recording paths and
+hidden/tray flags but omitted management context. The independently reviewed
+[login-context follow-up](./native-desktop-login-continuity.md) closes that argument
+continuity gap without inferring roots or forwarding context from a secondary
+process. Existing rootless entries remain unchanged on inspection; explicit
+enable/update or release refresh can add the supplied context. Process/session
+arbitration, AppImage/native packaging identity and real login acceptance remain
+separate work. This is not full autostart parity.
 
 Fixture/headless/smoke options reject desktop context before any worker/backend
 construction. Native resources are constructed only by the retained primary

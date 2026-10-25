@@ -39,7 +39,7 @@ remains separate.
 | Hide/show strips/rows and reconnect names (`src/App.tsx`, `Mixer`) | Reviewed display panel/filter/save bridge; full graph/origin/history retained | Transient IDs must not become durable identity; reconnect/desktop acceptance |
 | Row height and destination split preferences (`useRijGewichten`, `Greep`, `Deling`) | Reviewed adjacent-pair/split resize/reset input and request-aware save triggers | Physical input acceptance |
 | Saved buses, hidden keys, clock preference and layout (`leesBussen`, `leesKlok`, `leesVerborgen`) | Versioned contract/storage plus display bridge and accepted Rec layout/dB/mute/arming writeback through the existing coalesced worker/final drain; latest intent survives backend failure and older saves, while saved MIDI/clock/display values are preserved; independently reviewed matching-capacity idle startup/reconnect restore uses original authority and post-report presentation barriers | General growth/shrink/routed restore, pending/uncertain prior-work recovery, explicit reload/recovery policy, import and clock effects remain gated; no user profile access performed |
-| Tray open/close/quit, autostart/single instance (`src-tauri/src/tray.rs`, `autostart.rs`, `lib.rs`) | Reviewed shell and explicit-context desktop worker/tray/CLI controls; one retained worker/drain and immutable result-bound control tokens; ordinary launch only inspects, while explicit enable/disable/refresh preserve legacy entries | Generated login arguments do not retain desktop-management context; complete session/process arbitration, native packaging identity and actual desktop/login acceptance remain |
+| Tray open/close/quit, autostart/single instance (`src-tauri/src/tray.rs`, `autostart.rs`, `lib.rs`) | Reviewed shell and explicit-context desktop worker/tray/CLI controls; generated login arguments retain the same authorized root, executable assertion and settings/recording paths; one retained worker/drain and result-bound controls; ordinary launch only inspects and explicit changes protect legacy entries | Existing rootless entries need explicit update; complete session/process arbitration, native packaging identity and actual desktop/login acceptance remain |
 | Graceful recorder shutdown/error/timeout handling | Reviewed backend/legacy completion and native hold/tagged-handle/off-UI settings drain | Live recording/quit acceptance; no fsync/crash-durability claim |
 | Accessible controls, keyboard navigation, responsive layout (`src/*.tsx`, `src/styles.css`) | Synthetic native names/focus/layout checks; control candidate | End-to-end keyboard/AT-SPI/Orca, physical Wayland/X11, scale/theme/distro acceptance |
 | JS/Node/Tauri/WebKit removal and distribution | Deferred deliberately | All functional/acceptance gates, measured performance, packaging/license closure before cutover |
@@ -198,8 +198,13 @@ The independently reviewed [explicit desktop worker/tray source](./native-deskto
 uses one existing settings worker/drain, separate memory preference capability and
 explicit CLI root/native-artifact context. Ordinary launch never enables an entry.
 It retains actual results and original control tokens; legacy takeover and profile
-discovery are excluded. Generated login arguments do not yet retain management
-context, so full autostart/session parity remains unfinished. Correction `bc438072`
+discovery are excluded. The independently reviewed
+[login-context follow-up](./native-desktop-login-continuity.md) now retains the
+explicit management root and matching native executable in generated login
+arguments, including relocation. Existing rootless entries are inspected without
+rewrite and need explicit enable/update or release refresh to gain that context.
+Already-running primary context is not replaced by secondary activation; full
+session arbitration and real login acceptance remain unfinished. Correction `bc438072`
 preserves a newer queued presentation source against retired callbacks while
 retaining same-source ordering, bounded storage and reserved Quit. Independent
 re-review clears its unchanged action/file assertions and three additional probes.
