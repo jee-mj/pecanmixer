@@ -111,6 +111,18 @@ pub struct RecordingTrack {
     pub channels: Vec<usize>,
     pub ports: Vec<u32>,
 }
+/// A local monotonic observation since this take's first validated capture
+/// attachment. It is neither sample duration nor proof that audio arrived.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RecordingElapsed {
+    /// Measurement time, not UI delivery time. Keep it with `duration` when
+    /// caching/interpolating; never restamp an old observation as fresh.
+    pub observed_at: Instant,
+    pub duration: Duration,
+    /// Only currently running, open, unstopped tracks from this immutable take.
+    /// Grouped tracks share its start; independently started takes do not.
+    pub running_tracks: Vec<TrackId>,
+}
 #[derive(Clone, Debug, PartialEq)]
 pub struct RecordingReport {
     pub ticket: u64,
@@ -124,6 +136,9 @@ pub struct RecordingReport {
     pub tracks: Arc<Vec<RecordingTrack>>,
     pub writer: Option<WriterReport>,
     pub failure: Option<RecordingError>,
+    /// Running elapsed only. Opening, stop/failure/disconnect, finalization and
+    /// unconfirmed ownership do not expose an interpolatable running clock.
+    pub elapsed: Option<RecordingElapsed>,
 }
 impl RecordingReport {
     pub fn is_success(&self) -> bool {
@@ -224,6 +239,7 @@ pub(crate) struct Request {
     pub track_stops: AtomicU64,
     pub attached: AtomicBool,
     pub started_once: AtomicBool,
+    pub first_attachment: OnceLock<Instant>,
     failure: Mutex<Option<RecordingError>>,
     fault: AtomicU8,
 }
@@ -237,6 +253,7 @@ impl Request {
             track_stops: AtomicU64::new(0),
             attached: AtomicBool::new(false),
             started_once: AtomicBool::new(false),
+            first_attachment: OnceLock::new(),
             failure: Mutex::new(None),
             fault: AtomicU8::new(0),
         })
@@ -307,6 +324,10 @@ impl Request {
         self.request_stop();
     }
     fn report(&self) -> Option<RecordingReport> {
+        self.report_at(Instant::now())
+    }
+    /// Keep the measurement time independent of locks, delivery and later reads.
+    pub(super) fn report_at(&self, observed_at: Instant) -> Option<RecordingReport> {
         let mut failure = self.failure.try_lock().ok()?.clone();
         if failure.is_none() {
             failure = match self.fault.load(Ordering::Acquire) {
@@ -367,6 +388,35 @@ impl Request {
         } else {
             RecordingProgress::Opening
         };
+        let track_stops = self.track_stops.load(Ordering::Acquire);
+        let elapsed = if progress == RecordingProgress::StartedLocally
+            && failure.is_none()
+            && self.fault.load(Ordering::Acquire) == 0
+            && self.live()
+        {
+            self.first_attachment.get().and_then(|start| {
+                // A concurrent first attachment after this observation cannot
+                // turn an earlier opening read into a fabricated zero start.
+                let duration = observed_at.checked_duration_since(*start)?;
+                let running_tracks: Vec<_> = writer
+                    .as_ref()?
+                    .tracks
+                    .iter()
+                    .filter(|track| {
+                        track.phase == crate::opname::TrackPhase::Open
+                            && track_stops & (1_u64 << track.id.index()) == 0
+                    })
+                    .map(|track| track.id)
+                    .collect();
+                (!running_tracks.is_empty()).then_some(RecordingElapsed {
+                    observed_at,
+                    duration,
+                    running_tracks,
+                })
+            })
+        } else {
+            None
+        };
         Some(RecordingReport {
             ticket: self.context.ticket,
             source: self.context.source,
@@ -374,10 +424,11 @@ impl Request {
             progress,
             started_once,
             stop_requested,
-            track_stops: self.track_stops.load(Ordering::Acquire),
+            track_stops,
             tracks: installed.map(|i| i.tracks.clone()).unwrap_or_default(),
             writer,
             failure,
+            elapsed,
         })
     }
 }

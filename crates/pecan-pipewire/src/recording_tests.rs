@@ -1,6 +1,8 @@
 //! Synthetic registry, injected writers and temporary WAV roots only.
 #[path = "recording_arming_tests.rs"]
 mod arming;
+#[path = "recording_elapsed_tests.rs"]
+mod elapsed;
 #[path = "recording_multitake_tests.rs"]
 mod multiple;
 use super::*;
@@ -882,6 +884,7 @@ fn unconfirmed_worker_start_never_becomes_a_false_finalization_result() {
     assert!(result.is_err());
     let report = receipt.try_report().unwrap();
     assert_eq!(report.progress, RecordingProgress::Unconfirmed);
+    assert!(report.elapsed.is_none());
     assert!(!report.is_complete());
     assert!(receipt.wait_timeout(Duration::from_millis(1)).is_err());
 }

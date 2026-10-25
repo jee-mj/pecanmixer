@@ -164,6 +164,45 @@ fn exclusive_arming_attaches_addition_before_stopping_captured_removal() {
 }
 
 #[test]
+fn elapsed_arming_addition_owns_new_clock_while_unchanged_track_keeps_original_clock() {
+    let mut f = fixture(&["rec-1", "rec-4"]);
+    let old = f.start();
+    let old_start = *old.0.first_attachment.get().unwrap();
+    let request = arm(&mut f, &["rec-2", "rec-4"]);
+    let result = decide(&mut f, &request);
+    assert!(result.is_success());
+    let added = &result.additions[0].receipt;
+    let added_start = *added.0.first_attachment.get().unwrap();
+    assert!(added_start >= old_start);
+    let at = added_start + Duration::from_secs(20);
+    let old_report = super::elapsed::report_at(&old, at);
+    let added_report = super::elapsed::report_at(added, at);
+    let elapsed = old_report.elapsed.unwrap();
+    assert_eq!(elapsed.duration, at.duration_since(old_start));
+    assert_eq!(
+        elapsed.running_tracks,
+        vec![
+            old_report
+                .tracks
+                .iter()
+                .find(|t| t.key == "rec-4")
+                .unwrap()
+                .id
+        ]
+    );
+    assert_eq!(
+        added_report.elapsed.unwrap().duration,
+        Duration::from_secs(20)
+    );
+    f.pump();
+    assert_eq!(*old.0.first_attachment.get().unwrap(), old_start);
+    assert_eq!(*added.0.first_attachment.get().unwrap(), added_start);
+    stop(&f);
+    assert!(old.try_report().unwrap().elapsed.is_none());
+    assert!(added.try_report().unwrap().elapsed.is_none());
+}
+
+#[test]
 fn failed_first_addition_withholds_removals_and_leaves_old_recording_and_flags_alive() {
     let mut f = fixture(&["rec-1"]);
     let old = f.start();

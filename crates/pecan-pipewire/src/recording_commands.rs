@@ -5,7 +5,7 @@ use crate::{
     recording::*,
     shutdown::Shutdown,
 };
-use std::{cell::RefCell, sync::atomic::Ordering};
+use std::{cell::RefCell, sync::atomic::Ordering, time::Instant};
 
 impl Commands {
     pub(crate) fn enqueue_recording(
@@ -416,6 +416,10 @@ impl Commands {
             if failed {
                 continue;
             }
+            // The take becomes locally attached here, after writer readiness
+            // and identity/format validation. Repeated pumps, no-op starts and
+            // partial stops must never restart its monotonic origin.
+            request.first_attachment.get_or_init(Instant::now);
             request.attached.store(true, Ordering::Release);
             if !request.started_once.swap(true, Ordering::AcqRel) {
                 latest_started = Some(request.clone());
