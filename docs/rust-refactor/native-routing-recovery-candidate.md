@@ -1,7 +1,11 @@
-# Explicit routing owner recovery candidate
+# Reviewed explicit routing owner recovery
 
-This separate descendant of reviewed closure checkpoint `480c87d` adds a narrow
-explicit owner recovery action. It needs independent review before PR2 adoption.
+Reviewed candidate `0a8cd86b071c49cfcc5a8ea20b2e99d9c6c250af`, descended from
+closure checkpoint `480c87d`, adds a narrow explicit owner recovery action.
+Independent review clears 19 targeted Session/XTest cases plus three extra probes
+for retired controls, current-origin recovery and repeated failed inspections.
+The probes preserve the original diagnostic and recording state. Integration
+retains the exact reviewed program source without reconciliation changes.
 Large reset batching, immediate configuration-driven history reconciliation,
 arming/migration adapters and active-recording structural policy are unchanged.
 
@@ -79,8 +83,20 @@ unchanged. The native Return checkpoint uses the same 300 ms GTK activation
 interval as the pre-existing Return test; no production input retry was added.
 Core/backend/legacy suites and the aggregate validator were not repeated for
 this GTK-only candidate; the unchanged base checkpoint separately passes its
-74 core, 196 backend and 361 GTK aggregate and hosted checks. This candidate's
-owner logic still requires independent review before PR2 publication.
+74 core, 196 backend and 361 GTK aggregate and hosted checks. The owner logic has
+now separately cleared its independent review gate; hardware acceptance remains
+unperformed.
+
+The reviewed combined integration passes the locked native aggregate: **86
+validator controls, 74 core, 196 backend and 370 all-feature GTK tests**,
+formatting/build, Cargo/ELF closure checks, three headless fixtures and three
+controlled smokes. Zero Node-tool attempts are recorded. Program source matches
+the independently reviewed `0a8cd86b` exactly; only integration/status documentation
+changes. That source separately passes 327 default GTK tests and hosted run
+[40147995158](https://github.com/jee-mj/pecanmixer/actions/runs/40147995158).
+Legacy suites/examples were not repeated for this GTK-only follow-up; the
+preceding closure checkpoint retains their passing receipts. No final local
+test failure or environment blocker remains.
 
 No hardware, real audio/server, user profile, physical desktop, performance,
 server-convergence or failed-prefix rollback acceptance is claimed. All fixtures

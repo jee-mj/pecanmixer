@@ -88,6 +88,11 @@ must still check this exact receipt's closure, fresh authenticated graph/config
 inspection and released history ownership. No failed-prefix undo, rollback or
 graph-convergence evidence is inferred from `Closed`.
 
+The later [explicit owner recovery follow-up](./native-routing-recovery-candidate.md)
+has independently cleared its original-receipt/current-inspection/input guards.
+It is a separate owner adoption of this evidence; the backend closure contract
+and frozen terminal outcomes described here remain unchanged.
+
 Combined integration checks pass **86 validator controls, 74 core, 196 backend
 and 361 all-feature GTK tests**, formatting/build, Cargo/ELF closure checks,
 three headless fixtures and three controlled smokes, with zero Node-tool attempts.

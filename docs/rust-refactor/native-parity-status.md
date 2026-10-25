@@ -24,8 +24,8 @@ reconciliation remain separate.
 | Partial-pair mute and restore prior gain (`voorMute`, `Kaart`) | Reviewed policy plus serialized receipt/graph memory commit and complete-vector undo | Audio/input acceptance |
 | Drag/fine drag, wheel grouping, rounding, double-click reset (`Fader`) | Reviewed policy and owner coordinator; ordinary refresh preserves desired keyboard position; unconfirmed held input requires release | Physical input acceptance |
 | Independent output destination and Rec-bus selections (`bewerkt`, `bewerkteBus`, `kiesBewerkt` in `src/App.tsx`) | Bus owner and routing page share independent choices without audio commands; Session and meters use the same adopted definitions | Immediate configuration-driven history reconciliation; reconnect/layout acceptance |
-| Normal/manual/custom route states and green/R toggles (`BronStrip`, `schakel`, `schakelRoute`) | Mounted routing page shares BusOwner selections/configuration, Session tickets/history and actual NativeReports; custom routes open the existing patchbay | Explicit owner recovery must combine available receipt-local closure with fresh inspection/history release; audio/input acceptance |
-| Back to auto / manual route count (`telHandwerk`, `terugNaarAutoStap`) | Mounted count/confirmation uses the shared observed-history path; original-generation restore witnesses survive target-clear transitions | Reset batches over 32 commands, partial/quiescence recovery and audio/input acceptance |
+| Normal/manual/custom route states and green/R toggles (`BronStrip`, `schakel`, `schakelRoute`) | Mounted routing shares selections/configuration, history and actual reports; explicit recovery checks original-receipt closure, current authenticated inspection and released history; custom routes open the patchbay | Busy/unknown inspection remains gated; server convergence and audio/input acceptance are unproven |
+| Back to auto / manual route count (`telHandwerk`, `terugNaarAutoStap`) | Mounted count/confirmation uses shared observed history and explicit failure recovery; original-generation restore witnesses survive target-clear transitions | Reset batches over 32 commands and audio/input acceptance |
 | Cable create/remove/move, selection/delete/cancel (`src/Patchbay.tsx`, `src/handelingen.ts`) | Reviewed keyboard/pointer libraries attached to reviewed coordinator source | Physical-input acceptance |
 | Patch module positioning and reconnect behavior (`Plekken`, `ModuleKaart`) | Reviewed session movement/rearrange and reconnect aliases on retained view | Session-layout and physical-input acceptance |
 | Undo/redo queue and keyboard shortcuts (`src/geschiedenis.ts`, `src/handelingen.ts`, `src/App.tsx`) | Reviewed generation/selector guards, shared receipts, immutable history activation and one-step observed gesture history | Queued input, complete shortcuts and audio/input acceptance |
@@ -92,6 +92,12 @@ The [reviewed receipt-local closure API](./native-execution-closure.md) now expo
 nonblocking Pending/Closed evidence on the original retained receipt. A terminal
 report's frozen counts remain historical. Closed prevents further local dispatch
 callbacks for that receipt; it does not establish server convergence, rollback,
-observation or recorder finalization. Owner/UI recovery and reset batching above
-32 commands remain separate work; this library integration does not reopen any
-existing recovery latch.
+observation or recorder finalization. The initial library checkpoint did not
+reopen recovery latches. The subsequent
+[reviewed explicit owner recovery](./native-routing-recovery-candidate.md) now
+combines the original receipt proof, current owned graph/configuration inspection
+and released history ownership. It retains the original failed/unconfirmed
+outcome and adds no failed-prefix undo, command or graph publication. Held input,
+retired controls and reentrant inspection cannot recover a later request.
+Busy/unknown inspection and finalization remain gated. Reset batching above 32
+commands, server-convergence proof and hardware acceptance remain separate.

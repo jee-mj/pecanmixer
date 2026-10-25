@@ -63,11 +63,13 @@ Three prior synthetic tests now deliver that real terminal rejection before
 expecting fresh admission; their old immediate-release expectation is replaced
 by explicit hold/release assertions, not a fabricated completion.
 
-Terminal in-progress counts do not prove quiescence. The current backend has no
-per-request quiescence getter; this bridge never calls `reconciled()` from a new
-graph, apparent idle state or retry. Partial/unconfirmed recovery therefore stays
-gated rather than silently clearing the reviewed routing latch. A separate
-quiescence/recovery contract is still required for complete parity.
+At this initial routing checkpoint there was no receipt-local closure getter,
+so partial/unconfirmed recovery stayed gated. The later
+[explicit owner recovery](./native-routing-recovery-candidate.md) now combines
+the original receipt's local closure, current authenticated graph/configuration
+inspection and released history ownership. It never recovers from a graph update
+or apparent idle state alone, rewrites frozen counts or infers rollback/server
+convergence. Those readback/acceptance limits remain explicit.
 
 ## Checks and remaining scope
 
