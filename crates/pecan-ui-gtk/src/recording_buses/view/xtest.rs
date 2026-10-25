@@ -59,12 +59,17 @@ impl Input {
             Self { d, w }
         }
     }
-    fn point(&self, button: &gtk::Button, window: &gtk::Window) {
+    fn point(&self, button: &impl IsA<gtk::Widget>, window: &gtk::Window) {
+        self.point_at(
+            button,
+            window,
+            button.width() as f32 / 2.,
+            button.height() as f32 / 2.,
+        );
+    }
+    fn point_at(&self, button: &impl IsA<gtk::Widget>, window: &gtk::Window, x: f32, y: f32) {
         let p = button
-            .compute_point(
-                window,
-                &graphene::Point::new(button.width() as f32 / 2., button.height() as f32 / 2.),
-            )
+            .compute_point(window, &graphene::Point::new(x, y))
             .unwrap();
         unsafe {
             let (mut x, mut y, mut child) = (0, 0, 0);
@@ -237,5 +242,163 @@ fn xtest_focus_escape_cancel_and_fresh_action_share_one_callback() {
     input.key(RETURN, false);
     settle(300);
     assert_eq!(events.borrow().len(), 1);
+    window.close();
+}
+
+#[gtk::test]
+fn xtest_rec_levels_relative_drag_reentrant_refresh_double_reset_and_held_mute_require_fresh_input()
+{
+    use crate::recording_buses::levels as level;
+    let view = super::tests::View::new(Budget::default());
+    let weak = Rc::downgrade(&view.0);
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let seen = events.clone();
+    let next = Cell::new(200);
+    let snapshot = || {
+        let mut s = frame();
+        s.capabilities.idle_levels = Support::Available;
+        s
+    };
+    view.bind_levels(move |event| {
+        let begin = matches!(event, level::Event::Begin { .. });
+        let tracked = begin || matches!(event, level::Event::Set(_));
+        seen.borrow_mut().push(event);
+        if tracked {
+            next.set(next.get() + 1);
+            let request = next.get();
+            if begin {
+                let mut s = frame();
+                s.capabilities.idle_levels = Support::Available;
+                s.operation = Some(Operation {
+                    request,
+                    progress: Progress::Queued,
+                });
+                BusControls(weak.upgrade().unwrap()).observe(s).unwrap();
+            }
+            Ok(level::Reply::Tracked(request))
+        } else {
+            Ok(level::Reply::Accepted)
+        }
+    });
+    view.observe(snapshot()).unwrap();
+    let window = gtk::Window::builder()
+        .child(view.widget())
+        .default_width(1100)
+        .default_height(900)
+        .build();
+    window.present();
+    let input = Input::new(&window);
+    let scale = super::tests::descendants(view.widget())
+        .into_iter()
+        .find_map(|w| w.downcast::<gtk::Scale>().ok())
+        .unwrap();
+    assert!(scale.is_mapped() && scale.is_sensitive());
+    let x = scale.width() as f32 / 2.;
+    let y = scale.height() as f32 / 2.;
+    input.point_at(&scale, &window, x, y);
+    input.button(true);
+    assert!(events.borrow().is_empty());
+    input.point_at(&scale, &window, x, y - 20.);
+    input.button(false);
+    assert_eq!(
+        events
+            .borrow()
+            .iter()
+            .filter(|e| matches!(e, level::Event::Begin { .. }))
+            .count(),
+        1
+    );
+    assert_eq!(
+        events
+            .borrow()
+            .iter()
+            .filter(|e| matches!(e, level::Event::End { request: 201, .. }))
+            .count(),
+        1
+    );
+    let db = events
+        .borrow()
+        .iter()
+        .rev()
+        .find_map(|e| {
+            if let level::Event::End { db, .. } = e {
+                Some(*db)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    let mut applied = snapshot();
+    applied.configuration = Some(
+        applied
+            .configuration
+            .unwrap()
+            .with_db("rec-1-2", db)
+            .unwrap(),
+    );
+    applied.operation = Some(Operation {
+        request: 201,
+        progress: Progress::AppliedLocally,
+    });
+    view.observe(applied).unwrap();
+    assert!(view.awaited_request().is_none());
+    let before = events.borrow().len();
+    input.point_at(&scale, &window, x, y - 20.);
+    input.button(true);
+    input.button(false);
+    input.button(true);
+    input.button(false);
+    assert_eq!(
+        events.borrow().len(),
+        before + 3,
+        "double-click is one reset proposal group, with no empty drag admissions"
+    );
+    assert!(matches!(
+        &events.borrow()[before],
+        level::Event::Begin {
+            kind: crate::controls::fader::Kind::Reset,
+            ..
+        }
+    ));
+    assert!(matches!(
+        events.borrow().last(),
+        Some(level::Event::End {
+            request: 202,
+            db: 0.,
+            ..
+        })
+    ));
+    let mut applied = snapshot();
+    applied.operation = Some(Operation {
+        request: 202,
+        progress: Progress::AppliedLocally,
+    });
+    view.observe(applied).unwrap();
+    let old = button(&view, "Mute bus");
+    assert!(old.grab_focus());
+    settle(35);
+    input.key(SPACE, true);
+    let mut changed = snapshot();
+    changed.configuration = Some(
+        changed
+            .configuration
+            .unwrap()
+            .with_mute("rec-1-2", true)
+            .unwrap(),
+    );
+    view.observe(changed).unwrap();
+    input.key(SPACE, false);
+    old.emit_clicked();
+    assert_eq!(events.borrow().len(), before + 3);
+    let fresh = button(&view, "Unmute bus");
+    assert!(fresh.is_sensitive());
+    assert!(fresh.grab_focus());
+    settle(35);
+    input.key(SPACE, true);
+    input.key(SPACE, false);
+    assert_eq!(events.borrow().len(), before + 4);
+    assert!(
+        matches!(events.borrow().last(),Some(level::Event::Set(i)) if i.change==level::Change::Mute(false))
+    );
     window.close();
 }
