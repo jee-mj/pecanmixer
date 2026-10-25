@@ -165,14 +165,20 @@ impl ActionMailbox {
         self.notify()
     }
     /// One bounded owner action, not file I/O or successful enable evidence.
+    /// An older presentation cannot replace a newer queued source. Equal-source
+    /// posts retain last-choice ordering. False also reports ignored stale posts.
     pub fn autostart(&self, source: u64, enabled: bool) -> bool {
         if source > GENERATION_MAX {
             return false;
         }
-        self.autostart.store(
-            (source << 2) | if enabled { 1 } else { 2 },
-            Ordering::SeqCst,
-        );
+        let action = (source << 2) | if enabled { 1 } else { 2 };
+        if update(&self.autostart, |queued| {
+            (source >= (queued >> 2)).then_some(action)
+        })
+        .is_err()
+        {
+            return false;
+        }
         self.notify().is_ok()
     }
     pub fn drain(&self) -> ActionBatch {
