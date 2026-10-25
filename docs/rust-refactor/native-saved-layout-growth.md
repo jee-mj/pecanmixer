@@ -1,8 +1,11 @@
-# Backend saved-layout initialization and growth candidate
+# Reviewed backend saved-layout initialization and growth
 
 Base: PR2 `5ad62b1cd18e1ed4217275da74638b5f83e47b6a`. This is a backend
 prerequisite for general saved Rec configuration. No owner/startup/settings
 adoption is included and existing generic configuration gates are unchanged.
+Corrected source `7e940a978d7edd13b318e0831796e24a0d39a84e` independently clears
+the narrow re-review below; this remains a backend primitive, not broader saved
+settings restoration in the executable.
 
 ## API and admission
 
@@ -123,3 +126,44 @@ performance, server convergence or causal transaction acceptance is exercised.
 Owner integration, arbitrary shrink, topology replay, active-recording structure,
 automatic failed-prefix repair and MIDI/clock effects remain separate work.
 Legacy behavior, dependencies and version `0.1.0` are preserved.
+
+## Independent correction review and integration
+
+The exact original four independent probes are rerun unchanged on `7e940a97`.
+All four pass, including the former optional-transport revision/no-op failure;
+the probe source checksum is unchanged. Known logical metadata with unknown
+transport now yields AppliedLocally and an advanced revision when transport is
+initialized. The case remains explicitly synthetic; no current normal producer
+of that isolated optional-field combination is assumed. The new authored
+regression also covers all four known/unknown combinations and a subsequent
+exact NoOp with unchanged revision.
+
+Other unchanged probes verify stale route-pair rejection with harmless link-ID/
+foreign-instance churn allowed, partial uncertainty after final-callback config
+supersession, and final-input witness retention across cache eviction while
+later suffix replacement cannot inherit its generations. All 253 backend tests
+also pass independently. No original assertion is removed or success-filtered.
+Private review registration is removed afterward; source remains exact.
+
+Commits `7723af30` then `7e940a97` apply without conflicts onto history PR2
+`c6b20720`. Backend source matches the reviewed candidate byte for byte. Core,
+GTK/runtime/history, service/DTO interfaces, startup/settings schema, dependencies
+and versions are unchanged from that PR head. Only these coverage notes differ.
+Owner/startup adoption, automatic reload/repair, arbitrary shrink, topology replay
+and active structural policy remain separate gates. Combined validation and
+exact-head hosted receipts are verified separately after publication.
+
+Fresh combined cloud checks pass 86 validator controls, 79 core, 253 backend and
+558 all-feature GTK tests, plus 504 default GTK tests, ten legacy library tests
+and compilation of all five legacy examples. Formatting, native build, three
+headless fixtures, three controlled smokes and Cargo/ELF closure audits pass;
+the tooling guard records zero Node attempts. Host and explicit-target workspace
+packages are cleaned and rebuilt before this gate. These use synthetic inputs
+only, without a PipeWire session or profile access.
+
+[Exact corrected candidate CI40178571167](https://github.com/jee-mj/pecanmixer/actions/runs/40178571167)
+also succeeds. Its job confirms 86 validator controls, 253 backend and 552 GTK
+tests plus native build/fixtures/audits; that candidate predates the separately
+integrated history checks. The current combined counts above are local evidence;
+exact published-head hosted status is checked separately, without claiming
+physical desktop, audio hardware or performance acceptance.

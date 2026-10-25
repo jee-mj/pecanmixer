@@ -198,6 +198,17 @@ original Rec node/input generations alongside configuration CAS, with no weaker
 fallback. It is integrated independently of automatic Rec restore. Source-only
 authority does not establish graph convergence or resolve unsupported layouts.
 
+The independently reviewed [saved-layout backend](./native-saved-layout-growth.md)
+now supplies `restore_idle_layout(SavedLayoutIntent)` for explicit same-capacity
+regrouping/initialization or nondecreasing growth, including unknown logical/
+transport metadata. Original HistoryGraph/configuration/membership authority,
+existing endpoint pairs, final suffix generations and partial uncertainty remain
+bound through the existing migration engine. Corrected `7e940a97` accounts for
+transport changes in local outcome and revision publication. This library alone
+does not broaden the startup/settings owner, add automatic repair/reload, shrink
+or topology replay, or decide active-recording structural behavior. Those owner
+and policy gates remain unfinished.
+
 The independently reviewed [bounded Rec restore owner](./native-rec-restore-candidate.md)
 uses that strong API for valid initial or memory preferences and matching local
 channel capacity. It retains original input identity, actual receipt and shared
