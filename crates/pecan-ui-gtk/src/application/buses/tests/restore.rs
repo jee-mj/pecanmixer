@@ -1,5 +1,6 @@
 //! Synthetic initial settings, exact registry frames and injected receipts only.
 mod reconnect;
+mod saved;
 use super::*;
 use crate::application::preferences::PreferencesState;
 use crate::{settings_storage::SettingsFile, settings_worker::SettingsEvent};

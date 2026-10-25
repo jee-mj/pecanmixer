@@ -1,11 +1,12 @@
-//! Bounded automatic idle restore: existing channel count only, once per epoch.
+//! Bounded automatic idle restore, once per epoch. Native saved-layout support
+//! permits initialization/regrouping or growth without shrinking/moving routes.
 //! The original witness is retained; local completion needs a later inspection
 //! and accepted presentation. No settings writeback or graph history is emitted.
 use super::*;
 
 #[derive(Default)]
 pub(super) struct State {
-    attempted: Option<ConfigRevision>,
+    pub(super) attempted: Option<ConfigRevision>,
     pub(super) reports: VecDeque<ConfigReport>,
     pub(super) retired_completed: VecDeque<ConfigWork>,
 }
@@ -17,7 +18,7 @@ pub(super) struct Work {
     pub(super) released: bool,
 }
 impl BusOwner {
-    fn restore_message(&self, message: &str) {
+    pub(super) fn restore_message(&self, message: &str) {
         self.restore_status.set_text(message);
         self.restore_status.set_visible(true);
     }
@@ -111,6 +112,23 @@ impl BusOwner {
             return;
         };
         let desired_channels: usize = desired.buses.widths.iter().sum();
+        if service.supports_saved_layout() {
+            if snapshot
+                .local
+                .as_ref()
+                .is_none_or(|l| l.channels > desired_channels)
+            {
+                self.restore.borrow_mut().attempted = Some(revision);
+                self.restore_message("Saved Rec layout requires shrinking or unavailable local capacity; automatic restore was not sent.");
+                return;
+            }
+            if let Err(error) = self.submit_saved_restore(&origin, desired) {
+                self.restore_message(&format!(
+                    "Saved Rec restore waits for authenticated idle authority: {error}."
+                ));
+            }
+            return;
+        }
         let layout_changed = snapshot
             .configuration
             .as_ref()
@@ -217,7 +235,7 @@ impl BusOwner {
         }
         self.publish();
     }
-    fn skip_recording_restore_epoch(&self, revision: ConfigRevision) {
+    pub(super) fn skip_recording_restore_epoch(&self, revision: ConfigRevision) {
         let mut state = self.restore.borrow_mut();
         let newly_skipped = state
             .attempted

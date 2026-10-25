@@ -10,6 +10,38 @@ pub(super) struct Migration {
     hook: RefCell<Option<Box<dyn Fn()>>>,
 }
 impl Migration {
+    pub fn new_saved(fake: &Fake, intent: &SavedLayoutIntent) -> Self {
+        Self {
+            report: RefCell::new(Some(MigrationReport {
+                ticket: intent.ticket,
+                source: intent.origin.graph().stamp,
+                expected_config: intent.expected_config,
+                expected_recording: intent.expected_recording,
+                progress: MigrationProgress::Queued,
+                configuration: fake.config.borrow().clone(),
+                proposed: intent.configuration.clone(),
+                attempted: 0,
+                submitted: 0,
+                no_ops: 0,
+                in_progress: 0,
+                new_observed: None,
+                old_observed: None,
+                ports_observed: None,
+                observed_inputs: None,
+                resize: None,
+                local_readback: None,
+                cancellation_requested: false,
+                failure: None,
+            })),
+            hook: RefCell::default(),
+        }
+    }
+    pub(super) fn on_report(&self, hook: Box<dyn Fn()>) {
+        *self.hook.borrow_mut() = Some(hook);
+    }
+    pub(super) fn current(&self) -> MigrationReport {
+        self.report.borrow().clone().unwrap()
+    }
     pub fn new(fake: &Fake, intent: &LayoutIntent) -> Self {
         let configuration = fake.config.borrow().clone();
         let mut proposed = configuration.configuration.clone().unwrap();

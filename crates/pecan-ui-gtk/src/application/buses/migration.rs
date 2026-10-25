@@ -9,6 +9,7 @@ use pecan_pipewire::bus_migration::{
     LayoutAction, LayoutIntent, MigrationOutcome, MigrationProgress, MigrationReport,
 };
 use service::MigrationPoll;
+mod saved;
 
 pub(super) struct Work {
     source: Stamp,
@@ -16,6 +17,8 @@ pub(super) struct Work {
     proposed: IdleBusConfig,
     proof: Postcondition,
     append: bool,
+    saved_restore: Option<HistoryGraph>,
+    admission_error: Option<String>,
     // Keep the backend's actual completion witness. A later observation/cache
     // lookup cannot supply the generations that were observed at completion.
     observed_inputs: Option<HistoryGraph>,
@@ -393,6 +396,8 @@ impl BusOwner {
                 receipt: None,
                 arming: None,
                 migration: Some(Work {
+                    saved_restore: None,
+                    admission_error: None,
                     append: matches!(action, ui::Action::AddStereo),
                     observed_inputs: None,
                     source: graph.stamp,
@@ -443,6 +448,7 @@ impl BusOwner {
         }
     }
     pub(super) fn poll_migration(&self, inspected: Option<&ConfigSnapshot>) {
+        self.poll_saved_rejection(inspected);
         let pending = self.data.borrow().operation.as_ref().and_then(|w| {
             w.migration
                 .as_ref()?
@@ -492,7 +498,13 @@ impl BusOwner {
             c.revision.owner == work.expected.owner
                 && revision_covers(c.revision, report.configuration.revision)
         });
-        let fresh = current.is_some_and(|c| Some(c) == actual.as_ref());
+        // A saved restore requires an inspection after terminal delivery even
+        // for same-revision NoOp. This tick's read precedes receipt polling.
+        let inspected_after_terminal = m.saved_restore.is_none()
+            || m.last
+                .as_ref()
+                .is_some_and(|r| r.is_decided() && r.in_progress == 0);
+        let fresh = inspected_after_terminal && current.is_some_and(|c| Some(c) == actual.as_ref());
         // No backend report is substituted for the owner's actual readback.
         work.completion = report.is_decided().then(|| report.configuration.clone());
         work.terminal = decided && fresh;
@@ -537,10 +549,13 @@ impl BusOwner {
                                 )
                         })
                 } else {
-                    m.proof.matches(&self.session, observed, None)
+                    m.proof
+                        .matches(&self.session, observed || m.saved_restore.is_some(), None)
                 };
                 let exact = current.is_some_and(|c| {
-                    c == &report.configuration && c.configuration.as_ref() == Some(&m.proposed)
+                    c == &report.configuration
+                        && c.configuration.as_ref() == Some(&m.proposed)
+                        && m.saved_readback_matches(c)
                 });
                 let lost_authority = graph
                     .as_ref()
@@ -582,10 +597,11 @@ impl BusOwner {
                     w.lease.clone(),
                     m.publication.clone()?,
                     d.current.clone()?,
+                    m.saved_restore.is_some(),
                 ))
             })
         };
-        let Some((request, progress, lease, config, origin)) = pending else {
+        let Some((request, progress, lease, config, origin, saved_restore)) = pending else {
             return false;
         };
         let graph = self.session.graph();
@@ -601,7 +617,7 @@ impl BusOwner {
                             && s.origin.0.graph.as_ref().zip(graph.as_ref()).is_some_and(
                                 |(a, b)| a.stamp == b.stamp && Arc::ptr_eq(&a.value, &b.value),
                             )
-                            && (!matches!(progress, ui::Progress::Observed)
+                            && (!(saved_restore || matches!(progress, ui::Progress::Observed))
                                 || s.configuration.as_ref()
                                     == config.configuration.as_ref().map(|c| &c.buses))
                     })
@@ -610,7 +626,7 @@ impl BusOwner {
         if !shown {
             return false;
         }
-        {
+        let saved_restore = {
             let mut d = self.data.borrow_mut();
             let Some(w) = d
                 .operation
@@ -620,6 +636,10 @@ impl BusOwner {
                 return false;
             };
             w.migration.as_mut().unwrap().released = true;
+            w.migration.as_ref().unwrap().saved_restore.is_some()
+        };
+        if saved_restore {
+            self.restore_message(&format!("Saved Rec restore retained {progress:?} after fresh readback and accepted presentation; no automatic retry/rollback. Local/observed completion is not an audio/server acknowledgement."));
         }
         self.session.release_external(&lease);
         true

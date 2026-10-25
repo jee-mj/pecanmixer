@@ -44,6 +44,15 @@ impl TakePoll for Take {
     }
 }
 struct Fake {
+    saved_restore_enabled: Cell<bool>,
+    saved_attempts: RefCell<Vec<pecan_pipewire::bus_migration::SavedLayoutIntent>>,
+    saved_layouts: RefCell<
+        Vec<(
+            pecan_pipewire::bus_migration::SavedLayoutIntent,
+            Rc<migration::Migration>,
+        )>,
+    >,
+    saved_failure: RefCell<Option<Error>>,
     restore_enabled: Cell<bool>,
     restore_origins: RefCell<Vec<pecan_core::history_identity::HistoryGraph>>,
     levels_enabled: Cell<bool>,
@@ -84,6 +93,10 @@ struct Fake {
 impl Fake {
     fn new(epoch: u64) -> Rc<Self> {
         Rc::new(Self {
+            saved_restore_enabled: Cell::new(false),
+            saved_attempts: RefCell::default(),
+            saved_layouts: RefCell::default(),
+            saved_failure: RefCell::default(),
             restore_enabled: Cell::new(false),
             restore_origins: RefCell::default(),
             levels_enabled: Cell::new(false),
@@ -225,6 +238,27 @@ impl Fake {
     }
 }
 impl Service for Fake {
+    fn supports_saved_layout(&self) -> bool {
+        self.saved_restore_enabled.get()
+    }
+    fn restore_saved_layout(
+        &self,
+        intent: pecan_pipewire::bus_migration::SavedLayoutIntent,
+    ) -> Result<Rc<dyn MigrationPoll>, Error> {
+        self.saved_attempts.borrow_mut().push(intent.clone());
+        if let Some(error) = self.saved_failure.borrow_mut().take() {
+            return Err(error);
+        }
+        let receipt = Rc::new(migration::Migration::new_saved(self, &intent));
+        self.saved_layouts
+            .borrow_mut()
+            .push((intent, receipt.clone()));
+        let hook = self.hook.borrow_mut().take();
+        if let Some(hook) = hook {
+            hook();
+        }
+        Ok(receipt)
+    }
     fn supports_restore(&self) -> bool {
         self.restore_enabled.get()
     }
