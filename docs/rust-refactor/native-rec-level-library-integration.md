@@ -22,8 +22,8 @@ eight focused cases and three additional wheel/final-value/reconciliation probes
 pass. The original End/Abandon still retains owner evidence until its matched
 terminal report. The correction is retained unchanged.
 
-The backend level-only API validates same-layout configuration CAS and captures
-the current Rec node/port registry binding at admission. It changes only local
+The initial backend level-only API validates same-layout configuration CAS and
+captures the current Rec node/port registry binding at admission. It changes only local
 gain, never resize/options or take/track identities. Known logical dB/mute state
 and transport readback remain required. Native opening starts, arming, migration
 and legacy ownership keep their existing gates. Local Applied/NoOp/partial
@@ -35,16 +35,23 @@ configuration preservation and partial-stop continuity. A fifth boundary probe
 confirms the advertised admission scope: an idle same-ID replacement before
 admission can preserve configuration revision and accept the old configuration
 intent. `IdleConfigIntent` alone carries no original widget graph witness.
-This is a concrete owner-adoption gate, not original-identity proof. The narrowly
-corrected captured-origin backend interface must independently clear before any
-live owner wiring; the present native application cannot call this library path.
+This identified a concrete owner-adoption gate, not original-identity proof.
+The subsequent independently cleared `bfad5259` closes that backend gap by
+requiring the original retained `HistoryGraph` in `configure_bus_gains`, alongside
+the configuration CAS. It checks backend authority, epoch, generations, node
+serial and input mapping atomically at admission; ordinary revisions and cache
+eviction do not discard unchanged identity. There is no weak overload. Original
+controls must retain this witness through every sample, never recapture or fall
+back to idle/legacy admission after rejection. Independent review passes 16
+focused tests and five additional authority/mapping/replacement groups.
+The present native application still binds no level callback; owner wiring
+remains a separate independent gate.
 
 The next owner slice will use that one reviewed authority seam, shared Session
 admission/tickets, one in-flight receipt plus one latest desired value, final
 flush, actual readback and retained failures. It must not duplicate the backend
 API, add another ticket counter or manufacture graph history. No placeholder
-owner implementation or new dispatcher is added here while the final interface
-is pending.
+owner implementation or new dispatcher is added by this library checkpoint.
 
 All new fixtures are authored synthetic public-project data. No device names,
 private topology, user recordings/profile, actual launcher, hardware session or
@@ -63,3 +70,27 @@ Source/privacy, whitespace and unchanged versions/manifests/lockfile checks pass
 No final local failed check or environment blocker remains. The exact PR-head
 hosted outcome is recorded separately in the PR description. No physical
 desktop, hardware/audio, real-time or final package/license acceptance follows.
+
+## Original-origin and fixture follow-up
+
+The follow-up starts at library checkpoint `37a0b607`, retaining elapsed source
+and the reviewed UI correction exactly. It adopts independently cleared
+`bfad5259` with no runtime reconciliation, then fixture-only `953c4078`.
+The original CI failed at an arming fixture's immediate report unwrap during
+writer finalization, after 214/215 backend tests; its branch run passed. The same
+failure reproduced locally on repetition 17. The corrected assertion waits only
+for the first readable report, with the existing two-second bound and no pump or
+success predicate, then preserves the stop assertion. Independent review passes
+215 backend tests, 50 repetitions and failure-preservation coverage; an
+omitted-stop negative control still fails. The author additionally passed 100
+repetitions, and exact candidate run 40158281137 succeeds. Production lifecycle
+ordering, API and other assertions are unchanged by this fixture correction.
+
+Fresh combined checks pass 86 validator controls, 76 core, 219 backend and 421
+feature GTK tests, 376 default GTK tests, native build/formatting/dependency
+audits, three headless fixtures and three smokes. All ten legacy library tests
+and five example compilation checks pass. The Node-tool attempt log is empty;
+source/privacy, whitespace and unchanged versions/lockfile checks pass. Exact
+published-head hosted results remain separately recorded in the PR description.
+The new authority API is integrated, but no native level callback is enabled.
+Shared one-flight owner adoption remains a separate reviewed candidate.

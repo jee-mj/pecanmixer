@@ -133,5 +133,6 @@ does not establish physical timing, sample alignment or recording acceptance.
 The [reviewed Rec-level libraries](./native-rec-level-library-integration.md)
 preserve logical gain/mute semantics and add retained typed controls plus a
 gain-only backend path. Native callbacks/capabilities remain disabled. The
-original-origin admission interface and shared one-flight owner adoption remain
-explicit gates before editable Rec levels; library inclusion is not live parity.
+original-origin interface separately clears at `bfad5259`; shared one-flight
+owner adoption remains a gate before editable Rec levels. Library inclusion is
+not live parity.

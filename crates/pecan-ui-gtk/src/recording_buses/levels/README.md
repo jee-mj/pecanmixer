@@ -42,7 +42,8 @@ capabilities cannot enable it. Active/opening/finalizing/unknown operation is
 still unavailable in this helper: the original idle configuration path rejects
 recording ownership. A separately reviewed gain-only backend library is now
 integrated, preserving layout, arming, options and track identities. Original
-captured-origin admission and owner adoption still need their separate gate;
+captured-origin admission independently clears in the subsequent `bfad5259`
+backend interface; owner adoption still needs its separate gate;
 the present application binds no live callback. This is a temporary capability
 gap, not a permanent restriction on legacy behavior. See the
 [integration record](../../../../../docs/rust-refactor/native-rec-level-library-integration.md).
