@@ -58,8 +58,10 @@ remain in the existing common-quit error collection.
 
 A previously accepted, released automatic restore can be retired on a new epoch,
 with its report archived before fresh authority is published. The next tick may
-restore once for that new epoch. Uncertain outcomes and retained prior user
-operations still require existing explicit Refresh/reconciliation. A user bus
+restore once for that new epoch. Uncertain/failed prior work still requires explicit Refresh/reconciliation. The
+separately [reviewed reconnect owner](./native-rec-reconnect-edits-candidate.md)
+now retires closed successful user work only after fresh current-epoch authority
+and released ownership, preserving the original receipts. A user bus
 operation or known recording already owning the epoch causes automatic restore
 to be skipped rather than applied after that activity ends. Opening, finalizing,
 unknown ownership and active recording are never overridden. Stop all and common
@@ -97,7 +99,7 @@ for independent review; hardware/audio/physical desktop/performance are unrun.
 - General saved layouts need separately reviewed initialization/growth/shrink and
   routed migration planning through existing backend barriers. No new backend
   sequencer or routed Add is supplied here.
-- Restore after retained prior user work and explicit reload/recovery remain gated.
+- Pending/failed prior-work recovery and explicit reload/recovery remain gated.
   Active-recording structural segmentation versus disabling edits remains an
   explicit user-decision gate. No automatic recording or profile import exists.
 - Clock effects, larger route resets, queued input, history reconciliation,

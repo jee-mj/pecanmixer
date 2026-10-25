@@ -184,9 +184,11 @@ now preserves explicit native settings/recording launch arguments and a distinct
 native autostart identity without touching legacy entries. It is library-only;
 worker/tray/startup adoption and real desktop/login acceptance remain separate.
 
-A separate [reconnect-after-completed-edits candidate](./native-rec-reconnect-edits-candidate.md)
+The independently reviewed [reconnect-after-completed-edits owner](./native-rec-reconnect-edits-candidate.md)
 addresses the retained successful user-operation gate on `d0d8f23f`. It requires
 closed original receipts, released ownership and fresh authenticated idle
 presentation before archiving old work and capturing current preferences for a
 new request. Pending/uncertain work, recording reload and general layouts remain
-gated. This owner delta is not published to PR2 until independent review clears.
+gated. Corrected `91afa807` is integrated with the unchanged pure desktop helper.
+Recording observed by the owner latches its existing epoch skip even if nested
+polling publishes joined state before returning; a later epoch can recover.

@@ -1,8 +1,8 @@
-# Reconnect after completed Rec edits — owner candidate
+# Reviewed reconnect after completed Rec edits
 
 This bounded candidate starts at reviewed PR2 head `d0d8f23f`. It extends the
-matching-capacity idle restore owner; independent review is still required before
-PR2 adoption. It does not add channel growth/shrink, routed regrouping, recording
+matching-capacity idle restore owner; corrected `91afa807` has independently
+cleared and is adopted in this follow-up. It does not add channel growth/shrink, routed regrouping, recording
 reload policy or profile discovery. Backend/core contracts and legacy behavior
 remain unchanged.
 
@@ -139,3 +139,31 @@ bus-owner tests, 11 preference tests, native build, formatting and whitespace/
 privacy/scope checks. Core/backend/legacy/dependencies/versions are unchanged.
 No final failed check or environment blocker remains. Full initial suites are not
 repeated; exact corrected hosted and independent re-review remain pending.
+
+## Independent clearance and combined adoption
+
+Independent re-review clears `91afa807`: all five unchanged probes pass,
+including nested/service/receipt observations and later-epoch recovery, along
+with 37 targeted review checks in each mode. Exact candidate run 40169219633
+succeeds. The earlier callback correction did not cover the nested observation;
+the final owner-observation latch does, without adding test functions/framework.
+
+The three reviewed commits apply onto pure desktop-library head `068f90e1` with
+one append-only documentation conflict. Both coverage records are preserved.
+Runtime bus sources match `91afa807` exactly and desktop helper/export sources
+match reviewed `79d2c9eb`; no runtime reconciliation or unreviewed desktop
+worker/tray/CLI adoption is included.
+
+Fresh combined checks pass 86 validator controls, 76 core, 230 backend, 526 feature
+GTK and 472 default GTK tests, native build/formatting, Cargo/ELF audits, three
+headless fixtures and three controlled smokes. Ten legacy library tests and all
+five legacy examples compiled pass. Workspace host/target packages were rebuilt;
+zero Node-tool attempts are recorded. Privacy/scope/whitespace and unchanged
+versions/manifests/lockfile checks pass. No final failure or environment blocker
+remains. Exact published-head hosted evidence is recorded separately in PR2.
+
+Successful closed historical edits no longer permanently suppress legitimate
+idle reconnect restore. Pending/failed/uncertain work remains owned, recorded
+activity skips only its observed epoch, and later-epoch recovery still uses new
+authority/current preferences. General layout restore and recording/reload policy,
+desktop management-context persistence and physical/audio acceptance remain open.
