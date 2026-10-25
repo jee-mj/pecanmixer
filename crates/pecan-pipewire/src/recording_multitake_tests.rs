@@ -118,6 +118,12 @@ fn duplicate_bus_is_explicit_noop_in_queued_opening_and_started_phases() {
         panic!()
     };
     assert!(Arc::ptr_eq(&first.0, &again.0));
+    assert!(f
+        .commands
+        .recording_snapshot()
+        .unwrap()
+        .latest_started
+        .is_none());
     assert_eq!(
         again.try_report().unwrap().progress,
         RecordingProgress::Queued
@@ -157,6 +163,12 @@ fn duplicate_bus_is_explicit_noop_in_queued_opening_and_started_phases() {
         RecordingProgress::Opening
     );
     assert!(!opening.try_report().unwrap().started_once);
+    assert!(f
+        .commands
+        .recording_snapshot()
+        .unwrap()
+        .latest_started
+        .is_none());
     release.send(()).unwrap();
     until(&first, |r| {
         f.pump();
@@ -695,4 +707,60 @@ fn owned_take_capacity_includes_slow_teardown_and_stop_all_retains_every_result(
         finish(receipt);
     }
     assert_eq!(f.owner.finish().writers_finalized, MAX_RECORDING_TAKES);
+}
+
+#[test]
+fn latest_start_is_first_attachment_not_current_iteration_or_recent_history_order() {
+    let f = Fixture::new(true);
+    let first = f.bus_start("rec-1");
+    assert!(f
+        .commands
+        .recording_snapshot()
+        .unwrap()
+        .latest_started
+        .unwrap()
+        .same_request(&first));
+    let second = f.bus_start("rec-2");
+    let take = second.try_report().unwrap().writer.unwrap().take;
+    f.commands
+        .stop_recording(RecordingStop::Take(take))
+        .unwrap();
+    finish(&second);
+    for _ in 0..3 {
+        f.pump();
+        assert!(f
+            .commands
+            .recording_snapshot()
+            .unwrap()
+            .latest_started
+            .unwrap()
+            .same_request(&second));
+    }
+    assert!(first.try_report().unwrap().started_once);
+    f.commands.stop_recording(RecordingStop::All).unwrap();
+    finish(&first);
+    f.pump();
+    for _ in 0..(RECENT_TAKES + 2) {
+        let RecordingBusStartResult::Admitted(queued) = f
+            .commands
+            .enqueue_recording_bus(f.bus_intent("rec-1"))
+            .unwrap()
+        else {
+            panic!("new queued take")
+        };
+        f.commands.stop_recording(RecordingStop::All).unwrap();
+        assert!(!queued.try_report().unwrap().started_once);
+        assert!(f
+            .commands
+            .recording_snapshot()
+            .unwrap()
+            .latest_started
+            .unwrap()
+            .same_request(&second));
+    }
+    assert_eq!(
+        f.commands.0.lock().unwrap().recording.recent.len(),
+        RECENT_TAKES
+    );
+    assert!(second.try_report().unwrap().is_success());
 }

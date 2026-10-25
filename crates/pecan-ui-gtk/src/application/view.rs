@@ -27,6 +27,10 @@ pub struct NativeWorkspace {
     telemetry: RefCell<super::telemetry::Telemetry>,
     pages: gtk::Stack,
     buses: RefCell<Rc<super::BusOwner>>,
+    #[cfg(test)]
+    recording_page: gtk::Box,
+    folders: RefCell<Rc<super::folders::Folders>>,
+    now: Cell<std::time::Duration>,
     routes: Rc<super::routes::Routes>,
     session: Session,
     history: gtk::Box,
@@ -46,7 +50,14 @@ impl NativeWorkspace {
         native: Option<Rc<pecan_pipewire::graaf::Graaf>>,
     ) -> Rc<Self> {
         let mixer = super::mixer::CoordinatedMixer::new(session.clone());
+        let io = native.as_ref().map(|_| {
+            std::sync::Arc::new(super::folders::NativeIo) as std::sync::Arc<dyn super::folders::Io>
+        });
         let buses = super::BusOwner::native(session.clone(), native);
+        let folders = super::folders::Folders::new(buses.clone(), io);
+        let recording_page = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        recording_page.append(folders.widget());
+        recording_page.append(buses.widget());
         let routes = super::routes::Routes::new(session.clone(), buses.clone());
         let patchbay = PatchbayOverview::new();
         let shared = session.clone();
@@ -63,7 +74,7 @@ impl NativeWorkspace {
         let pages = gtk::Stack::new();
         pages.add_titled(mixer.widget(), Some("mixer"), "Mixer");
         pages.add_titled(patchbay.widget(), Some("patchbay"), "Patchbay");
-        pages.add_titled(buses.widget(), Some("buses"), "Buses and recording");
+        pages.add_titled(&recording_page, Some("buses"), "Buses and recording");
         pages.add_titled(routes.widget(), Some("routing"), "Routing");
         pages.set_hexpand(true);
         pages.set_vexpand(true);
@@ -81,6 +92,10 @@ impl NativeWorkspace {
             telemetry: RefCell::default(),
             pages,
             buses: RefCell::new(buses),
+            #[cfg(test)]
+            recording_page,
+            folders: RefCell::new(folders),
+            now: Cell::new(std::time::Duration::ZERO),
             routes,
             session,
             history,
@@ -132,9 +147,12 @@ impl NativeWorkspace {
     #[cfg(test)]
     pub(crate) fn attach_test_buses(&self, buses: Rc<super::BusOwner>) {
         assert!(self.session.same_session(&buses.session));
-        self.pages.remove(self.buses.borrow().widget());
-        self.pages
-            .add_titled(buses.widget(), Some("buses"), "Buses and recording");
+        self.recording_page.remove(self.buses.borrow().widget());
+        self.recording_page.remove(self.folders.borrow().widget());
+        let folders = super::folders::Folders::new(buses.clone(), None);
+        self.recording_page.append(folders.widget());
+        self.recording_page.append(buses.widget());
+        *self.folders.borrow_mut() = folders;
         self.routes.attach_test_buses(buses.clone());
         *self.buses.borrow_mut() = buses;
     }
@@ -142,9 +160,14 @@ impl NativeWorkspace {
     /// are no graph events. The lifetime adapter owns/removes that source; this
     /// view creates none, preventing per-activation consumer/timer duplication.
     pub fn poll(&self) {
+        self.poll_at(self.now.get());
+    }
+    pub(crate) fn poll_at(&self, now: std::time::Duration) {
+        self.now.set(self.now.get().max(now));
         let batch = self.session.poll();
         self.buses.borrow().poll();
         self.routes.poll();
+        self.folders.borrow().poll(self.now.get());
         self.refresh();
         let mut telemetry = self.telemetry.borrow_mut();
         telemetry.apply(&self.session, &batch);

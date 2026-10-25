@@ -108,3 +108,9 @@ parent/child outcomes separately. Independent re-review clears `10fb50f5`,
 including child-polling reentry, busy-child retention and original-request
 validation before lease release. Idle migration adoption and active-recording
 structural policy remain separate gates.
+
+The separate [Folder owner adoption candidate](./native-folder-owner.md) mounts
+the corrected helper with actual latest-start receipt authority and explicit
+worker-based preparation/launch/reaping. It awaits independent owner review and
+is not included in the public matrix above. Active elapsed stays unavailable;
+this candidate adds no timing producer or stopwatch.

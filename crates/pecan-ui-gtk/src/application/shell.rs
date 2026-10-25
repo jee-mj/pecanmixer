@@ -532,7 +532,7 @@ impl ApplicationShell {
         if self.exit_code().is_some() {
             return;
         }
-        self.workspace.poll();
+        self.workspace.poll_at(self.now());
         if let Some(worker) = self.settings.borrow().as_ref() {
             for _ in 0..32 {
                 match worker.try_event() {

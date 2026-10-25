@@ -32,6 +32,9 @@ pub struct RecordingRevision {
 pub struct RecordingSnapshot {
     pub revision: RecordingRevision,
     pub configuration: ConfigSnapshot,
+    /// Most recently first-attached take; retained after stop/reconnect/history eviction.
+    /// This is folder identity, not elapsed time or sample-arrival evidence.
+    pub latest_started: Option<RecordingReceipt>,
     /// Retain these receipts independently of future replaceable snapshots.
     pub takes: Vec<RecordingReceipt>,
     pub arming: Option<crate::recording_arming::ArmingReceipt>,
@@ -406,6 +409,7 @@ impl Drop for PreparedStart {
 #[derive(Default)]
 pub(crate) struct Registry {
     pub active: Vec<Arc<Request>>,
+    pub latest_started: Option<Arc<Request>>,
     pub recent: VecDeque<Arc<Request>>,
     pub revision: u64,
     pub exhausted: bool,

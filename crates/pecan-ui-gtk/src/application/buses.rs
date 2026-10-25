@@ -1,6 +1,7 @@
 //! One owner for bus/configuration handoffs and retained recording receipts.
 //! Local readback is not graph observation; writer exit is not joined completion.
 mod arming;
+pub(super) mod folder;
 mod routing;
 mod service;
 mod view;
@@ -81,6 +82,9 @@ struct Publication {
 struct Data {
     config: Option<ConfigSnapshot>,
     membership: Option<RecordingRevision>,
+    latest_started: Option<(Rc<dyn TakePoll>, Option<TakeStatus>)>,
+    folder_origin: Option<folder::FolderOrigin>,
+    folder_fresh: bool,
     unknown_owned: bool,
     protocol_invalid: bool,
     current: Option<Origin>,
@@ -154,6 +158,9 @@ impl BusOwner {
             data: RefCell::new(Data {
                 config: None,
                 membership: None,
+                latest_started: None,
+                folder_origin: None,
+                folder_fresh: false,
                 unknown_owned: false,
                 protocol_invalid: false,
                 current: None,
@@ -661,10 +668,12 @@ impl BusOwner {
             .filter(|w| w.reconcile_requested)
             .map(|w| w.request.clone());
         let mut inspected = None;
+        self.data.borrow_mut().folder_fresh = false;
         let read = self.service.as_ref().and_then(|s| s.read());
         if let Some(Readback {
             revision,
             config,
+            latest_started,
             takes,
         }) = read
         {
@@ -677,8 +686,23 @@ impl BusOwner {
                         (receipt, report)
                     })
                     .collect();
+                let latest = latest_started.map(|r| {
+                    let report = r.report();
+                    (r, report)
+                });
                 let unknown = reports.iter().any(|(_, r)| r.is_none());
                 let mut d = self.data.borrow_mut();
+                d.folder_fresh = true;
+                if let Some((receipt, report)) = latest {
+                    let previous = d
+                        .latest_started
+                        .as_ref()
+                        .filter(|(r, _)| same_take(r, &receipt))
+                        .and_then(|(_, s)| s.clone());
+                    d.latest_started = Some((receipt, report.or(previous)));
+                } else {
+                    d.latest_started = None;
+                }
                 d.config = Some(config);
                 d.membership = Some(revision);
                 d.unknown_owned = unknown;
