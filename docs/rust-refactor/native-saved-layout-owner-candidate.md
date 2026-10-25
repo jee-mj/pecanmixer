@@ -83,7 +83,7 @@ policy. An initial feature invocation used nonexistent `accessibility-tests`;
 it ran no tests and was corrected to existing `a11y-tests,x11-input-tests,tray-bus-tests`.
 Final aggregate check receipts are returned with the candidate handoff.
 
-Fresh local `scripts/native/check.sh` passes 86 validator controls, 79 core,
+Initial `05841309` local `scripts/native/check.sh` passes 86 validator controls, 79 core,
 253 backend and 573 all-feature GTK tests, formatting, native executable build,
 three headless fixtures, three controlled smokes and Cargo/ELF dependency audits.
 All 519 default GTK tests pass separately. Host and explicit-target workspace
@@ -98,3 +98,32 @@ Core/backend/legacy source, manifests/lockfile, dependencies, versions and setti
 schema remain unchanged. Public fixtures are authored and generic. No real
 PipeWire session, device data, profile, launcher, recording, physical desktop,
 accessibility hardware or performance acceptance is exercised.
+
+## Queued recording epoch-skip correction
+
+Independent review blocks `05841309` on a scoped ownership contract gap. A
+queued/opening take can reject saved-layout preflight while the filter's
+`recording` flag is still false. If it joins before the next owner poll, the
+old code forgets to skip automatic restoration in that epoch. Successful owner
+admission followed by stop/join before a tick, including supported reader
+reentry, has the same gap. Native UI reachability is unproven; these are injected
+service/owner reproductions, not an observed deployed failure.
+
+The correction latches the original captured epoch immediately after successful
+recording admission, before reading its first receipt. Saved-layout preflight
+also latches correctly scoped unfinished/opaque ownership, with matching
+configuration owner/epoch and membership owner, rather than relying only on the
+filter flag. Each injected take reader is polled once, outside mutable UI borrows.
+It adds no new retry, timer, recording effects or policy; the existing epoch latch
+still permits a later idle reconnect and is never restamped to a newer epoch.
+
+Five new synthetic regressions run unchanged before/after (source checksum
+verified). On `05841309`, all three queued/admission/reentry reproductions fail;
+the earlier-active-poll and later-epoch controls pass. After correction, all five
+pass in default and all existing test-feature modes. All 171 bus-owner checks in
+each mode, native executable build, scoped formatting/whitespace and unchanged
+core/backend/legacy/manifests/lockfile checks pass. No final failed check or
+environment blocker remains. The complete aggregate, legacy examples and physical
+acceptance are not repeated for this narrow correction; the initial receipts
+above remain historical. Corrected candidate hosted CI and unchanged independent
+review probes remain separate gates before PR2 integration.

@@ -114,8 +114,16 @@ impl BusOwner {
         let fresh = service
             .read()
             .ok_or_else(|| Self::error("Inspection is busy."))?;
-        if fresh.config.recording
+        // Queued/opening ownership precedes the filter's recording flag. Do
+        // not defer its epoch skip until a later owner tick after it may join.
+        // Poll each injected reader once, outside any mutable UI borrow.
+        let unfinished = fresh
+            .takes
+            .iter()
+            .any(|r| r.report().is_none_or(|s| !s.complete));
+        if (fresh.config.recording || unfinished)
             && fresh.config.revision.owner == config.revision.owner
+            && fresh.revision.owner == config.revision.owner
             && fresh.config.revision.epoch == config.revision.epoch
         {
             self.skip_recording_restore_epoch(fresh.config.revision);
@@ -123,10 +131,7 @@ impl BusOwner {
         if fresh.config != *config
             || fresh.revision != membership
             || fresh.config.recording
-            || fresh
-                .takes
-                .iter()
-                .any(|r| r.report().is_none_or(|s| !s.complete))
+            || unfinished
             || self.recording_blocks_restore()
             || self.restore.borrow().attempted.is_some_and(|r| {
                 r.owner != config.revision.owner || r.epoch >= config.revision.epoch
