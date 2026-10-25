@@ -161,6 +161,11 @@ pub enum RecordingPending {
     Running(RecordingProgress),
 }
 impl RecordingReceipt {
+    /// Compare original requests, including before writer/take IDs exist.
+    /// Tickets and source stamps may be shared by dynamic-arming children.
+    pub fn same_request(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
     pub fn try_report(&self) -> Option<RecordingReport> {
         self.0.report()
     }

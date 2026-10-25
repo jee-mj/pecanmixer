@@ -1,5 +1,6 @@
 //! One owner for bus/configuration handoffs and retained recording receipts.
 //! Local readback is not graph observation; writer exit is not joined completion.
+mod arming;
 mod routing;
 mod service;
 mod view;
@@ -15,7 +16,7 @@ use pecan_pipewire::{
     recording::{RecordingBusStart, RecordingProgress, RecordingRevision, RecordingStart},
 };
 pub(crate) use routing::RoutingKey;
-use service::{ConfigPoll, Readback, Service, Started, Stop, TakePoll};
+use service::{same_take, ConfigPoll, Readback, Service, Started, Stop, TakePoll};
 pub use service::{Error, Source, TakeKey, TakeStatus, TrackKey};
 use std::{
     cell::{Cell, RefCell},
@@ -45,6 +46,7 @@ impl PartialEq for Request {
 }
 impl Eq for Request {}
 struct ConfigWork {
+    arming: Option<arming::Work>,
     request: Request,
     ticket: u64,
     expected: ConfigRevision,
@@ -84,15 +86,14 @@ struct Data {
     current: Option<Origin>,
     publication: Option<Publication>,
     operation: Option<ConfigWork>,
-    takes: BTreeMap<Source, Retained>,
-    order: VecDeque<Source>,
+    takes: Vec<Retained>,
     orphans: Vec<(Option<Source>, Rc<dyn TakePoll>)>,
     all_stopped: bool,
     stopped: BTreeSet<TrackKey>,
     stopped_takes: BTreeSet<TakeKey>,
     root: Option<PathBuf>,
     error: Option<String>,
-    retired: VecDeque<Source>,
+    retired: VecDeque<Rc<dyn TakePoll>>,
     past_failures: Vec<String>,
 }
 pub struct BusOwner {
@@ -158,8 +159,7 @@ impl BusOwner {
                 current: None,
                 publication: None,
                 operation: None,
-                takes: BTreeMap::new(),
-                order: VecDeque::new(),
+                takes: vec![],
                 orphans: vec![],
                 all_stopped: false,
                 stopped: BTreeSet::new(),
@@ -225,7 +225,7 @@ impl BusOwner {
         self.data
             .borrow()
             .takes
-            .values()
+            .iter()
             .map(|t| t.status.clone())
             .collect()
     }
@@ -295,7 +295,7 @@ impl BusOwner {
         if self.session.busy()
             || !d.orphans.is_empty()
             || d.unknown_owned
-            || d.takes.values().any(|t| !t.status.complete)
+            || d.takes.iter().any(|t| !t.status.complete)
             || d.config.as_ref().is_none_or(|s| s.recording)
         {
             return Err(Self::error(
@@ -323,7 +323,6 @@ impl BusOwner {
         proposed: Option<BusConfig>,
     ) -> Result<Request, Error> {
         self.validate(origin)?;
-        self.idle()?;
         let current = origin
             .0
             .config
@@ -367,6 +366,10 @@ impl BusOwner {
                 "The proposal does not match its captured core action.",
             ));
         }
+        if matches!(action, ui::Action::Arm { .. }) && self.recording_active() {
+            return self.submit_arming(origin, expected);
+        }
+        self.idle()?;
         if !matches!(action, ui::Action::Arm { .. }) && self.has_routes(origin) {
             return Err(Self::error("Routed layout migration remains pending."));
         }
@@ -407,7 +410,9 @@ impl BusOwner {
             .revision;
         let (ticket, lease) = self.session.reserve_external().map_err(Error::Owner)?;
         let request = Request(Rc::new(()));
+        Self::remember_arming(&mut self.data.borrow_mut());
         self.data.borrow_mut().operation = Some(ConfigWork {
+            arming: None,
             request: request.clone(),
             ticket,
             expected,
@@ -472,7 +477,7 @@ impl BusOwner {
         self.validate(origin)?;
         {
             let d = self.data.borrow();
-            if d.takes.values().filter(|t| !t.status.complete).count() >= 64
+            if d.takes.iter().filter(|t| !t.status.complete).count() >= 64
                 || !d.orphans.is_empty()
                 || d.unknown_owned
                 || d.operation.as_ref().is_some_and(|o| {
@@ -482,7 +487,7 @@ impl BusOwner {
                             ui::Progress::PartiallyApplied(_) | ui::Progress::Unconfirmed(_)
                         )
                 })
-                || d.takes.values().any(|t| {
+                || d.takes.iter().any(|t| {
                     !t.status.complete
                         && matches!(
                             t.status.progress,
@@ -588,7 +593,7 @@ impl BusOwner {
         Ok(())
     }
     fn retain(d: &mut Data, receipt: Rc<dyn TakePoll>, status: TakeStatus) {
-        if d.retired.contains(&status.source) {
+        if d.retired.iter().any(|r| same_take(r, &receipt)) {
             return;
         }
         if status.tracks.len() > 64 {
@@ -599,18 +604,19 @@ impl BusOwner {
             }
             return;
         }
-        if let Some(old) = d.takes.get_mut(&status.source) {
-            old.status = status;
+        if let Some(old) = d.takes.iter_mut().find(|t| same_take(&t.receipt, &receipt)) {
+            if old.status.source != status.source {
+                d.protocol_invalid = true;
+                d.error =
+                    Some("Recording receipt identity changed; original handle retained.".into());
+            } else {
+                old.status = status;
+            }
             return;
         }
         if d.takes.len() >= 80 {
-            if let Some(index) = d
-                .order
-                .iter()
-                .position(|key| d.takes.get(key).is_some_and(|t| t.status.complete))
-            {
-                let key = d.order.remove(index).unwrap();
-                Self::retire(d, key);
+            if let Some(index) = d.takes.iter().position(|t| t.status.complete) {
+                Self::retire(d, index);
             } else {
                 d.error = Some("Retained take capacity reached; no new starts allowed.".into());
                 if d.orphans.len() < 256 {
@@ -619,9 +625,7 @@ impl BusOwner {
                 return;
             }
         }
-        d.all_stopped = false;
-        d.order.push_back(status.source);
-        d.takes.insert(status.source, Retained { receipt, status });
+        d.takes.push(Retained { receipt, status });
     }
     pub fn refresh(&self) {
         {
@@ -690,12 +694,13 @@ impl BusOwner {
                     Some("Mismatched configuration/membership owner; no edit authority.".into());
             }
         }
+        self.poll_arming();
         let receipts: Vec<_> = {
             let mut d = self.data.borrow_mut();
             let mut receipts: Vec<_> = d
                 .takes
                 .iter()
-                .map(|(key, t)| (Some(*key), t.receipt.clone()))
+                .map(|t| (Some(t.status.source), t.receipt.clone()))
                 .collect();
             receipts.extend(std::mem::take(&mut d.orphans));
             receipts
@@ -712,16 +717,20 @@ impl BusOwner {
                         d.error = Some(
                             "Recording receipt identity changed; original handle retained.".into(),
                         );
-                        if expected.is_none_or(|key| !d.takes.contains_key(&key))
-                            && !d.orphans.iter().any(|(_, r)| Rc::ptr_eq(r, &receipt))
+                        if !d.takes.iter().any(|t| same_take(&t.receipt, &receipt))
+                            && !d.orphans.iter().any(|(_, r)| same_take(r, &receipt))
                         {
                             d.orphans.push((expected, receipt));
                         }
                     }
                 }
                 None => {
-                    if expected.is_none()
-                        || !self.data.borrow().takes.contains_key(&expected.unwrap())
+                    if !self
+                        .data
+                        .borrow()
+                        .takes
+                        .iter()
+                        .any(|t| same_take(&t.receipt, &receipt))
                     {
                         self.data.borrow_mut().orphans.push((expected, receipt));
                     }
@@ -748,24 +757,19 @@ impl BusOwner {
         self.reconcile(reconciliation.as_ref(), inspected.as_ref());
         {
             let mut d = self.data.borrow_mut();
-            while d.takes.values().filter(|t| t.status.complete).count() > 16 {
-                let Some(index) = d
-                    .order
-                    .iter()
-                    .position(|key| d.takes.get(key).is_some_and(|t| t.status.complete))
-                else {
+            while d.takes.iter().filter(|t| t.status.complete).count() > 16 {
+                let Some(index) = d.takes.iter().position(|t| t.status.complete) else {
                     break;
                 };
-                let key = d.order.remove(index).unwrap();
-                Self::retire(&mut d, key);
+                Self::retire(&mut d, index);
             }
             let live: BTreeSet<_> = d
                 .takes
-                .values()
+                .iter()
                 .flat_map(|t| t.status.tracks.iter().map(|t| t.identity))
                 .collect();
             d.stopped.retain(|id| live.contains(id));
-            let takes: BTreeSet<_> = d.takes.values().filter_map(|t| t.status.take).collect();
+            let takes: BTreeSet<_> = d.takes.iter().filter_map(|t| t.status.take).collect();
             d.stopped_takes.retain(|id| takes.contains(id));
         }
         self.publish();
@@ -792,6 +796,7 @@ impl BusOwner {
                     )
             });
         if ready {
+            Self::remember_arming(&mut d);
             d.operation = None;
             d.error = None;
         }
@@ -854,27 +859,27 @@ impl BusOwner {
                 .any(|k| ids.contains(&k.in_knoop) || ids.contains(&k.uit_knoop))
         })
     }
-    fn retire(d: &mut Data, key: Source) {
-        if let Some(take) = d.takes.remove(&key) {
-            for error in take_errors(&take.status) {
-                if d.past_failures.len() < 32 {
-                    d.past_failures.push(error);
-                }
+    fn retire(d: &mut Data, index: usize) {
+        let take = d.takes.remove(index);
+        for error in take_errors(&take.status) {
+            if d.past_failures.len() < 32 {
+                d.past_failures.push(error);
             }
-            d.retired.push_back(key);
-            if d.retired.len() > 80 {
-                d.retired.pop_front();
-            }
+        }
+        d.retired.push_back(take.receipt);
+        if d.retired.len() > 80 {
+            d.retired.pop_front();
         }
     }
     /// Inspect only after the common backend handle has really joined. Never
     /// rewrite its writer counters or pretend ingress failure was a join failure.
     pub(crate) fn finalization_errors(&self, joined_failed: bool) -> Option<Vec<String>> {
+        self.poll_arming();
         let mut receipts: Vec<(Option<Source>, Rc<dyn TakePoll>)> = {
             let d = self.data.borrow();
             d.takes
                 .iter()
-                .map(|(key, t)| (Some(*key), t.receipt.clone()))
+                .map(|t| (Some(t.status.source), t.receipt.clone()))
                 .chain(d.orphans.iter().cloned())
                 .collect()
         };
@@ -886,13 +891,14 @@ impl BusOwner {
             }
         }
         let mut errors = self.data.borrow().past_failures.clone();
+        self.arming_finalization_errors(joined_failed, &mut errors)?;
         if self.data.borrow().protocol_invalid {
             errors.push(
                 "Recording/configuration identity was invalid; completion remains unconfirmed."
                     .into(),
             );
         }
-        let mut seen = BTreeSet::new();
+        let mut seen: Vec<Rc<dyn TakePoll>> = vec![];
         let configuration = self
             .data
             .borrow()
@@ -928,7 +934,8 @@ impl BusOwner {
                 }
                 continue;
             }
-            if seen.insert(report.source) {
+            if !seen.iter().any(|r| same_take(r, &receipt)) {
+                seen.push(receipt);
                 for error in take_errors(&report) {
                     if errors.len() < 32 {
                         errors.push(error);

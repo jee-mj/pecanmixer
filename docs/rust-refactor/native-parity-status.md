@@ -101,3 +101,9 @@ outcome and adds no failed-prefix undo, command or graph publication. Held input
 retired controls and reentrant inspection cannot recover a later request.
 Busy/unknown inspection and finalization remain gated. Reset batching above 32
 commands, server-convergence proof and hardware acceptance remain separate.
+
+The [dynamic arming owner/UI candidate](./native-dynamic-arming-owner.md) connects
+existing active Arm/Armed controls to the reviewed backend protocol and retains
+parent/child outcomes separately. It is awaiting independent review; the public
+capability matrix above is not upgraded by this candidate record. Idle migration
+adoption and active-recording structural policy remain separate gates.

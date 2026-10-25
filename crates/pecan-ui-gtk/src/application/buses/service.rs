@@ -71,10 +71,36 @@ pub struct TakeStatus {
     pub directory: Option<std::path::PathBuf>,
     pub tracks: Vec<ui::Track<TrackKey>>,
 }
+#[derive(Clone)]
+pub struct ArmingStatus {
+    pub ticket: u64,
+    pub source: pecan_core::backend::Stamp,
+    pub expected_config: ConfigRevision,
+    pub expected_recording: RecordingRevision,
+    pub progress: pecan_pipewire::recording_arming::ArmingProgress,
+    pub additions: Vec<ArmingChild>,
+    pub removed: Vec<TrackKey>,
+    pub withheld: Vec<TrackKey>,
+    pub failure: Option<RecordingError>,
+    pub configuration: ConfigSnapshot,
+    pub recording: RecordingRevision,
+}
+#[derive(Clone)]
+pub struct ArmingChild {
+    pub bus: String,
+    pub receipt: Rc<dyn TakePoll>,
+    pub new_take: bool,
+}
+pub trait ArmPoll {
+    fn report(&self) -> Option<ArmingStatus>;
+}
 pub trait ConfigPoll {
     fn report(&self) -> Option<ConfigReport>;
 }
 pub trait TakePoll {
+    fn native_receipt(&self) -> Option<&RecordingReceipt> {
+        None
+    }
     fn report(&self) -> Option<TakeStatus>;
 }
 pub struct Readback {
@@ -93,6 +119,17 @@ pub enum Stop {
     Take(TakeKey),
 }
 pub trait Service {
+    fn supports_arming(&self) -> bool {
+        false
+    }
+    fn arm(
+        &self,
+        _intent: pecan_pipewire::recording_arming::RecordingArming,
+    ) -> Result<Rc<dyn ArmPoll>, Error> {
+        Err(Error::Owner(
+            "Dynamic arming is unavailable on this endpoint.".into(),
+        ))
+    }
     fn read(&self) -> Option<Readback>;
     fn configure(&self, intent: IdleConfigIntent) -> Result<Rc<dyn ConfigPoll>, Error>;
     fn start_all(&self, intent: RecordingStart) -> Result<Started, Error>;
@@ -107,6 +144,9 @@ impl ConfigPoll for NativeConfig {
 }
 struct NativeTake(RecordingReceipt);
 impl TakePoll for NativeTake {
+    fn native_receipt(&self) -> Option<&RecordingReceipt> {
+        Some(&self.0)
+    }
     fn report(&self) -> Option<TakeStatus> {
         let r = self.0.try_report()?;
         let source = Source {
@@ -167,8 +207,47 @@ impl TakePoll for NativeTake {
         })
     }
 }
+struct NativeArming(pecan_pipewire::recording_arming::ArmingReceipt);
+impl ArmPoll for NativeArming {
+    fn report(&self) -> Option<ArmingStatus> {
+        let r = self.0.try_report()?;
+        Some(ArmingStatus {
+            ticket: r.ticket,
+            source: r.source,
+            expected_config: r.expected_config,
+            expected_recording: r.expected_recording,
+            progress: r.progress,
+            additions: r
+                .additions
+                .into_iter()
+                .map(|a| ArmingChild {
+                    bus: a.bus,
+                    new_take: a.new_take,
+                    receipt: Rc::new(NativeTake(a.receipt)),
+                })
+                .collect(),
+            removed: r.removed.into_iter().map(TrackKey::Native).collect(),
+            withheld: r.withheld.into_iter().map(TrackKey::Native).collect(),
+            failure: r.failure,
+            configuration: r.configuration,
+            recording: r.recording,
+        })
+    }
+}
 pub(crate) struct Native(pub Rc<pecan_pipewire::graaf::Graaf>);
 impl Service for Native {
+    fn supports_arming(&self) -> bool {
+        true
+    }
+    fn arm(
+        &self,
+        intent: pecan_pipewire::recording_arming::RecordingArming,
+    ) -> Result<Rc<dyn ArmPoll>, Error> {
+        self.0
+            .arm_recordings(intent)
+            .map(|r| Rc::new(NativeArming(r)) as Rc<dyn ArmPoll>)
+            .map_err(Error::Recording)
+    }
     fn read(&self) -> Option<Readback> {
         let r = self.0.recording_snapshot()?;
         Some(Readback {
@@ -230,4 +309,13 @@ impl Service for Native {
             })
             .map_err(Error::Recording)
     }
+}
+
+// A readback creates new projection wrappers around the same native request.
+// Arming siblings share Source before their distinct writer IDs are installed.
+pub(super) fn same_take(a: &Rc<dyn TakePoll>, b: &Rc<dyn TakePoll>) -> bool {
+    Rc::ptr_eq(a, b)
+        || a.native_receipt()
+            .zip(b.native_receipt())
+            .is_some_and(|(a, b)| a.same_request(b))
 }

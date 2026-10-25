@@ -24,7 +24,7 @@ impl BusOwner {
                 })
                 .flatten()
                 .filter(|_| coherent);
-            let statuses: Vec<_> = d.takes.values().map(|t| t.status.clone()).collect();
+            let statuses: Vec<_> = d.takes.iter().map(|t| t.status.clone()).collect();
             let owned = statuses.iter().filter(|t| !t.complete).collect::<Vec<_>>();
             let activity = if d.unknown_owned || !d.orphans.is_empty() {
                 ui::Activity::Unknown
@@ -120,6 +120,26 @@ impl BusOwner {
         } else {
             ui::Support::Available
         };
+        if publication.activity == ui::Activity::Recording
+            && self.service.as_ref().is_some_and(|s| s.supports_arming())
+        {
+            let d = self.data.borrow();
+            capabilities.active_arming = if d.root.is_none()
+                || d.all_stopped
+                || d.unknown_owned
+                || !d.orphans.is_empty()
+                || d.takes.iter().any(|t| {
+                    !t.status.complete
+                        && matches!(
+                            t.status.progress,
+                            RecordingProgress::Queued | RecordingProgress::Opening
+                        )
+                }) {
+                ui::Support::Unavailable("Wait for active recording readback and an explicit directory; Stop all remains available.".into())
+            } else {
+                ui::Support::Available
+            };
+        }
         let routes = self.has_routes(&context);
         let operation = publication.operation.as_ref().map(|(r, p)| ui::Operation {
             request: r.clone(),
@@ -171,7 +191,7 @@ impl BusOwner {
             let d = self.data.borrow();
             (
             d.error.clone().unwrap_or_else(||if self.service.is_none(){"No synthetic/native bus endpoint attached; configuration unavailable.".into()}else if d.root.is_none(){"Choose an explicit recording directory to enable starts. Stops use retained identities; local config completion is not observed ports.".into()}else{"Recording status reflects local attachment/finalization; only retained joined evidence completes a take.".into()}),
-            d.takes.values().map(|t|t.status.clone()).collect::<Vec<_>>(),!coherent(&d)||d.operation.as_ref().is_some_and(|o|!o.terminal||matches!(o.progress,ui::Progress::PartiallyApplied(_)|ui::Progress::Unconfirmed(_))))
+            d.takes.iter().map(|t|t.status.clone()).collect::<Vec<_>>(),!coherent(&d)||d.operation.as_ref().is_some_and(|o|!o.terminal||matches!(o.progress,ui::Progress::PartiallyApplied(_)|ui::Progress::Unconfirmed(_))))
         };
         self.status.set_text(&message);
         // Keep a focus receiver during cancelled held input. The immutable
@@ -181,7 +201,7 @@ impl BusOwner {
             let d = self.data.borrow();
             d.unknown_owned
                 || !d.orphans.is_empty()
-                || d.takes.values().any(|t| {
+                || d.takes.iter().any(|t| {
                     !t.status.complete
                         && matches!(
                             t.status.progress,

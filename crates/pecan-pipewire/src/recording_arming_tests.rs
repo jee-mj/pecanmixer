@@ -768,6 +768,17 @@ fn all_additions_must_attach_and_writer_readiness_alone_never_releases_removals(
     waiting.recv_timeout(Duration::from_secs(2)).unwrap();
     assert!(!old.try_report().unwrap().stop_requested);
     let second = request.try_report().unwrap().additions[1].receipt.clone();
+    assert!(first.same_request(&first.clone()));
+    assert!(second.same_request(&second.clone()));
+    assert!(
+        !first.same_request(&second),
+        "arming siblings need distinct receipt identity"
+    );
+    let first_source = until(&first, |_| true);
+    let second_source = until(&second, |_| true);
+    assert_eq!(first_source.ticket, second_source.ticket);
+    assert_eq!(first_source.source, second_source.source);
+    assert_eq!(first_source.config, second_source.config);
     release.send(()).unwrap();
     let ready = until(&second, |r| r.writer.as_ref().is_some_and(|w| w.was_ready));
     assert!(!ready.started_once);

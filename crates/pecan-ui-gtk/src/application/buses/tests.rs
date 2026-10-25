@@ -1,5 +1,6 @@
 //! Controlled UI-side projections only. No native constructor, capture, writer
 //! file, real tray or user directory is used.
+mod arming;
 mod reconciliation;
 mod routing_owner;
 use super::*;
@@ -43,6 +44,12 @@ struct Fake {
     visible: Cell<bool>,
     no_op: Cell<bool>,
     configs: RefCell<Vec<(IdleConfigIntent, Rc<Config>)>>,
+    arms: RefCell<
+        Vec<(
+            pecan_pipewire::recording_arming::RecordingArming,
+            Rc<arming::Arm>,
+        )>,
+    >,
     starts: RefCell<Vec<(RecordingStart, Option<RecordingRevision>, Option<String>)>>,
     takes: RefCell<Vec<Rc<Take>>>,
     stops: RefCell<Vec<Stop>>,
@@ -76,6 +83,7 @@ impl Fake {
             visible: Cell::new(true),
             no_op: Cell::new(false),
             configs: RefCell::default(),
+            arms: RefCell::default(),
             starts: RefCell::default(),
             takes: RefCell::default(),
             stops: RefCell::default(),
@@ -182,6 +190,33 @@ impl Fake {
     }
 }
 impl Service for Fake {
+    fn supports_arming(&self) -> bool {
+        true
+    }
+    fn arm(
+        &self,
+        intent: pecan_pipewire::recording_arming::RecordingArming,
+    ) -> Result<Rc<dyn ArmPoll>, Error> {
+        let receipt = Rc::new(arming::Arm(RefCell::new(Some(ArmingStatus {
+            ticket: intent.ticket,
+            source: intent.origin.stamp,
+            expected_config: intent.expected_config,
+            expected_recording: intent.expected_recording,
+            progress: pecan_pipewire::recording_arming::ArmingProgress::Queued,
+            additions: vec![],
+            removed: vec![],
+            withheld: vec![],
+            failure: None,
+            configuration: self.config.borrow().clone(),
+            recording: self.membership.get(),
+        }))));
+        self.arms.borrow_mut().push((intent, receipt.clone()));
+        let hook = self.hook.borrow_mut().take();
+        if let Some(hook) = hook {
+            hook();
+        }
+        Ok(receipt)
+    }
     fn read(&self) -> Option<Readback> {
         if self.busy.get() {
             return None;
