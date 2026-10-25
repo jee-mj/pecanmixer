@@ -8,6 +8,7 @@ mod drain;
 mod fixture;
 mod folders;
 mod history_input;
+mod history_shortcuts;
 mod mixer;
 mod preferences;
 mod routes;
