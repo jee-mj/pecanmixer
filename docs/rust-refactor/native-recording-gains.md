@@ -1,11 +1,13 @@
-# Native recording level configuration candidate
+# Reviewed native recording level library
 
 Based on `940afbd188dcce86e532141bda5e53a6d46746f7`. This backend-only
 candidate adds `Graaf::configure_bus_gains(IdleConfigIntent) ->
 Result<ConfigReceipt, ConfigError>`. It reuses the existing exact backend-owner,
 epoch and configuration-revision authority, bounded FIFO, receipt and local
 readback types. The ordinary `configure_idle` and serialized legacy IPC are
-unchanged. There is no UI or Session adoption in this commit.
+unchanged. There is no UI or Session adoption in this commit. The subsequent
+[library integration record](./native-rec-level-library-integration.md) preserves
+its bounded clearance and the separate captured-origin gate before live adoption.
 
 ## Accepted operation
 

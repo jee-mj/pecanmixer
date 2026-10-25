@@ -39,10 +39,13 @@ a proposed thumb/value or callback acceptance is never labeled audio completion.
 Set `Capabilities.idle_levels = Available` only when the actual idle level
 adapter is present; call `BusControls::bind_levels`. Routing/structural/Add
 capabilities cannot enable it. Active/opening/finalizing/unknown operation is
-still unavailable: the current backend idle configuration path rejects recording
-ownership. Active gain needs a reviewed gains-only backend extension that keeps
-layout, arming, options and track identities unchanged. This is a temporary
-capability gap, not a permanent restriction on legacy behavior.
+still unavailable in this helper: the original idle configuration path rejects
+recording ownership. A separately reviewed gain-only backend library is now
+integrated, preserving layout, arming, options and track identities. Original
+captured-origin admission and owner adoption still need their separate gate;
+the present application binds no live callback. This is a temporary capability
+gap, not a permanent restriction on legacy behavior. See the
+[integration record](../../../../../docs/rust-refactor/native-rec-level-library-integration.md).
 
 The owner must also project shared admission/uncertainty: another graph operation
 without this level interaction makes idle levels unavailable. The retained level

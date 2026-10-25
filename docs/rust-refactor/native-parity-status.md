@@ -129,3 +129,9 @@ instants and the existing transport clock. It compensates different observation
 ages without restamping cached reports or rebinding edit controls. This new UI
 delta clears independently at `bcdd4553` and is included here. Source adoption
 does not establish physical timing, sample alignment or recording acceptance.
+
+The [reviewed Rec-level libraries](./native-rec-level-library-integration.md)
+preserve logical gain/mute semantics and add retained typed controls plus a
+gain-only backend path. Native callbacks/capabilities remain disabled. The
+original-origin admission interface and shared one-flight owner adoption remain
+explicit gates before editable Rec levels; library inclusion is not live parity.
