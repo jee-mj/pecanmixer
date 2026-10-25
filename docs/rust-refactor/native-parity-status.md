@@ -38,7 +38,7 @@ remains separate.
 | Meter ballistics/peak hold, per-channel rendering (`src/meters.ts`, `src/Meter.tsx`) | Entrypoint uses Session-adopted definitions for same-graph split/add/join/remove reprojection; retained wrappers, registry bindings, graph-before-peaks and visibility gating remain | Capture freshness/availability protocol and live/animation acceptance remain |
 | Hide/show strips/rows and reconnect names (`src/App.tsx`, `Mixer`) | Reviewed display panel/filter/save bridge; full graph/origin/history retained | Transient IDs must not become durable identity; reconnect/desktop acceptance |
 | Row height and destination split preferences (`useRijGewichten`, `Greep`, `Deling`) | Reviewed adjacent-pair/split resize/reset input and request-aware save triggers | Physical input acceptance |
-| Saved buses, hidden keys, clock preference and layout (`leesBussen`, `leesKlok`, `leesVerborgen`) | Versioned contract/storage plus display bridge and accepted Rec layout/dB/mute/arming writeback through the existing coalesced worker/final drain; latest intent survives backend failure and older saves, while saved MIDI/clock/display values are preserved | No automatic Rec restore/reconnect apply, import or clock effects; full-config original-generation authority, general initialization/layout reconciliation and recording/reload policy remain gates; no user profile access performed |
+| Saved buses, hidden keys, clock preference and layout (`leesBussen`, `leesKlok`, `leesVerborgen`) | Versioned contract/storage plus display bridge and accepted Rec layout/dB/mute/arming writeback through the existing coalesced worker/final drain; latest intent survives backend failure and older saves, while saved MIDI/clock/display values are preserved | No automatic Rec restore/reconnect apply, import or clock effects; reviewed original-generation full-config backend authority now exists; owner adoption, general initialization/layout reconciliation and recording/reload policy remain gates; no user profile access performed |
 | Tray open/close/quit, autostart/single instance (`src-tauri/src/tray.rs`, `autostart.rs`, `lib.rs`) | Legacy preserved; reviewed lifetime/tray/finalization shell source | Autostart/session management, complete process arbitration and actual desktop acceptance |
 | Graceful recorder shutdown/error/timeout handling | Reviewed backend/legacy completion and native hold/tagged-handle/off-UI settings drain | Live recording/quit acceptance; no fsync/crash-durability claim |
 | Accessible controls, keyboard navigation, responsive layout (`src/*.tsx`, `src/styles.css`) | Synthetic native names/focus/layout checks; control candidate | End-to-end keyboard/AT-SPI/Orca, physical Wayland/X11, scale/theme/distro acceptance |
@@ -164,3 +164,8 @@ Saved intent is not proof of applied audio. Automatic restoration remains a
 separate dependency: original-generation full-config authority, broader metadata
 initialization, safe shrink/routed growth, and explicit recording/reload policy.
 Neither this integration nor the shortcut bindings add that restore path.
+
+The [reviewed full-config origin API](./native-full-config-origin.md) retains
+original Rec node/input generations alongside configuration CAS, with no weaker
+fallback. It is integrated independently of automatic Rec restore. Source-only
+authority does not establish graph convergence or resolve unsupported layouts.

@@ -100,3 +100,21 @@ Cloud checks passed: 76 core tests, 230 backend tests (including the 11 focused
 regressions), all 10 legacy library tests, all-feature GTK compilation, scoped
 Rust formatting and whitespace checks. No owner/UI, core, IPC, manifest, lockfile
 or version files changed. Publication and independent review remain separate.
+
+## Reviewed integration
+
+Independent review clears `9e803bba` with 26 configuration and 16 gain compatibility
+checks plus nine authority/replacement/partial/growth/routed-layout probe groups.
+The runtime delta applies unchanged onto `9074007a`, preserving reviewed shortcuts
+and saved Rec writeback. Combined cloud checks pass 86 validator controls, 76 core,
+230 backend, 468 feature GTK and 414 default GTK tests, native build/formatting,
+Cargo/ELF audits, three headless fixtures and three controlled GTK smokes. All ten
+legacy library tests and compilation of all five legacy examples pass. No Node
+tool attempts are recorded. Source/privacy and unchanged version/dependency checks
+pass. Exact-head hosted results are recorded separately in the PR.
+
+This publication provides backend authority only. Automatic startup/reconnect Rec
+restore remains a separate owner candidate, with full published inputs, local
+versus observed completion, initialization/layout and idle/lifecycle gates. No
+CAS-only fallback, profile discovery, active-recording reload policy or automatic
+recording is supplied. Hardware/audio/physical desktop/performance remain unrun.
