@@ -93,14 +93,37 @@ visibility. Production policy/assertions were not weakened. The post-publication
 owner test injects its result at the state boundary; actual storage fault behavior
 remains covered by the unchanged reviewed helper tests.
 
-Final local checks pass 39 focused desktop/helper cases (13 new plus 26 reviewed
+Initial `b01614ce` local checks pass 39 focused desktop/helper cases (13 new plus 26 reviewed
 helper cases), four worker checks and 11 preference checks. Fresh combined native
 validation passes 86 validator controls, 76 core, 230 backend, 522 feature GTK and
 468 default GTK tests, native build/formatting, Cargo/ELF audits, three headless
 fixtures and three controlled smokes. Ten legacy library tests and compilation
 of five legacy examples pass. Workspace host/target packages were rebuilt; zero
 Node-tool attempts are recorded. Source/privacy/whitespace and unchanged core,
-backend, manifests, lockfile, schema and versions pass. No final failed check or
-dependency/environment blocker remains. Exact candidate hosted and independent
-review remain pending. Reconnect candidate `91afa807` is separate and is not a
-hidden dependency of this source tree.
+backend, manifests, lockfile, schema and versions pass. That exact candidate's
+hosted run `40170157397` passed. Independent review then found the mailbox ordering
+defect below; those original suites did not cover it. Reconnect candidate
+`91afa807` is separate and is not a hidden dependency of this source tree.
+
+## Mailbox callback ordering correction
+
+Independent review reproduced a current Disable followed by a retired Enable
+callback replacing the one mailbox slot. The owner correctly rejected the old
+token, but the current Disable had been lost. A new deterministic regression
+fails on `b01614ce` with queued source 7 instead of source 9. The correction uses
+the existing atomic compare-and-exchange helper to retain the newer queued
+presentation source. Equal-source posts still retain the last choice. Older posts
+return false without overwriting the slot. Storage remains one atomic action;
+reserved Quit admission and first application are unchanged.
+
+The new mailbox regression checks both callback orders, same-source choices and
+reserved Quit. A synthetic GTK owner regression checks both orders through actual
+explicit-path worker results and verifies that the temporary native entry is
+removed. Fresh corrected checks pass 41 desktop/helper cases in each feature
+mode, 18 tray checks, four worker checks and 11 preference checks, plus native
+build, formatting and whitespace checks. The tray/desktop filters overlap; these
+are not disjoint totals. Full native/core/backend/legacy suites were not repeated
+for this narrow correction. No dependency blocker or final local failure remains;
+the corrected candidate still needs independent re-review and exact-head hosted
+results. No actual user profile, login session, program launch or audio acceptance
+is exercised.

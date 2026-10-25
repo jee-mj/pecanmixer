@@ -461,3 +461,59 @@ fn desktop_shell_error_result_stays_truthful_through_common_quit() {
     });
     assert_eq!(shell.exit_code(), Some(1));
 }
+
+#[gtk::test]
+fn desktop_current_disable_survives_retired_enable_in_both_callback_orders() {
+    for current_first in [true, false] {
+        let temp = Temp::new();
+        let (shell, _) = shell(temp.worker(None));
+        pump(|| {
+            shell.tick();
+            button(&shell, "Enable/update native login").is_sensitive()
+        });
+        let retired = shell.settings_summary().desktop.unwrap().0;
+        button(&shell, "Enable/update native login").emit_clicked();
+        pump(|| {
+            shell.tick();
+            shell
+                .settings_summary()
+                .desktop
+                .as_ref()
+                .is_some_and(|(source, result)| {
+                    *source > retired
+                        && result.as_ref().is_ok_and(|r| {
+                            r.snapshot.state() == EntryState::Managed(EntryFormat::Native)
+                        })
+                })
+        });
+        let current = shell.settings_summary().desktop.unwrap().0;
+        if current_first {
+            shell.mailbox().autostart(current, false);
+            shell.mailbox().autostart(retired, true);
+        } else {
+            shell.mailbox().autostart(retired, true);
+            shell.mailbox().autostart(current, false);
+        }
+        shell.tick();
+        pump(|| {
+            shell.tick();
+            shell
+                .settings_summary()
+                .desktop
+                .as_ref()
+                .is_some_and(|(source, result)| {
+                    *source > current
+                        && result
+                            .as_ref()
+                            .is_ok_and(|r| r.snapshot.state() == EntryState::Missing)
+                })
+        });
+        assert!(!temp.file().exists());
+        shell.request_quit();
+        pump(|| {
+            shell.tick();
+            shell.exit_code().is_some()
+        });
+        assert_eq!(shell.exit_code(), Some(0));
+    }
+}

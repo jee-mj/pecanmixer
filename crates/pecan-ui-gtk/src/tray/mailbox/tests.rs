@@ -130,3 +130,46 @@ fn desktop_action_slot_is_bounded_correlated_and_cannot_starve_reserved_quit() {
     );
     assert!(mailbox.drain().autostart.is_none());
 }
+
+#[test]
+fn desktop_action_slot_preserves_newer_source_in_both_orders_and_last_same_source_choice() {
+    for current_first in [true, false] {
+        let (mailbox, _wake) = ActionMailbox::new();
+        mailbox.quit().unwrap();
+        if current_first {
+            assert!(mailbox.autostart(9, false));
+            assert!(!mailbox.autostart(7, true));
+        } else {
+            assert!(mailbox.autostart(7, true));
+            assert!(mailbox.autostart(9, false));
+        }
+        let batch = mailbox.drain();
+        assert!(batch.quit);
+        assert_eq!(
+            batch.autostart,
+            Some(AutostartAction {
+                source: 9,
+                enabled: false
+            }),
+            "a retired callback must not erase a queued current action"
+        );
+        assert!(mailbox.autostart(9, true));
+        assert!(mailbox.autostart(9, false));
+        assert_eq!(
+            mailbox.drain().autostart,
+            Some(AutostartAction {
+                source: 9,
+                enabled: false
+            })
+        );
+        assert!(mailbox.autostart(9, false));
+        assert!(mailbox.autostart(9, true));
+        assert_eq!(
+            mailbox.drain().autostart,
+            Some(AutostartAction {
+                source: 9,
+                enabled: true
+            })
+        );
+    }
+}
