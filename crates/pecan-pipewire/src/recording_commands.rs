@@ -38,6 +38,7 @@ impl Commands {
                 revision: state.recording.revision,
             },
             configuration: state.config.snapshot.clone(),
+            latest_started: state.recording.latest_started.clone().map(RecordingReceipt),
             takes: state
                 .recording
                 .active
@@ -358,6 +359,7 @@ impl Commands {
         state.recording.reap();
         let mut captures = captures.borrow_mut();
         captures.clear();
+        let mut latest_started = None;
         for request in &state.recording.active {
             if request.stage.load(Ordering::Acquire) == QUEUED {
                 continue;
@@ -415,8 +417,13 @@ impl Commands {
                 continue;
             }
             request.attached.store(true, Ordering::Release);
-            request.started_once.store(true, Ordering::Release);
+            if !request.started_once.swap(true, Ordering::AcqRel) {
+                latest_started = Some(request.clone());
+            }
             captures.push(Capture(request.clone()));
+        }
+        if let Some(request) = latest_started {
+            state.recording.latest_started = Some(request);
         }
         state.recording.refresh_revision();
     }

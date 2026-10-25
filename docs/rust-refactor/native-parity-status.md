@@ -115,3 +115,9 @@ readbacks and graph-before-release evidence. Independent re-review clears
 `5c131247`, including reconcilable lost-epoch completion and matched owner/widget
 terminal barriers. Routed Add and active-recording structural policy remain
 separate gates.
+
+The separate [Folder owner adoption candidate](./native-folder-owner.md) mounts
+the corrected helper with actual latest-start receipt authority and explicit
+worker-based preparation/launch/reaping. It awaits independent owner review and
+is not included in the public matrix above. Active elapsed stays unavailable;
+this candidate adds no timing producer or stopwatch.

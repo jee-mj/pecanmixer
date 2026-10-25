@@ -1,9 +1,11 @@
 # Recording directory, folder and elapsed presentation
 
 This isolated application component uses existing retained `BusRecordingStatus`,
-`BusTakeKey` and track phases/timing. It is not mounted in the native owner yet.
-BusOwner, dynamic arming, shared Session/history, startup and backend code are
-unchanged. No recording command, receipt consumer, timer or file-manager process
+`BusTakeKey` and track phases/timing. The isolated helper review did not mount it in the native owner.
+At its isolated review, BusOwner, dynamic arming, shared Session/history, startup
+and backend code were unchanged. The separate owner adoption candidate is
+documented in `docs/rust-refactor/native-folder-owner.md`; its new wiring and
+latest-start projection require their own independent review. No recording command, receipt consumer, timer or file-manager process
 is created by the controls.
 
 ## Source parity
@@ -34,12 +36,11 @@ after stop/disconnect and recent-status eviction. Missing supplied folder eviden
 falls back to the recording root; it is not relabelled as a known latest folder.
 Do not restamp a cached timing report as newly measured.
 
-Current BusOwner exports retained statuses but not a read-only root/latest-start
-projection. Its native status adapter always sets `Track.elapsed = None`.
-Production adoption therefore requires A's read-only owner projection and real
-backend-derived elapsed values mapped into that existing field. Activity must
-remain Unknown when inspection/coverage is uncertain. This candidate exposes
-unavailable timing honestly and does not claim those producer changes occurred.
+At isolated helper review, BusOwner had no read-only root/latest-start projection.
+The separate Folder owner candidate adds that projection and one retained actual
+latest-start receipt. Native `Track.elapsed` still remains `None`; real duration
+production is not part of that adoption. Activity stays Unknown when inspection
+is uncertain. Active elapsed is unavailable, without an arrival stopwatch.
 
 Use structural `observe`/`offer` when folder authority, root, latest evidence or
 closing state changes. Keep its opaque origin stable independently of periodic

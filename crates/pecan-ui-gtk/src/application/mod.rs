@@ -6,6 +6,7 @@ mod buses;
 mod coordinator;
 mod drain;
 mod fixture;
+mod folders;
 mod history_input;
 mod mixer;
 mod preferences;

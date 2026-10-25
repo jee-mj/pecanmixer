@@ -110,6 +110,7 @@ pub trait TakePoll {
 pub struct Readback {
     pub revision: RecordingRevision,
     pub config: ConfigSnapshot,
+    pub latest_started: Option<Rc<dyn TakePoll>>,
     pub takes: Vec<Rc<dyn TakePoll>>,
 }
 pub struct Started {
@@ -286,6 +287,9 @@ impl Service for Native {
         Some(Readback {
             revision: r.revision,
             config: r.configuration,
+            latest_started: r
+                .latest_started
+                .map(|r| Rc::new(NativeTake(r)) as Rc<dyn TakePoll>),
             takes: r
                 .takes
                 .into_iter()

@@ -1,6 +1,7 @@
 //! Controlled UI-side projections only. No native constructor, capture, writer
 //! file, real tray or user directory is used.
 mod arming;
+mod folder;
 mod migration;
 mod reconciliation;
 mod routing_owner;
@@ -40,6 +41,7 @@ impl TakePoll for Take {
 }
 struct Fake {
     config: RefCell<ConfigSnapshot>,
+    latest_started: RefCell<Option<Rc<Take>>>,
     membership: Cell<RecordingRevision>,
     busy: Cell<bool>,
     visible: Cell<bool>,
@@ -82,6 +84,7 @@ impl Fake {
                 transport: None,
                 recording: false,
             }),
+            latest_started: RefCell::default(),
             membership: Cell::new(RecordingRevision {
                 owner: 700,
                 revision: 1,
@@ -139,6 +142,7 @@ impl Fake {
         let take = self.takes.borrow()[index].clone();
         let mut value = take.0.borrow_mut();
         let r = value.as_mut().unwrap();
+        *self.latest_started.borrow_mut() = Some(take.clone());
         r.progress = RecordingProgress::StartedLocally;
         r.writer = Some(WriterPhase::Ready);
         r.take = Some(TakeKey::Synthetic(id));
@@ -267,6 +271,11 @@ impl Service for Fake {
         let readback = Readback {
             revision: self.membership.get(),
             config: self.config.borrow().clone(),
+            latest_started: self
+                .latest_started
+                .borrow()
+                .as_ref()
+                .map(|r| r.clone() as Rc<dyn TakePoll>),
             takes,
         };
         let hook = self.read_hook.borrow_mut().take();
