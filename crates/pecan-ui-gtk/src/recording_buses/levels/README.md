@@ -107,8 +107,36 @@ Fixtures are authored generic data; no device names/topology/profile/log capture
 are taken from a user machine. No hardware/audio/performance/Wayland/Orca claim
 follows from these tests.
 
-Cloud checks on 2026-10-25 (Rust 1.99.1, GTK 4.18.6): all 76 core tests and
+Initial candidate checks at `676e2301` on 2026-10-25 (Rust 1.99.1, GTK
+4.18.6): all 76 core tests and
 all 415 all-feature GTK tests passed, including the additional isolated XTest
 case. Seven focused default-feature level-widget tests, the native build,
 package formatting and whitespace checks passed. Backend and legacy source and
 dependencies are unchanged; their full suites were not rerun for this candidate.
+
+## Pointer/wheel overlap correction
+
+Independent review blocked `676e2301`: the pure Fader policy has independent
+pointer/wheel slots, while this adapter admits one owner interaction. Scrolling
+while dragging could attempt a second Begin, reject its fresh capture, and
+invalidate both slots without sending the first owner's End or Abandon.
+
+The wrapper now rejects wheel input while a pointer drag is active, including a
+press staged before its first movement. Release/cancel continues to finalize the
+original pointer request. As a defensive invariant, rejecting a conflicting Begin
+with an already-open request for that row explicitly abandons that interaction
+instead of silently dropping policy state. It retains the real owner request and does not claim cancellation,
+rollback or terminal completion. The original delegate is used throughout.
+
+Both deterministic and native XTest reproductions fail at `676e2301` and pass
+after correction. Controls cover staged/admitted pointer input, reverse ordering,
+exactly one owner finalizer, unrelated publications retaining pending ownership,
+and fresh input after a matching terminal report. The native reproduction sends
+scroll button events while the primary button remains held on its marked Xvfb
+display. No new test framework, backend protocol or live callback is added.
+
+Corrected-source checks pass: eight focused default-feature level-widget tests,
+all 417 all-feature GTK tests, the native build, formatting and whitespace
+checks. Core source is unchanged by this correction; its previous 76-test
+receipt is retained, not a new run. No backend/owner/Session/service changes or
+production enablement are included. Independent re-review remains required.
