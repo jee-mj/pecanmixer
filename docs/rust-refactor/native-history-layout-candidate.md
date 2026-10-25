@@ -1,7 +1,9 @@
-# Same-frame history guard reconciliation candidate
+# Reviewed same-frame history guard reconciliation
 
 Base: published PR2 `5ad62b1cd18e1ed4217275da74638b5f83e47b6a`.
-This is a separate candidate for independent review, not adopted into PR2.
+Exact candidate `bbda764974dd9cc2741aeda6c726226f0707802d` independently clears
+review and is adopted unchanged. This closes normal configuration-adoption
+reconciliation; explicit recovery flow and queued-input parity remain separate.
 
 ## Existing behavior and bounded change
 
@@ -64,10 +66,32 @@ The in-progress fixture uses nonzero in-progress evidence to exercise the actual
 existing Session hold; it does not assume every quiescent Unconfirmed status
 holds admission.
 
-Full GTK/legacy suites are not repeated for this candidate. Its automatic hosted
-CI and independent review remain separate receipts. No backend/service/DTO,
+Full GTK/legacy suites were not repeated for the initial candidate. No backend/service/DTO,
 startup, settings schema, dependencies or version changes are included. All
 fixtures are authored public-project data and synthetic registry publications;
 no PipeWire service, real recording, user profile or physical desktop is operated.
 Hardware/audio/performance acceptance, partial repair, general saved-layout
 restoration, queued input and active structural policy remain separate gates.
+
+## Independent review and integration
+
+Independent review passes 79 core checks, six focused Session/widget cases in
+each mode, 41 history/input checks and three additional mixed Undo/Redo,
+Rec-route replay, stale/disconnected/missing-witness probe groups. Exact candidate
+[CI40177238476](https://github.com/jee-mj/pecanmixer/actions/runs/40177238476)
+succeeds. The source applies without conflicts onto `5ad62b1c`; core/GTK runtime
+and tests match the reviewed commit exactly. Backend, service/DTO interfaces,
+startup, settings schema, dependencies and versions remain unchanged. Only these
+coverage notes differ. Combined-head validation and hosted results are recorded
+separately; candidate success is not a substitute for combined-head evidence.
+
+Fresh combined validation passes 86 validator controls, 79 core, 240 backend,
+558 all-feature GTK and 504 default GTK tests, all ten legacy library tests and
+all five legacy examples compiled (none executed). Native build, formatting,
+Cargo/ELF audits, three headless fixtures and three controlled smokes pass.
+Host and explicit-target workspace packages are cleaned and rebuilt first;
+zero Node-tool attempts are recorded. Source/privacy/whitespace and unchanged
+dependencies/versions pass. There is no final local failure or environment/
+dependency blocker for this history-only integration. Exact combined-head
+hosted receipts are verified separately after publication. No saved-layout
+backend or owner adoption is included in this batch.

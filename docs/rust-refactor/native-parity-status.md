@@ -15,15 +15,16 @@ follow-up now reprojects adopted layouts through the same accepted graph/batch.
 Reviewed arming, idle migration, Folder and Rec-level owner adapters are now mounted.
 Rec gains/mute use original registry authority and shared one-flight admission
 while preserving unrelated channels and stored muted dB; these local edits do
-not enter graph Undo. Immediate configuration-driven history reconciliation
-remains separate.
+not enter graph Undo. Normal authenticated bus-definition adoption now
+immediately applies the existing history guards against the retained current
+witness. Explicit recovery flow and queued-input parity remain separate.
 
-A separate [same-frame history candidate](./native-history-layout-candidate.md)
+The independently reviewed [same-frame history follow-up](./native-history-layout-candidate.md)
 reconciles the existing guards at normal authenticated bus-definition adoption,
 using the retained current witness without a fabricated revision or command.
-It preserves unaffected steps and existing shared-work gates. It is not in PR2
-before independent review; explicit recovery and queued-input parity are outside
-that candidate.
+It preserves unaffected steps and existing shared-work gates; exact reviewed
+source `bbda7649` is adopted unchanged. Explicit recovery and queued-input parity
+are outside that follow-up.
 
 | Original behavior and source | Rust/native state | Remaining gate |
 |---|---|---|
@@ -33,13 +34,13 @@ that candidate.
 | Whole-node mute (`Kaart`, `muteStap`) | Reviewed immutable mute action/registry identity and canceled held-activation source | Audio/input acceptance |
 | Partial-pair mute and restore prior gain (`voorMute`, `Kaart`) | Reviewed policy plus serialized receipt/graph memory commit and complete-vector undo | Audio/input acceptance |
 | Drag/fine drag, wheel grouping, rounding, double-click reset (`Fader`) | Reviewed policy and owner coordinator; ordinary refresh preserves desired keyboard position; unconfirmed held input requires release | Physical input acceptance |
-| Independent output destination and Rec-bus selections (`bewerkt`, `bewerkteBus`, `kiesBewerkt` in `src/App.tsx`) | Bus owner and routing page share independent choices without audio commands; Session and meters use the same adopted definitions | Immediate configuration-driven history reconciliation; reconnect/layout acceptance |
+| Independent output destination and Rec-bus selections (`bewerkt`, `bewerkteBus`, `kiesBewerkt` in `src/App.tsx`) | Bus owner and routing page share independent choices without audio commands; Session and meters use the same adopted definitions | Explicit-recovery history reconciliation; reconnect/layout acceptance |
 | Normal/manual/custom route states and green/R toggles (`BronStrip`, `schakel`, `schakelRoute`) | Mounted routing shares selections/configuration, history and actual reports; explicit recovery checks original-receipt closure, current authenticated inspection and released history; custom routes open the patchbay | Busy/unknown inspection remains gated; server convergence and audio/input acceptance are unproven |
 | Back to auto / manual route count (`telHandwerk`, `terugNaarAutoStap`) | Mounted count/confirmation uses shared observed history and explicit failure recovery; original-generation restore witnesses survive target-clear transitions | Reset batches over 32 commands and audio/input acceptance |
 | Cable create/remove/move, selection/delete/cancel (`src/Patchbay.tsx`, `src/handelingen.ts`) | Reviewed keyboard/pointer libraries attached to reviewed coordinator source | Physical-input acceptance |
 | Patch module positioning and reconnect behavior (`Plekken`, `ModuleKaart`) | Reviewed session movement/rearrange and reconnect aliases on retained view | Session-layout and physical-input acceptance |
-| Undo/redo queue and keyboard shortcuts (`src/geschiedenis.ts`, `src/handelingen.ts`, `src/App.tsx`) | Reviewed generation/selector guards, shared receipts, immutable button activation and observed gesture history; standard window Ctrl/Meta+Z, Shift+Z and Y bindings preserve native editor history and allow later autorepeat activations | Busy/stale shortcut activations are dropped; JS queued input and physical/audio acceptance remain |
-| Add/remove/link buses, Rec gain/mute/arming (`src/bussen.ts`, `Mixer`) | Bus owner mounts typed idle config/readback and correlated controls; Session/routing/meters use adopted definitions; corrected dynamic arming is wired through shared owner admission/retained receipts; idle routed Add/split/join/remove use reviewed retained migration receipts, original source proofs and authenticated final-input witnesses; reviewed Rec gain/mute owner retains original witness, one-flight/coalesced targets and final flush for idle/known native recording, without graph Undo | General saved-layout restore/clock effects and immediate configuration-driven history reconciliation; explicit partial append repair and observed-port/desktop acceptance; active structural edits remain a user-decision gate |
+| Undo/redo queue and keyboard shortcuts (`src/geschiedenis.ts`, `src/handelingen.ts`, `src/App.tsx`) | Reviewed generation/selector guards, shared receipts, immutable button activation, observed gesture history and same-frame configuration-adoption guard reconciliation; standard window Ctrl/Meta+Z, Shift+Z and Y bindings preserve native editor history and allow later autorepeat activations | Busy/stale shortcut activations are dropped; JS queued input and physical/audio acceptance remain |
+| Add/remove/link buses, Rec gain/mute/arming (`src/bussen.ts`, `Mixer`) | Bus owner mounts typed idle config/readback and correlated controls; Session/routing/meters use adopted definitions; corrected dynamic arming is wired through shared owner admission/retained receipts; idle routed Add/split/join/remove use reviewed retained migration receipts, original source proofs and authenticated final-input witnesses; reviewed Rec gain/mute owner retains original witness, one-flight/coalesced targets and final flush for idle/known native recording, without graph Undo | General saved-layout restore/clock effects and explicit-recovery history reconciliation; explicit partial append repair and observed-port/desktop acceptance; active structural edits remain a user-decision gate |
 | Record/stop, per-bus start/stop, elapsed time, folder action (`src/Transport.tsx`, `src/api.ts`) | Bus owner adds explicit-root all-armed/per-bus start, captured stable stop IDs, retained receipts and quit diagnostics; Folder is mounted with latest-start authority and off-UI preparation/launch/reaping; reviewed elapsed producer/adapter preserve measurement age and use the existing clock/oldest-take formatter | Live elapsed/recording/desktop acceptance and sample alignment remain unproven; all-armed membership is preflight only, not atomic CAS |
 | MIDI clock/start-stop, MIDI tabs/route/activity (`src/MidiMixer.tsx`, `src/midi.ts`, `src/MidiMeter.tsx`) | Legacy MIDI feature flag remains disabled | Preserve disabled status; separately define/verify any enabled MIDI parity scope |
 | Meter ballistics/peak hold, per-channel rendering (`src/meters.ts`, `src/Meter.tsx`) | Entrypoint uses Session-adopted definitions for same-graph split/add/join/remove reprojection; retained wrappers, registry bindings, graph-before-peaks and visibility gating remain | Capture freshness/availability protocol and live/animation acceptance remain |
