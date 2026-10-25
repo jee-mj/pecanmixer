@@ -432,7 +432,18 @@ impl<O: Clone + 'static, R: Clone + Eq + 'static, T: Clone + Ord + 'static> Leve
                             s.level_admit(capture, token, Some(kind), None);
                         }
                     } else {
-                        self.invalidate();
+                        // Rejecting another Begin must not discard the only
+                        // finalizer for this row's already-admitted request.
+                        let owns_open = s
+                            .level_work
+                            .borrow()
+                            .as_ref()
+                            .is_some_and(|w| w.key == self.key && !w.ended);
+                        if owns_open {
+                            s.abandon_level();
+                        } else {
+                            self.invalidate();
+                        }
                     }
                 }
                 Output::Update { token, db } => {
@@ -509,6 +520,12 @@ impl<O: Clone + 'static, R: Clone + Eq + 'static, T: Clone + Ord + 'static> Leve
         self.deliver(output);
     }
     fn wheel(&self, dy: f64, shift: bool) {
+        // The pure policy permits independent pointer/wheel slots; the owner
+        // admits one interaction. Preserve the pointer's release/cancel path,
+        // including a press staged before its first nonzero movement.
+        if self.policy.borrow().dragging() {
+            return;
+        }
         let Some(s) = self.owner.upgrade() else {
             return;
         };

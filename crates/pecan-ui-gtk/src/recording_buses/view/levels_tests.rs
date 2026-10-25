@@ -410,3 +410,128 @@ fn older_end_return_cannot_abandon_a_fresh_reentrant_request() {
     );
     assert!(v.awaited_request().is_none());
 }
+
+#[gtk::test]
+fn rec_level_overlap_preserves_the_original_pointer_finalizer_and_fresh_recovery() {
+    for moved in [true, false] {
+        let (v, events) = setup();
+        let r = row(&v, "rec-1-2");
+        r.pointer_down(100.);
+        if moved {
+            r.pointer_move(90., false);
+        }
+        r.wheel(-1., false);
+        r.pointer_move(80., false);
+        r.pointer_end(false);
+        v.tick_levels(Duration::from_millis(600));
+        assert_eq!(
+            events
+                .borrow()
+                .iter()
+                .filter(|e| matches!(e, intent::Event::Begin { .. }))
+                .count(),
+            1,
+            "wheel overlap must not admit a second request; moved={moved}"
+        );
+        assert_eq!(
+            events
+                .borrow()
+                .iter()
+                .filter(|e| matches!(
+                    e,
+                    intent::Event::End { request: 42, .. } | intent::Event::Abandon { request: 42 }
+                ))
+                .count(),
+            1,
+            "original pointer owner request lost its finalizer; moved={moved}"
+        );
+        assert_eq!(
+            v.awaited_request(),
+            Some(42),
+            "input end is not native completion"
+        );
+        v.observe(snapshot()).unwrap();
+        assert_eq!(v.awaited_request(), Some(42));
+        report(
+            &v,
+            42,
+            Progress::Rejected("synthetic closed overlap".into()),
+            None,
+        );
+        assert!(v.awaited_request().is_none());
+        r.wheel(-1., false);
+        v.tick_levels(Duration::from_millis(1200));
+        assert!(matches!(
+            events.borrow().last(),
+            Some(intent::Event::End {
+                request: 43,
+                reason: fader::End::WheelIdle,
+                ..
+            })
+        ));
+        report(
+            &v,
+            43,
+            Progress::Rejected("synthetic fresh wheel closed".into()),
+            None,
+        );
+    }
+    // Reverse ordering keeps the existing wheel timer; a pointer cannot take
+    // over its owner identity. No completion is inferred from an input end.
+    let (v, events) = setup();
+    let r = row(&v, "rec-1-2");
+    r.wheel(-1., false);
+    r.pointer_down(100.);
+    r.pointer_move(90., false);
+    r.pointer_end(false);
+    v.tick_levels(Duration::from_millis(600));
+    assert_eq!(
+        events
+            .borrow()
+            .iter()
+            .filter(|e| matches!(e, intent::Event::Begin { .. }))
+            .count(),
+        1
+    );
+    assert!(matches!(
+        events.borrow().last(),
+        Some(intent::Event::End {
+            request: 42,
+            reason: fader::End::WheelIdle,
+            ..
+        })
+    ));
+    assert_eq!(v.awaited_request(), Some(42));
+    report(
+        &v,
+        42,
+        Progress::Rejected("synthetic reverse overlap closed".into()),
+        None,
+    );
+
+    // Defense in depth: if a future input source delivers a conflicting Begin,
+    // rejection explicitly abandons the original owner before dropping slots.
+    let (v, events) = setup();
+    let r = row(&v, "rec-1-2");
+    r.pointer_down(100.);
+    r.pointer_move(90., false);
+    r.deliver(vec![Output::Begin {
+        token: Rc::new(()),
+        kind: fader::Kind::Wheel,
+    }]);
+    assert!(matches!(
+        events.borrow().last(),
+        Some(intent::Event::Abandon { request: 42 })
+    ));
+    let n = events.borrow().len();
+    r.pointer_end(false);
+    v.tick_levels(Duration::from_millis(600));
+    assert_eq!(events.borrow().len(), n);
+    assert_eq!(v.awaited_request(), Some(42));
+    report(
+        &v,
+        42,
+        Progress::Rejected("synthetic fallback closed".into()),
+        None,
+    );
+}

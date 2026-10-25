@@ -402,3 +402,90 @@ fn xtest_rec_levels_relative_drag_reentrant_refresh_double_reset_and_held_mute_r
     );
     window.close();
 }
+
+#[gtk::test]
+fn xtest_rec_level_overlap_wheel_while_pointer_is_held_keeps_an_owner_finalizer() {
+    use crate::recording_buses::levels as level;
+    let view = super::tests::View::new(Budget::default());
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let seen = events.clone();
+    let next = Cell::new(300);
+    view.bind_levels(move |event| {
+        let tracked = matches!(event, level::Event::Begin { .. } | level::Event::Set(_));
+        seen.borrow_mut().push(event);
+        if tracked {
+            next.set(next.get() + 1);
+            Ok(level::Reply::Tracked(next.get()))
+        } else {
+            Ok(level::Reply::Accepted)
+        }
+    });
+    let mut initial = frame();
+    initial.capabilities.idle_levels = Support::Available;
+    view.observe(initial).unwrap();
+    let window = gtk::Window::builder()
+        .child(view.widget())
+        .default_width(1100)
+        .default_height(900)
+        .build();
+    window.present();
+    let input = Input::new(&window);
+    let scale = super::tests::descendants(view.widget())
+        .into_iter()
+        .find_map(|w| w.downcast::<gtk::Scale>().ok())
+        .unwrap();
+    assert!(scale.is_mapped() && scale.is_sensitive());
+    let x = scale.width() as f32 / 2.;
+    let y = scale.height() as f32 / 2.;
+    input.point_at(&scale, &window, x, y);
+    input.button(true);
+    input.point_at(&scale, &window, x, y - 15.);
+    assert!(matches!(
+        events.borrow().first(),
+        Some(level::Event::Begin {
+            kind: crate::controls::fader::Kind::Pointer,
+            ..
+        })
+    ));
+    // SAFETY: Input::new verified this explicitly marked synthetic Xvfb display.
+    // Scroll uses buttons 4/5; the primary button remains held until below.
+    unsafe {
+        for down in [1, 0] {
+            assert_ne!(XTestFakeButtonEvent(input.d, 4, down, 0), 0);
+        }
+        XSync(input.d, 0);
+    }
+    settle(35);
+    input.button(false);
+    view.tick_levels(Duration::from_millis(600));
+    assert_eq!(
+        events
+            .borrow()
+            .iter()
+            .filter(|e| matches!(e, level::Event::Begin { .. }))
+            .count(),
+        1
+    );
+    assert_eq!(
+        events
+            .borrow()
+            .iter()
+            .filter(|e| matches!(
+                e,
+                level::Event::End { request: 301, .. } | level::Event::Abandon { request: 301 }
+            ))
+            .count(),
+        1,
+        "native pointer/wheel overlap lost its owner finalizer"
+    );
+    assert_eq!(view.awaited_request(), Some(301));
+    let mut terminal = frame();
+    terminal.capabilities.idle_levels = Support::Available;
+    terminal.operation = Some(Operation {
+        request: 301,
+        progress: Progress::Rejected("synthetic overlap closed".into()),
+    });
+    view.observe(terminal).unwrap();
+    assert!(view.awaited_request().is_none());
+    window.close();
+}
