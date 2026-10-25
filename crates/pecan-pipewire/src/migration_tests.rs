@@ -1103,3 +1103,6 @@ fn expected_tail_retirement_inside_resize_remains_a_valid_staged_shrink() {
 
 #[path = "migration_add_tests.rs"]
 mod add;
+
+#[path = "saved_layout_tests.rs"]
+mod saved_layout;

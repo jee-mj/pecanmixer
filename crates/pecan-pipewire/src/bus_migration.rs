@@ -36,6 +36,17 @@ pub struct LayoutIntent {
     pub expected_recording: RecordingRevision,
     pub action: LayoutAction,
 }
+/// One validated saved layout, including initialization when logical metadata
+/// is unknown. Retain the original authenticated witness. Only equal capacity
+/// or growth is supported; existing channel indices and routes stay unchanged.
+#[derive(Clone, Debug)]
+pub struct SavedLayoutIntent {
+    pub ticket: u64,
+    pub origin: pecan_core::history_identity::HistoryGraph,
+    pub expected_config: ConfigRevision,
+    pub expected_recording: RecordingRevision,
+    pub configuration: IdleBusConfig,
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MigrationError {
     Busy,
@@ -181,9 +192,12 @@ pub(crate) struct Work {
     pub serial: Option<u64>,
     pub node_generation: u64,
     pub ports: Vec<Port>,
-    /// At most the two AddStereo suffix ports, latched at first coherent
-    /// publication. Never replace a latched identity with a later generation.
+    /// Bounded by the validated 64-channel target. Latched at first coherent
+    /// publication, never rebound to a later generation.
     pub appended: Vec<Port>,
+    /// Saved initialization may replace unknown transport metadata deliberately.
+    /// Ordinary edits retain their existing known-options preflight.
+    pub saved_layout: bool,
     pub source_ports: Vec<Port>,
     pub source_nodes: BTreeMap<u32, (u64, Option<u64>)>,
     pub affected: BTreeSet<u32>,

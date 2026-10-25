@@ -188,6 +188,16 @@ impl Graaf {
     ) -> Result<crate::bus_migration::MigrationReceipt, crate::bus_migration::MigrationError> {
         self.opdrachten.enqueue_migration(intent)
     }
+    /// Restore one complete saved idle layout without shrinking or moving
+    /// routes. Original registry authority and configuration/membership CAS
+    /// remain bound throughout. Growth completes only after final input
+    /// observation; no automatic retry, rollback or recording start occurs.
+    pub fn restore_idle_layout(
+        &self,
+        intent: crate::bus_migration::SavedLayoutIntent,
+    ) -> Result<crate::bus_migration::MigrationReceipt, crate::bus_migration::MigrationError> {
+        self.opdrachten.enqueue_saved_layout(intent)
+    }
     pub fn cancel_bus_migration(
         &self,
         receipt: &crate::bus_migration::MigrationReceipt,
