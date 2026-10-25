@@ -2,6 +2,166 @@
 use super::*;
 use bus_config::*;
 
+#[test]
+fn caller_origin_rejects_same_id_replacement_before_admission() {
+    for id in [900, 901] {
+        let mut f = Fixture::new(true);
+        let original = f.commands.history_graph(&f.commands.current()).unwrap();
+        let edit = lower(&f);
+        let revision = edit.expected;
+        f.commands.object_removed(id);
+        f.commands.object_added(id);
+        assert_eq!(
+            f.commands
+                .enqueue_gains(&original, edit.clone())
+                .unwrap_err(),
+            ConfigError::StaleRevision,
+            "registry replacement not published yet"
+        );
+        f.commands.publish((*f.commands.current().value).clone());
+        assert_eq!(f.commands.config_snapshot().unwrap().revision, revision);
+        assert_eq!(
+            original.graph().stamp.epoch,
+            f.commands.current().stamp.epoch
+        );
+        let result = f.commands.enqueue_gains(&original, edit.clone());
+        assert_eq!(result.unwrap_err(), ConfigError::StaleRevision);
+        assert_eq!(f.target.gains, [1., 1.]);
+        assert!(f.commands.0.lock().unwrap().pending.is_empty());
+        let fresh = f.commands.history_graph(&f.commands.current()).unwrap();
+        let receipt = f.commands.enqueue_gains(&fresh, edit).unwrap();
+        assert_eq!(
+            run(&mut f, &receipt, false, false, false, None).outcome,
+            LocalConfigOutcome::Applied
+        );
+    }
+}
+
+#[test]
+fn caller_origin_rejects_serial_or_channel_mapping_changes_without_rebinding() {
+    for serial in [false, true] {
+        let mut f = Fixture::new(true);
+        let original = f.commands.history_graph(&f.commands.current()).unwrap();
+        let edit = lower(&f);
+        let mut graph = (*f.commands.current().value).clone();
+        if serial {
+            graph.knopen[0].serial = Some(9910);
+        } else {
+            graph.poorten[0].naam = "rec_2".into();
+            graph.poorten[1].naam = "rec_1".into();
+        }
+        f.commands.publish(graph);
+        assert_eq!(
+            f.commands.config_snapshot().unwrap().revision,
+            edit.expected
+        );
+        assert_eq!(
+            f.commands
+                .enqueue_gains(&original, edit.clone())
+                .unwrap_err(),
+            ConfigError::StaleRevision
+        );
+        let fresh = f.commands.history_graph(&f.commands.current()).unwrap();
+        let receipt = f.commands.enqueue_gains(&fresh, edit).unwrap();
+        assert_eq!(
+            run(&mut f, &receipt, false, false, false, None).outcome,
+            LocalConfigOutcome::Applied
+        );
+    }
+}
+
+#[test]
+fn caller_origin_authentication_survives_revision_cache_eviction_but_rejects_foreign_authority() {
+    use pecan_core::history_identity::HistoryGraph;
+    let mut f = Fixture::new(true);
+    let other = Fixture::new(true);
+    let original = f.commands.history_graph(&f.commands.current()).unwrap();
+    let foreign = other
+        .commands
+        .history_graph(&other.commands.current())
+        .unwrap();
+    let forged = HistoryGraph::from_registry(
+        original.graph().clone(),
+        Arc::new(()),
+        f.commands.registry_generations(),
+    );
+    for invalid in [&foreign, &forged] {
+        assert_eq!(
+            f.commands.enqueue_gains(invalid, lower(&f)).unwrap_err(),
+            ConfigError::StaleRevision
+        );
+    }
+    let copy = pecan_core::backend::Stamped {
+        stamp: original.graph().stamp,
+        value: Arc::new((*original.graph().value).clone()),
+    };
+    assert!(
+        f.commands.history_graph(&copy).is_err(),
+        "copied DTO is not an authenticated witness"
+    );
+    for _ in 0..pecan_core::native_command::NATIVE_SOURCE_HISTORY + 2 {
+        let mut graph = (*f.commands.current().value).clone();
+        graph.standaard_sink = Some("synthetic-unrelated-destination".into());
+        f.commands.publish(graph);
+    }
+    assert!(
+        f.commands.history_graph(original.graph()).is_err(),
+        "original cache entry was evicted"
+    );
+    let receipt = f.commands.enqueue_gains(&original, lower(&f)).unwrap();
+    assert_eq!(
+        run(&mut f, &receipt, false, false, false, None).outcome,
+        LocalConfigOutcome::Applied
+    );
+}
+
+#[test]
+fn caller_origin_cannot_cross_reconnect_even_with_fresh_configuration_revision() {
+    let mut f = Fixture::new(true);
+    let original = f.commands.history_graph(&f.commands.current()).unwrap();
+    let graph = (*f.commands.current().value).clone();
+    let configuration = f.commands.config_snapshot().unwrap().configuration.unwrap();
+    f.commands.publish(Momentopname::default());
+    for id in 900..=902 {
+        f.commands.object_added(id);
+    }
+    f.commands.publish(graph);
+    f.commands.refresh_config(f.target.readback(), false, false);
+    let receipt = f
+        .commands
+        .enqueue_config(IdleConfigIntent {
+            ticket: 91,
+            expected: f.commands.config_snapshot().unwrap().revision,
+            configuration,
+        })
+        .unwrap();
+    f.commands.drain_with_config(
+        |_| true,
+        |_| false,
+        |_| LocalExecution::Unreported,
+        |work| f.commands.apply_config(work, &mut f.target),
+    );
+    assert!(matches!(
+        receipt.try_report().unwrap().progress,
+        ConfigProgress::Completed(_)
+    ));
+    let edit = lower(&f);
+    assert_ne!(edit.expected.epoch, original.graph().stamp.epoch);
+    assert_eq!(
+        f.commands.enqueue_gains(&original, edit).unwrap_err(),
+        ConfigError::StaleRevision
+    );
+    let edit = lower(&f);
+    assert_eq!(apply(&mut f, edit).outcome, LocalConfigOutcome::Applied);
+}
+
+// Existing lifecycle tests use a newly authenticated origin. Stale-origin
+// regressions explicitly retain and pass the original witness instead.
+fn enqueue(commands: &Commands, intent: IdleConfigIntent) -> Result<ConfigReceipt, ConfigError> {
+    let origin = commands.history_graph(&commands.current()).unwrap();
+    commands.enqueue_gains(&origin, intent)
+}
+
 struct Levels<'a> {
     target: &'a mut Target,
     commands: &'a Commands,
@@ -92,7 +252,7 @@ fn run(
     }
 }
 fn apply(f: &mut Fixture, intent: IdleConfigIntent) -> ConfigCompletion {
-    let receipt = f.commands.enqueue_gains(intent).unwrap();
+    let receipt = enqueue(&f.commands, intent).unwrap();
     assert_eq!(
         receipt.try_report().unwrap().progress,
         ConfigProgress::Queued
@@ -216,7 +376,7 @@ fn gain_only_admission_rejects_layout_arming_transport_and_unknown_state_changes
             }
             _ => c.buses.states.get_mut("rec-1").unwrap().db = f64::NAN,
         });
-        let err = f.commands.enqueue_gains(invalid).unwrap_err();
+        let err = enqueue(&f.commands, invalid).unwrap_err();
         assert!(
             matches!(
                 err,
@@ -234,11 +394,11 @@ fn stale_revision_noop_and_legacy_lock_keep_original_authority() {
     let mut f = Fixture::new(true);
     let _take = f.start();
     let original = lower(&f);
-    let competing = f.commands.enqueue_gains(original.clone()).unwrap();
+    let competing = enqueue(&f.commands, original.clone()).unwrap();
     let noop = intent(&f, |_| {});
     let snapshot = f.commands.config_snapshot().unwrap();
     // Both enqueue against the same revision; the real edit goes first.
-    let second = f.commands.enqueue_gains(noop).unwrap();
+    let second = enqueue(&f.commands, noop).unwrap();
     assert_eq!(
         run(&mut f, &competing, false, false, false, None).outcome,
         LocalConfigOutcome::Applied
@@ -251,7 +411,7 @@ fn stale_revision_noop_and_legacy_lock_keep_original_authority() {
         })
     ));
     assert_eq!(
-        f.commands.enqueue_gains(original).unwrap_err(),
+        enqueue(&f.commands, original).unwrap_err(),
         ConfigError::StaleRevision
     );
     assert_ne!(
@@ -263,7 +423,7 @@ fn stale_revision_noop_and_legacy_lock_keep_original_authority() {
     assert_eq!(apply(&mut f, noop).outcome, LocalConfigOutcome::NoOp);
     assert_eq!(f.commands.config_snapshot().unwrap(), current);
     let changed = intent(&f, |c| c.buses.states.get_mut("rec-2").unwrap().db = -3.);
-    let receipt = f.commands.enqueue_gains(changed).unwrap();
+    let receipt = enqueue(&f.commands, changed).unwrap();
     assert_eq!(
         run(&mut f, &receipt, false, false, true, None).outcome,
         LocalConfigOutcome::Rejected(ConfigError::RecordingActive)
@@ -276,7 +436,7 @@ fn opening_start_is_busy_and_old_idle_entrypoint_stays_locked() {
     let mut f = Fixture::new(true);
     let take = f.commands.enqueue_recording(f.intent()).unwrap();
     assert_eq!(
-        f.commands.enqueue_gains(lower(&f)).unwrap_err(),
+        enqueue(&f.commands, lower(&f)).unwrap_err(),
         ConfigError::Busy
     );
     f.drain();
@@ -300,7 +460,7 @@ fn same_id_replacements_never_rebind_admitted_or_running_gain_edits() {
     for id in [900, 901] {
         let mut f = Fixture::new(true);
         let _take = f.start();
-        let receipt = f.commands.enqueue_gains(lower(&f)).unwrap();
+        let receipt = enqueue(&f.commands, lower(&f)).unwrap();
         f.commands.object_removed(id);
         f.commands.object_added(id);
         let graph = (*f.commands.current().value).clone();
@@ -310,7 +470,7 @@ fn same_id_replacements_never_rebind_admitted_or_running_gain_edits() {
             LocalConfigOutcome::Rejected(ConfigError::StaleRevision)
         );
         assert_eq!(
-            f.commands.enqueue_gains(lower(&f)).unwrap_err(),
+            enqueue(&f.commands, lower(&f)).unwrap_err(),
             ConfigError::StaleRevision
         );
         assert_eq!(f.target.gains, [1., 1.]);
@@ -328,7 +488,7 @@ fn failed_or_partial_gain_readback_is_truthful_and_preserves_transport() {
             }
         });
         let old = f.commands.config_snapshot().unwrap();
-        let receipt = f.commands.enqueue_gains(request).unwrap();
+        let receipt = enqueue(&f.commands, request).unwrap();
         let result = run(&mut f, &receipt, !partial, partial, false, None);
         assert_eq!(result.snapshot.transport, old.transport);
         if partial {
@@ -353,7 +513,7 @@ fn disconnect_during_claimed_setter_cannot_publish_old_readback_into_new_epoch()
     let mut f = Fixture::new(true);
     let _take = f.start();
     let commands = &f.commands;
-    let receipt = commands.enqueue_gains(lower(&f)).unwrap();
+    let receipt = enqueue(commands, lower(&f)).unwrap();
     let mut target = Levels {
         target: &mut f.target,
         commands,
@@ -389,10 +549,10 @@ fn gain_queue_shares_bounds_and_stop_reservation_and_disconnect_reclaims_work() 
         let f = Fixture::new(true);
         let _take = f.start();
         let receipts: Vec<_> = (0..MAX_CONFIG_PENDING)
-            .map(|_| f.commands.enqueue_gains(lower(&f)).unwrap())
+            .map(|_| enqueue(&f.commands, lower(&f)).unwrap())
             .collect();
         assert_eq!(
-            f.commands.enqueue_gains(lower(&f)).unwrap_err(),
+            enqueue(&f.commands, lower(&f)).unwrap_err(),
             ConfigError::QueueFull
         );
         for _ in MAX_CONFIG_PENDING..NORMAL_CAPACITY {
@@ -429,7 +589,7 @@ fn replacement_during_claimed_gain_call_is_partial_and_cannot_claim_valid_config
         let mut f = Fixture::new(true);
         let _take = f.start();
         let commands = &f.commands;
-        let receipt = commands.enqueue_gains(lower(&f)).unwrap();
+        let receipt = enqueue(commands, lower(&f)).unwrap();
         let mut target = Levels {
             target: &mut f.target,
             commands,
@@ -488,7 +648,7 @@ fn unrelated_graph_revision_and_missing_default_state_do_not_block_gain_changes(
             },
         );
     });
-    let receipt = f.commands.enqueue_gains(edit).unwrap();
+    let receipt = enqueue(&f.commands, edit).unwrap();
     let graph = (*f.commands.current().value).clone();
     f.commands.publish(graph);
     assert_eq!(
@@ -504,7 +664,7 @@ fn claimed_gain_call_can_finish_on_original_filter_after_stop_with_cancellation_
     let mut f = Fixture::new(true);
     let take = f.start();
     let commands = &f.commands;
-    let receipt = commands.enqueue_gains(lower(&f)).unwrap();
+    let receipt = enqueue(commands, lower(&f)).unwrap();
     let mut target = Levels {
         target: &mut f.target,
         commands,
@@ -540,12 +700,12 @@ fn stale_readback_options_and_owner_never_mutate_or_fabricate_metadata() {
         if mode == 2 {
             edit.expected.owner += 1;
             assert_eq!(
-                f.commands.enqueue_gains(edit).unwrap_err(),
+                enqueue(&f.commands, edit).unwrap_err(),
                 ConfigError::StaleRevision
             );
             continue;
         }
-        let receipt = f.commands.enqueue_gains(edit).unwrap();
+        let receipt = enqueue(&f.commands, edit).unwrap();
         if mode == 0 {
             f.target.gains[1] = 0.125;
         } else {

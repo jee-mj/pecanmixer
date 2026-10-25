@@ -1,7 +1,7 @@
 # Native recording level configuration candidate
 
 Based on `940afbd188dcce86e532141bda5e53a6d46746f7`. This backend-only
-candidate adds `Graaf::configure_bus_gains(IdleConfigIntent) ->
+candidate adds `Graaf::configure_bus_gains(&HistoryGraph, IdleConfigIntent) ->
 Result<ConfigReceipt, ConfigError>`. It reuses the existing exact backend-owner,
 epoch and configuration-revision authority, bounded FIFO, receipt and local
 readback types. The ordinary `configure_idle` and serialized legacy IPC are
@@ -27,10 +27,28 @@ unchanged. Level edits do not enter graph undo history.
 ## Authority and completion
 
 Admission and execution validate the exact configuration revision. Admission
-also captures the locally owned Rec node serial and node/input-port registry
-generations; execution revalidates these before the setter and after target
-callbacks. An unrelated graph revision is allowed; a replacement object with
-the same numeric ID cannot inherit admitted work or a running take's identity.
+also requires the caller's original authenticated `HistoryGraph`, obtained via
+the existing `Graaf::history_graph` accessor for the exact observed publication
+when the control's origin is captured. Retain that witness through the gesture;
+do not obtain a new witness from the latest graph during admission. The original
+one-argument gain API at `04d0c890` had only an admission-time binding and is
+replaced, with no weaker gain overload exposed to a retained native UI.
+
+Under the same admission lock, the backend validates this witness's original
+owned Rec serial, input channel assignment, node/port generations, backend
+authority and epoch against current registry state. A configuration CAS alone
+cannot detect an object replacement that leaves the local gain vector and
+numeric node ID unchanged. Such stale origins now return `StaleRevision` before
+consuming queue capacity, both before and after replacement graph publication;
+an authentic current origin can deliberately target the replacement.
+
+The existing opaque registry binding allows retained witnesses to outlive
+ordinary graph revisions and publication-cache eviction. Foreign/forged
+authority, reconnect, changed serial or reassigned `rec_N` inputs fail closed.
+The admitted work retains only its bounded local binding; execution revalidates
+it before the setter and after target callbacks. A replacement object with
+the same numeric ID cannot inherit retained UI intent, admitted work or a
+running take's identity. No new core types or serialized contracts are added.
 The complete owned audio input set must currently be observable, so graph-lag
 or missing/ambiguous ports produce an explicit unavailable result rather than
 binding a different Rec instance.
@@ -77,7 +95,12 @@ They do not use a server, audio device, user's recordings or profile. Hardware,
 audio quality, latency, real-time performance and desktop acceptance remain
 unrun. Native owner/UI gain admission remains a separate integration task.
 
-Cloud checks: all 209 backend tests pass (including 12 new focused tests),
-all 74 core integration tests and 10 legacy library tests pass, and the native
-GTK target passes `cargo check --locked`. Scoped Rust formatting and
-`git diff --check` pass. No application or external launcher was started.
+The initial candidate passed all 209 backend tests (12 new focused tests),
+74 core integration tests, ten legacy tests and a native GTK compile check.
+The origin follow-up adds four regression groups for pre-admission replacement,
+original serial/channel mapping, foreign/copied witnesses, cache eviction and
+reconnect; the original lifecycle/WAV cases now supply authentic origins too.
+Current follow-up checks pass all 213 backend tests (16 focused), ten legacy
+tests and `cargo check -p pecan-ui-gtk --locked`. Core source is unchanged; its
+prior 74-test receipt is retained. Scoped Rust formatting and `git diff --check`
+pass. No application or external launcher was started.
