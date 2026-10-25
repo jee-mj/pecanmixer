@@ -178,3 +178,8 @@ general layout migration, active-recording reload/structural policy, clock effec
 profile import or automatic recording. Corrected owner `3c318cee` independently
 clears original foreign-route probes while preserving the owned routed-layout
 gate. Its source is adopted without runtime reconciliation onto `f9fc8e7c`.
+
+The [reviewed desktop helper library](./native-desktop-library-integration.md)
+now preserves explicit native settings/recording launch arguments and a distinct
+native autostart identity without touching legacy entries. It is library-only;
+worker/tray/startup adoption and real desktop/login acceptance remain separate.
