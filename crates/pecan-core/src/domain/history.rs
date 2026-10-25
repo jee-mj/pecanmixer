@@ -348,6 +348,48 @@ impl Controller {
     pub fn graph(&self) -> Option<&Stamped<Arc<Momentopname>>> {
         self.graph.as_ref()
     }
+    /// Recheck existing guards after an idle logical layout adoption, using the
+    /// same already accepted native frame. This records/dispatches nothing and
+    /// cannot complete, discard or replan outstanding work.
+    pub fn reconcile_buses(
+        &mut self,
+        frame: &HistoryGraph,
+        buses: BusConfig,
+    ) -> Result<(), DomainError> {
+        if self.pending.is_some() {
+            return Err(DomainError::Busy);
+        }
+        buses
+            .definitions()
+            .map_err(|_| DomainError::InvalidBusConfig)?;
+        if !frame.graph().value.verbonden {
+            return Err(DomainError::Disconnected);
+        }
+        if !self.identity.as_ref().is_some_and(|accepted| {
+            accepted.same_owner(frame)
+                && accepted.graph().stamp == frame.graph().stamp
+                && Arc::ptr_eq(&accepted.graph().value, &frame.graph().value)
+        }) {
+            return Err(DomainError::IdentityUnavailable);
+        }
+        self.buses = buses;
+        self.retain_valid_steps();
+        Ok(())
+    }
+    fn retain_valid_steps(&mut self) {
+        if let Some(frame) = &self.identity {
+            let valid = |step: &Step| {
+                step.identity.as_ref().is_some_and(|guard| {
+                    guard.valid(frame, [&step.forward, &step.inverse], &self.buses)
+                })
+            };
+            self.undo.retain(valid);
+            self.redo.retain(valid);
+            if self.pending.as_ref().is_some_and(|p| !valid(&p.step)) {
+                self.pending = None;
+            }
+        }
+    }
     /// Record one already observed native gesture, retaining its original full
     /// vector's registry dependencies across later undo/redo. This does not
     /// dispatch or establish completion; the serialized owner supplies that proof.
@@ -445,18 +487,7 @@ impl Controller {
                 }
                 self.graph = Some(graph);
                 self.identity = identity;
-                if let Some(frame) = &self.identity {
-                    let valid = |step: &Step| {
-                        step.identity.as_ref().is_some_and(|guard| {
-                            guard.valid(frame, [&step.forward, &step.inverse], &self.buses)
-                        })
-                    };
-                    self.undo.retain(valid);
-                    self.redo.retain(valid);
-                    if self.pending.as_ref().is_some_and(|p| !valid(&p.step)) {
-                        self.pending = None;
-                    }
-                }
+                self.retain_valid_steps();
                 self.complete_if_observed();
                 Ok(None)
             }

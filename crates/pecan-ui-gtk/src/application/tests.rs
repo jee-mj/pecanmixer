@@ -9,6 +9,8 @@ use pecan_core::{
     native_command::{native_receipt, Counts, NativeFailure, NativeProgress},
 };
 use std::collections::BTreeMap;
+
+mod history_layout;
 fn graph() -> Momentopname {
     let mut graph: Momentopname =
         serde_json::from_str(include_str!("../../../../fixtures/graph/audio-basic.json")).unwrap();
