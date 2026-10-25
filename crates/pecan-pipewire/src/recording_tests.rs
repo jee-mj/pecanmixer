@@ -1,6 +1,8 @@
 //! Synthetic registry, injected writers and temporary WAV roots only.
 #[path = "recording_arming_tests.rs"]
 mod arming;
+#[path = "recording_gain_tests.rs"]
+mod gains;
 #[path = "recording_multitake_tests.rs"]
 mod multiple;
 use super::*;
