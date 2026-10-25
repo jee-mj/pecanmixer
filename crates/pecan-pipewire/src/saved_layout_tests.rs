@@ -111,6 +111,66 @@ fn unknown_or_known_routed_metadata_accepts_exact_same_capacity_regroup_without_
 }
 
 #[test]
+fn optional_logical_and_transport_metadata_are_independently_accounted_for() {
+    for (logical_known, transport_known) in
+        [(true, false), (true, true), (false, false), (false, true)]
+    {
+        let mut f = Fixture::new(vec![2]);
+        f.add_link(110, 901);
+        let desired = f.commands.config_snapshot().unwrap().configuration.unwrap();
+        // Exercise the documented optional fields independently. No current
+        // normal producer of the known-layout/unknown-transport state is assumed.
+        {
+            let mut state = f.commands.0.lock().unwrap();
+            if !logical_known {
+                state.config.snapshot.configuration = None;
+            }
+            if !transport_known {
+                state.config.snapshot.transport = None;
+            }
+        }
+        if !transport_known {
+            f.target.options = None;
+        }
+        let before = f.commands.config_snapshot().unwrap();
+        let r = f
+            .commands
+            .enqueue_saved_layout(intent(&f, desired.clone()))
+            .unwrap();
+        f.finish(&r);
+        let changed = !logical_known || !transport_known;
+        let report = decided(
+            &r,
+            if changed {
+                MigrationOutcome::AppliedLocally
+            } else {
+                MigrationOutcome::NoOpLocally
+            },
+        );
+        assert_eq!(
+            report.configuration.revision.revision > before.revision.revision,
+            changed
+        );
+        assert_eq!(report.configuration.configuration.as_ref(), Some(&desired));
+        assert_eq!(
+            report.configuration.transport,
+            Some(bus_config::validate_configuration(&desired).unwrap().2)
+        );
+        assert_eq!(f.commands.config_snapshot().unwrap(), report.configuration);
+        // With both metadata fields known, a fresh exact restore is a no-op.
+        let r = f
+            .commands
+            .enqueue_saved_layout(intent(&f, desired))
+            .unwrap();
+        f.finish(&r);
+        let no_op = decided(&r, MigrationOutcome::NoOpLocally);
+        assert_eq!(no_op.configuration.revision, report.configuration.revision);
+        assert_eq!(f.target.resizes, 0);
+        assert!(f.log.borrow().is_empty());
+    }
+}
+
+#[test]
 fn unknown_capacity_growth_retains_complete_saved_state_until_exact_final_observation() {
     for widths in [vec![1, 2], vec![2, 2], vec![1, 1, 2], vec![2; 32]] {
         let mut f = Fixture::new(vec![2]);

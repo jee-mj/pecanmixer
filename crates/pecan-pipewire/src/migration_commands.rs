@@ -880,6 +880,7 @@ impl Commands {
         }
         let changed = after != before.local
             || before.configuration.as_ref() != Some(&w.proposed)
+            || before.transport.as_ref() != Some(&options)
             || error.is_some();
         w.local_applied = changed;
         if state.graph.stamp.epoch != w.source.epoch

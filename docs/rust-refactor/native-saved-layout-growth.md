@@ -101,11 +101,22 @@ prefix/source/suffix replacement, malformed/shrinking/stale proposals, actual
 readback/options conflicts, partial allocation, timeout, cancellation,
 disconnect/shutdown, recording, route/queue bounds and unchanged generic gates.
 
-Local checks pass: 52 migration tests (including 12 saved-layout groups), all 252
-backend library tests, 17 existing GTK owner migration tests with all features
-under isolated Xvfb/D-Bus, and the native GTK executable build. Scoped formatting
-and whitespace checks pass. These are authored source/fixture checks awaiting
-independent review; hosted CI and physical acceptance are not claimed.
+Initial candidate `7723af30` passes 52 migration tests (including 12 saved-layout
+groups), all 252 backend library tests, 17 existing GTK owner migration tests
+with all features under isolated Xvfb/D-Bus, and the native GTK executable build.
+
+A follow-up synthetic regression independently varies known/unknown logical
+configuration and transport metadata. Known unchanged logical configuration
+with missing transport reproduced a false NoOp and unchanged revision on
+`7723af30`; no current normal producer of that combination is assumed. Completion
+accounting now includes transport changes, returning AppliedLocally and advancing
+the revision when transport becomes known. Unknown-startup initialization stays
+supported. A subsequent exact restore remains NoOp with unchanged revision.
+All 53 migration tests (13 saved-layout groups) and all 253 backend library tests
+pass after correction. GTK owner/build checks above belong to the initial
+candidate and were not repeated for the one-line accounting correction. Scoped
+formatting/whitespace checks pass; independent re-review, hosted CI and physical
+acceptance are not claimed.
 
 No PipeWire server, hardware, audio capture, user profile, physical desktop,
 performance, server convergence or causal transaction acceptance is exercised.
