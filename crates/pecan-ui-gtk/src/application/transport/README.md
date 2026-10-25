@@ -95,6 +95,8 @@ XTest/private-bus cases; native `cargo build -p pecan-ui-gtk --locked`, package
 formatting and whitespace checks passed. Core/backend/legacy sources are unchanged
 and their test suites were not rerun for this UI/helper-only candidate.
 
-Owner mounting, real timing production, folder launch/reaping and actual desktop
-acceptance remain pending. No hardware, private profile/topology, recording/audio,
+The reviewed Folder owner now mounts this presentation with authenticated explicit
+paths and off-UI preparation/launch/reaping; see its adoption record above. Real
+timing production and actual desktop acceptance remain pending. No hardware,
+private profile/topology, recording/audio,
 Wayland/screen-reader, performance or finalization acceptance is claimed.

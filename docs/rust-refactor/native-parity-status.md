@@ -12,8 +12,8 @@ existing CI driver. The [routing owner follow-up](./native-routing-owner-candida
 now mounts routing through the same Session and BusOwner, with independently
 cleared receipt retention and reset-witness correction. The reviewed meter
 follow-up now reprojects adopted layouts through the same accepted graph/batch.
-Arming/migration UI adapters and immediate configuration-driven history
-reconciliation remain separate.
+Reviewed arming, idle migration and Folder owner adapters are now mounted.
+Immediate configuration-driven history reconciliation remains separate.
 
 | Original behavior and source | Rust/native state | Remaining gate |
 |---|---|---|
@@ -30,7 +30,7 @@ reconciliation remain separate.
 | Patch module positioning and reconnect behavior (`Plekken`, `ModuleKaart`) | Reviewed session movement/rearrange and reconnect aliases on retained view | Session-layout and physical-input acceptance |
 | Undo/redo queue and keyboard shortcuts (`src/geschiedenis.ts`, `src/handelingen.ts`, `src/App.tsx`) | Reviewed generation/selector guards, shared receipts, immutable history activation and one-step observed gesture history | Queued input, complete shortcuts and audio/input acceptance |
 | Add/remove/link buses, Rec gain/mute/arming (`src/bussen.ts`, `Mixer`) | Bus owner mounts typed idle config/readback and correlated controls; Session/routing/meters use adopted definitions; corrected dynamic arming is wired through shared owner admission/retained receipts; idle routed split/join/remove use reviewed retained migration receipts | Editable bus gain/mute, saved config effects and immediate configuration-driven history reconciliation; routed Add and observed-port/desktop acceptance; active structural edits remain a user-decision gate |
-| Record/stop, per-bus start/stop, elapsed time, folder action (`src/Transport.tsx`, `src/api.ts`) | Bus owner adds explicit-root all-armed/per-bus start, captured stable stop IDs, retained receipts and quit diagnostics | Folder action, elapsed/alignment and live recording acceptance; all-armed membership is preflight only, not atomic CAS |
+| Record/stop, per-bus start/stop, elapsed time, folder action (`src/Transport.tsx`, `src/api.ts`) | Bus owner adds explicit-root all-armed/per-bus start, captured stable stop IDs, retained receipts and quit diagnostics; Folder is mounted with latest-start authority and off-UI preparation/launch/reaping | Real elapsed producer, elapsed/alignment and live recording/desktop acceptance; all-armed membership is preflight only, not atomic CAS |
 | MIDI clock/start-stop, MIDI tabs/route/activity (`src/MidiMixer.tsx`, `src/midi.ts`, `src/MidiMeter.tsx`) | Legacy MIDI feature flag remains disabled | Preserve disabled status; separately define/verify any enabled MIDI parity scope |
 | Meter ballistics/peak hold, per-channel rendering (`src/meters.ts`, `src/Meter.tsx`) | Entrypoint uses Session-adopted definitions for same-graph split/add/join/remove reprojection; retained wrappers, registry bindings, graph-before-peaks and visibility gating remain | Capture freshness/availability protocol and live/animation acceptance remain |
 | Hide/show strips/rows and reconnect names (`src/App.tsx`, `Mixer`) | Reviewed display panel/filter/save bridge; full graph/origin/history retained | Transient IDs must not become durable identity; reconnect/desktop acceptance |
@@ -116,8 +116,10 @@ readbacks and graph-before-release evidence. Independent re-review clears
 terminal barriers. Routed Add and active-recording structural policy remain
 separate gates.
 
-The separate [Folder owner adoption candidate](./native-folder-owner.md) mounts
+The reviewed [Folder owner adoption](./native-folder-owner.md) mounts
 the corrected helper with actual latest-start receipt authority and explicit
-worker-based preparation/launch/reaping. It awaits independent owner review and
-is not included in the public matrix above. Active elapsed stays unavailable;
-this candidate adds no timing producer or stopwatch.
+worker-based preparation/launch/reaping. Independent correction review clears
+`07e6edaf`, including retained cancelled-worker capacity and prepared-plan path
+correlation before launch. It is included in the matrix above. Active elapsed
+stays unavailable; a real producer is the next transport prerequisite, not a
+UI-arrival stopwatch.

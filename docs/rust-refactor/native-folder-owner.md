@@ -1,9 +1,11 @@
-# Folder owner adoption candidate
+# Reviewed Folder owner adoption
 
-This separate candidate starts at PR2 `a5875178`, includes the independently
+The separate candidate starts at PR2 `a5875178`, includes the independently
 cleared transport helper `84717ec4` plus retirement correction `53f76e2d`, and
-awaits independent owner review. The idle migration candidate remains separate.
-No unreviewed owner source is published to PR2 by this candidate.
+receives independent owner correction clearance at `07e6edaf`. Integration starts
+from PR2 `7fb0b934`, preserving the separately reviewed idle migration owner.
+The only source conflict resolution retains adjacent Folder and migration module
+declarations; no reviewed runtime logic is changed.
 
 The existing Buses and recording page now contains the retained Folder/directory
 presentation in a bounded scroller. No picker is added: original JS has a Folder
@@ -127,3 +129,40 @@ Backend/legacy execution source is unchanged from `f7fb8199`; legacy suites were
 not separately repeated for this UI-only correction. No final failed local check
 or environment blocker remains. Hosted checks and independent re-review remain
 separate pending gates before PR2 inclusion.
+
+## Independent correction clearance and next parity gate
+
+Independent re-review clears `07e6edaf`: 67 targeted owner tests and all three
+unchanged review probes pass, including both original failures. Cancelled
+preparation retains its execution capacity through background join/teardown, and
+substituted plans fail before launch while releasing the original request token.
+The integration retains that exact logic and the existing migration source.
+
+The smallest remaining transport slice is a real native elapsed producer.
+`RecordingReport` currently has no elapsed value and the native adapter supplies
+`Track.elapsed = None`. It needs authoritative stable take/track start and stop
+evidence, plus a producer measurement time that is not refreshed merely because a
+cached report was polled. Only then can the existing presentation interpolate
+from that measured duration using the shell clock and select the oldest running
+take as the original JS does. Opening, failure, dynamic arming, per-track stop,
+disconnect and finalization need explicit unavailable/frozen behavior. Receipt
+arrival, latest-folder identity and file bytes cannot substitute for duration or
+prove sample arrival/alignment. This integration adds no timing producer.
+
+## Combined integration validation
+
+The reviewed Folder Rust files match `07e6edaf` byte for byte, except the three
+shared bus registration/service/test files, which also retain the independently
+reviewed migration additions. The migration implementation/tests, manifests,
+lockfile and versions remain unchanged. Only adjacent module registrations and
+coverage documentation needed conflict resolution; no new dispatch logic is
+introduced by integration.
+
+Fresh host and explicit-target workspace rebuilds pass: 86 validator controls,
+74 core, 197 backend and 407 all-feature GTK tests, native build/formatting,
+Cargo/ELF audits, three headless fixtures and three GTK smokes. Default GTK passes
+364 tests. All ten retained legacy library tests and compilation of the five
+legacy examples pass. Zero Node-tool attempts are recorded. Synthetic fixtures
+and public source are the only input; there is no actual launcher/profile/audio
+operation. No final local failure or environment blocker remains. Exact published
+PR-head hosted results are recorded separately in the PR description.
