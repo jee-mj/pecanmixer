@@ -1,6 +1,8 @@
 # Receipt-local native execution closure
 
-Candidate based on `fafda497c532cf6afd42d4cd6528920302ee62bf`. This adds
+Reviewed candidate `93b59acb8a1ad81c8b838d12c3ca94d4676b6422` is based on
+`fafda497c532cf6afd42d4cd6528920302ee62bf`. Its integration onto telemetry
+checkpoint `08b3f744` has no source conflict or reconciliation changes. This adds
 backend execution evidence only. Owner recovery, large reset sequencing and
 failed-prefix undo policy are separate work. No UI, legacy IPC, serialized DTO,
 recording, dependency or version changes are included.
@@ -76,4 +78,20 @@ command tests), 10 legacy library tests and a native GTK compile check passed.
 The retained-receipt probe
 checks 2,176 no-op requests plus origin eviction. No existing assertion was
 removed or weakened. These are synthetic source/compatibility results, not
-independent review or live acceptance.
+live acceptance. Independent review separately clears the slice with 74 core,
+196 backend and four extra probes: 256 claim/seal races, report-mutex-independent
+closure polling, cancellation during validation, and late unwind/ticket reuse.
+
+The reviewed integration preserves the original receipt and frozen historical
+counts. It does not enable owner/UI recovery. An explicit owner recovery action
+must still check this exact receipt's closure, fresh authenticated graph/config
+inspection and released history ownership. No failed-prefix undo, rollback or
+graph-convergence evidence is inferred from `Closed`.
+
+Combined integration checks pass **86 validator controls, 74 core, 196 backend
+and 361 all-feature GTK tests**, formatting/build, Cargo/ELF closure checks,
+three headless fixtures and three controlled smokes, with zero Node-tool attempts.
+Ten legacy tests and all five retained Rust example compilations also pass. No
+default-only/accessibility-only GTK run was repeated; the all-feature run includes
+accessibility assertions. Core/backend source matches the independently reviewed
+candidate byte-for-byte; telemetry and the workspace poll order are unchanged.

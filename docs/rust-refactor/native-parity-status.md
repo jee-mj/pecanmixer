@@ -24,7 +24,7 @@ reconciliation remain separate.
 | Partial-pair mute and restore prior gain (`voorMute`, `Kaart`) | Reviewed policy plus serialized receipt/graph memory commit and complete-vector undo | Audio/input acceptance |
 | Drag/fine drag, wheel grouping, rounding, double-click reset (`Fader`) | Reviewed policy and owner coordinator; ordinary refresh preserves desired keyboard position; unconfirmed held input requires release | Physical input acceptance |
 | Independent output destination and Rec-bus selections (`bewerkt`, `bewerkteBus`, `kiesBewerkt` in `src/App.tsx`) | Bus owner and routing page share independent choices without audio commands; Session and meters use the same adopted definitions | Immediate configuration-driven history reconciliation; reconnect/layout acceptance |
-| Normal/manual/custom route states and green/R toggles (`BronStrip`, `schakel`, `schakelRoute`) | Mounted routing page shares BusOwner selections/configuration, Session tickets/history and actual NativeReports; custom routes open the existing patchbay | Partial/unconfirmed recovery needs owner quiescence evidence; audio/input acceptance |
+| Normal/manual/custom route states and green/R toggles (`BronStrip`, `schakel`, `schakelRoute`) | Mounted routing page shares BusOwner selections/configuration, Session tickets/history and actual NativeReports; custom routes open the existing patchbay | Explicit owner recovery must combine available receipt-local closure with fresh inspection/history release; audio/input acceptance |
 | Back to auto / manual route count (`telHandwerk`, `terugNaarAutoStap`) | Mounted count/confirmation uses the shared observed-history path; original-generation restore witnesses survive target-clear transitions | Reset batches over 32 commands, partial/quiescence recovery and audio/input acceptance |
 | Cable create/remove/move, selection/delete/cancel (`src/Patchbay.tsx`, `src/handelingen.ts`) | Reviewed keyboard/pointer libraries attached to reviewed coordinator source | Physical-input acceptance |
 | Patch module positioning and reconnect behavior (`Plekken`, `ModuleKaart`) | Reviewed session movement/rearrange and reconnect aliases on retained view | Session-layout and physical-input acceptance |
@@ -86,4 +86,12 @@ changes without manufacturing a graph revision or adding a consumer/timer. It
 preserves unaffected wrappers, retires removed keys and clears shared samples,
 hold and clipping before incoming peaks. This closes the startup-default meter
 projection gap. It does not establish sample freshness/health or implement
-immediate history reconciliation; the receipt-closure candidate remains separate.
+immediate history reconciliation.
+
+The [reviewed receipt-local closure API](./native-execution-closure.md) now exposes
+nonblocking Pending/Closed evidence on the original retained receipt. A terminal
+report's frozen counts remain historical. Closed prevents further local dispatch
+callbacks for that receipt; it does not establish server convergence, rollback,
+observation or recorder finalization. Owner/UI recovery and reset batching above
+32 commands remain separate work; this library integration does not reopen any
+existing recovery latch.
