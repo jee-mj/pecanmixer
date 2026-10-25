@@ -79,7 +79,7 @@ injected receipts; no user device, profile, capture, launcher or hardware servic
 is accessed. Source/build check counts and the exact candidate are returned for
 independent review. Physical/audio/performance acceptance remains unrun.
 
-Final source-matched local checks pass 86 validator controls, 76 core, 230 backend,
+Initial `7f913a95` source-matched local checks pass 86 validator controls, 76 core, 230 backend,
 496 feature GTK and 442 default GTK tests, native build/formatting, Cargo/ELF
 checks, three headless fixtures and three controlled smokes. The 32-test restore
 filter includes the 13 new cases. All ten legacy library tests and compilation
@@ -88,3 +88,31 @@ zero Node-tool attempts are recorded. Whitespace/privacy/scope and unchanged
 core/backend/manifests/lockfile/version checks pass. No final failed check or
 dependency/environment blocker remains. Hosted and independent owner review are
 separate pending gates; no PR2 adoption is claimed by this candidate publication.
+
+## Callback-observed recording skip correction
+
+Independent review blocks `7f913a95`: a retirement reader callback can publish
+recording ownership, causing retirement to return without latching the epoch
+skip. Without another restore tick while active, joining that take then permits
+a deferred restore. The service-callback case reproduces locally; the same gap
+also reproduces through a receipt callback. Both incorrectly admit one restore
+after join before correction, while the extra-active-tick control passes. This
+is an injected callback-contract failure; native nonreentrant reader reachability
+and a deployed recording failure are not demonstrated.
+
+The narrow correction rechecks current recording ownership immediately after
+retirement callbacks and records the same existing epoch skip. A fresh reader's
+recording flag also records that skip before returning, without requiring an
+extra cached owner tick. Namespace checks use current owner/epoch presentation,
+and skip updates cannot move the epoch backward. No active reload policy,
+retirement eligibility, backend API, layout support or recording action changes.
+Original work/receipt and joined-child diagnostics remain retained.
+
+Four new synthetic checks cover the service and receipt callback regressions,
+the unchanged extra-active-tick control and a recording flag seen only in fresh
+readback. Corrected restore filters pass 36 tests in each feature mode; all 145
+bus-owner tests and 11 preference tests, native build, formatting, whitespace
+and source/privacy checks pass. Full initial suites are not rerun for this
+correction. Core/backend/legacy, dependencies, lockfile and versions are unchanged.
+No final failed check or environment blocker remains. Exact corrected hosted and
+independent re-review are pending; no PR2 integration is claimed.

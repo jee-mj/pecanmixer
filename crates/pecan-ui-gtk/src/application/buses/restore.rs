@@ -61,19 +61,13 @@ impl BusOwner {
         }
         // Seeing activity in this epoch must not defer a settings effect until
         // the take ends. Preserve the existing skip policy before retirement.
-        let occupied = {
-            let d = self.data.borrow();
-            d.unknown_owned
-                || !d.orphans.is_empty()
-                || d.takes.iter().any(|t| !t.status.complete)
-                || snapshot.recording
-        };
-        if occupied {
-            self.restore.borrow_mut().attempted = Some(revision);
-            self.restore_message("Automatic Rec restore skipped for this epoch: recording ownership is active or unresolved.");
+        if self.recording_blocks_restore() {
             return;
         }
-        if self.retire_completed_for_reconnect(&origin) {
+        let retired = self.retire_completed_for_reconnect(&origin);
+        // Retirement calls injected receipt/service readers. Preserve recording
+        // observed by those callbacks now, not on an optional later clock tick.
+        if self.recording_blocks_restore() || retired {
             return; // Obtain a newly published origin/latest preferences next tick.
         }
         if self.data.borrow().operation.as_ref().is_some_and(|w| {
@@ -223,6 +217,46 @@ impl BusOwner {
         }
         self.publish();
     }
+    fn skip_recording_restore_epoch(&self, revision: ConfigRevision) {
+        let mut state = self.restore.borrow_mut();
+        if state
+            .attempted
+            .is_none_or(|old| old.owner == revision.owner && old.epoch <= revision.epoch)
+        {
+            state.attempted = Some(revision);
+        }
+        drop(state);
+        self.restore_message("Automatic Rec restore skipped for this epoch: recording ownership is active or unresolved.");
+    }
+    fn recording_blocks_restore(&self) -> bool {
+        let (occupied, scope) = {
+            let d = self.data.borrow();
+            let occupied = d.unknown_owned
+                || !d.orphans.is_empty()
+                || d.takes.iter().any(|t| !t.status.complete)
+                || d.config.as_ref().is_some_and(|c| c.recording);
+            let scope = d
+                .config
+                .as_ref()
+                .filter(|c| {
+                    d.current.as_ref().is_some_and(|o| {
+                        o.0.connected
+                            && o.0.config.as_ref().is_some_and(|shown| {
+                                shown.revision.owner == c.revision.owner
+                                    && shown.revision.epoch == c.revision.epoch
+                            })
+                    })
+                })
+                .map(|c| c.revision);
+            (occupied, scope)
+        };
+        if occupied {
+            if let Some(revision) = scope {
+                self.skip_recording_restore_epoch(revision);
+            }
+        }
+        occupied
+    }
     fn retire_completed_for_reconnect(&self, origin: &Origin) -> bool {
         if self.session.busy()
             || self.validate_selection(origin).is_err()
@@ -294,6 +328,13 @@ impl BusOwner {
         let Some(fresh) = self.service.as_ref().and_then(|s| s.read()) else {
             return false;
         };
+        if fresh.config.recording
+            && fresh.config.revision.owner == snapshot.revision.owner
+            && fresh.config.revision.epoch == snapshot.revision.epoch
+        {
+            self.skip_recording_restore_epoch(fresh.config.revision);
+            return false;
+        }
         if fresh.config != *snapshot || Some(fresh.revision) != origin.0.membership {
             return false;
         }
