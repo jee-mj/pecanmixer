@@ -251,8 +251,11 @@ impl Session {
         let report = request.native_report();
         let mut state = self.0.state.borrow_mut();
         state.recovery_ready(request, graph, &report)?;
+        state
+            .history
+            .reconcile_buses(&frame, buses.clone())
+            .map_err(|e| format!("Recovery history reconciliation unavailable: {e:?}"))?;
         state.uncertain = None;
-        state.history.buses = buses.clone();
         state.history_context = Rc::new(());
         state.status = Status::Unconfirmed(
             "Local dispatch closed; current state inspected. The original routing outcome remains unconfirmed or partially applied; no rollback is established.".into(),

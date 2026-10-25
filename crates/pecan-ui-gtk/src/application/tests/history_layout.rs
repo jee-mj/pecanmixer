@@ -1,4 +1,5 @@
 //! Retained synthetic publications only; configuration adoption emits no audio.
+mod recovery;
 use super::*;
 use pecan_core::domain::{buses::BusConfig, mixer::Mixer};
 
