@@ -883,6 +883,11 @@ impl BusOwner {
             d.stopped_takes.retain(|id| takes.contains(id));
         }
         self.publish();
+        // Record ownership where it is observed. A nested caller may publish
+        // active and joined states before a restore callback returns.
+        if self.service.as_ref().is_some_and(|s| s.supports_restore()) {
+            self.recording_blocks_restore();
+        }
         if self.finish_migration_publication() {
             self.publish();
         }

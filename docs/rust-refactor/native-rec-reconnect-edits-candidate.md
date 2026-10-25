@@ -116,3 +116,26 @@ and source/privacy checks pass. Full initial suites are not rerun for this
 correction. Core/backend/legacy, dependencies, lockfile and versions are unchanged.
 No final failed check or environment blocker remains. Exact corrected hosted and
 independent re-review are pending; no PR2 integration is claimed.
+
+## Nested observation correction
+
+Independent re-review blocks `8611149a`: a callback can publish active recording,
+then publish its joined state before returning. A post-callback occupancy check
+therefore misses an ownership observation already made by the owner. This nested
+variant reproduces one unintended restore after join on `8611149a`; the simple
+service/receipt cases remain fixed. Native reader reachability is still unproven.
+
+The narrow correction records the existing epoch skip at the normal owner poll's
+recording-observation/publication point, only for a restore-capable endpoint. The
+latch survives nested active-to-joined observations and cannot affect a newer
+epoch. Repeated observations do not replace an already decided restore status.
+There is no generic callback framework, new active-recording policy or layout
+capability. Pending/uncertain operations and their receipts remain retained.
+
+The existing service-callback regression now also exercises the nested join and
+successful recovery in a later epoch; no test functions or infrastructure were
+added. Restore filters still pass 36 checks in each feature mode, plus all 145
+bus-owner tests, 11 preference tests, native build, formatting and whitespace/
+privacy/scope checks. Core/backend/legacy/dependencies/versions are unchanged.
+No final failed check or environment blocker remains. Full initial suites are not
+repeated; exact corrected hosted and independent re-review remain pending.
