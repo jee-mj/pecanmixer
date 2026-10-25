@@ -293,6 +293,7 @@ impl BusOwner {
             Self::remember_migration(&mut d);
             Self::remember_levels(&mut d);
             d.operation = Some(ConfigWork {
+                restore: None,
                 levels: None,
                 request: request.clone(),
                 ticket,

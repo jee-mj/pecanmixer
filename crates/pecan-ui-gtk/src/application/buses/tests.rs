@@ -7,6 +7,7 @@ mod levels_owner;
 mod migration;
 mod rec_preferences;
 mod reconciliation;
+mod restore;
 mod routing_owner;
 use super::*;
 use crate::application::{ApplicationOwner, ApplicationShell, FixtureDriver, ShellOptions};
@@ -43,6 +44,8 @@ impl TakePoll for Take {
     }
 }
 struct Fake {
+    restore_enabled: Cell<bool>,
+    restore_origins: RefCell<Vec<pecan_core::history_identity::HistoryGraph>>,
     levels_enabled: Cell<bool>,
     gain_failures: RefCell<std::collections::VecDeque<Error>>,
     gain_attempts: RefCell<Vec<IdleConfigIntent>>,
@@ -81,6 +84,8 @@ struct Fake {
 impl Fake {
     fn new(epoch: u64) -> Rc<Self> {
         Rc::new(Self {
+            restore_enabled: Cell::new(false),
+            restore_origins: RefCell::default(),
             levels_enabled: Cell::new(false),
             gain_failures: RefCell::default(),
             gain_attempts: RefCell::default(),
@@ -220,6 +225,17 @@ impl Fake {
     }
 }
 impl Service for Fake {
+    fn supports_restore(&self) -> bool {
+        self.restore_enabled.get()
+    }
+    fn configure_from(
+        &self,
+        origin: &pecan_core::history_identity::HistoryGraph,
+        intent: IdleConfigIntent,
+    ) -> Result<Rc<dyn ConfigPoll>, Error> {
+        self.restore_origins.borrow_mut().push(origin.clone());
+        self.configure(intent)
+    }
     fn supports_levels(&self) -> bool {
         self.levels_enabled.get()
     }

@@ -572,6 +572,8 @@ impl ApplicationShell {
             }
         }
         if self.policy.borrow().mutations_allowed() {
+            let preferences = self.preferences.borrow().clone();
+            self.workspace.bus_owner().restore_preferences(&preferences);
             if let Some(worker) = self.settings.borrow_mut().as_mut() {
                 self.preferences.borrow_mut().pump(worker);
             }

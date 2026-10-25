@@ -127,6 +127,16 @@ pub enum Stop {
     Take(TakeKey),
 }
 pub trait Service {
+    fn supports_restore(&self) -> bool {
+        false
+    }
+    fn configure_from(
+        &self,
+        _origin: &pecan_core::history_identity::HistoryGraph,
+        _intent: IdleConfigIntent,
+    ) -> Result<Rc<dyn ConfigPoll>, Error> {
+        Err(Error::Owner("Saved Rec restoration is unavailable.".into()))
+    }
     fn supports_levels(&self) -> bool {
         false
     }
@@ -287,6 +297,19 @@ impl MigrationPoll for NativeMigration {
 }
 pub(crate) struct Native(pub Rc<pecan_pipewire::graaf::Graaf>);
 impl Service for Native {
+    fn supports_restore(&self) -> bool {
+        true
+    }
+    fn configure_from(
+        &self,
+        origin: &pecan_core::history_identity::HistoryGraph,
+        intent: IdleConfigIntent,
+    ) -> Result<Rc<dyn ConfigPoll>, Error> {
+        self.0
+            .configure_idle_from(origin, intent)
+            .map(|r| Rc::new(NativeConfig(r)) as Rc<dyn ConfigPoll>)
+            .map_err(Error::Configuration)
+    }
     fn supports_levels(&self) -> bool {
         true
     }

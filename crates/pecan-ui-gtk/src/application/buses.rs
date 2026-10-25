@@ -4,6 +4,7 @@ mod arming;
 pub(super) mod folder;
 mod levels;
 mod migration;
+mod restore;
 mod routing;
 mod service;
 mod view;
@@ -50,6 +51,7 @@ impl PartialEq for Request {
 }
 impl Eq for Request {}
 struct ConfigWork {
+    restore: Option<restore::Work>,
     levels: Option<levels::Work>,
     migration: Option<migration::Work>,
     arming: Option<arming::Work>,
@@ -111,6 +113,8 @@ struct Data {
 }
 type PreferenceSink = dyn Fn(super::preferences::RecEdit) -> Result<(), String>;
 pub struct BusOwner {
+    restore: RefCell<restore::State>,
+    restore_status: gtk::Label,
     preference_sink: RefCell<Option<Rc<PreferenceSink>>>,
     preference_handoff: Cell<bool>,
     pub(super) session: Session,
@@ -152,6 +156,13 @@ impl BusOwner {
             .build();
         let tools = gtk::Box::new(gtk::Orientation::Vertical, 4);
         root.append(&status);
+        let restore_status = gtk::Label::builder()
+            .wrap(true)
+            .xalign(0.)
+            .accessible_role(gtk::AccessibleRole::Status)
+            .build();
+        restore_status.set_visible(false);
+        root.append(&restore_status);
         let transport_scroll = gtk::ScrolledWindow::builder()
             .child(&tools)
             .hscrollbar_policy(gtk::PolicyType::Never)
@@ -167,6 +178,8 @@ impl BusOwner {
         let owner = Rc::new_cyclic(|weak| Self {
             session,
             service,
+            restore: RefCell::default(),
+            restore_status,
             data: RefCell::new(Data {
                 config: None,
                 membership: None,
@@ -480,6 +493,7 @@ impl BusOwner {
         Self::remember_migration(&mut self.data.borrow_mut());
         Self::remember_levels(&mut self.data.borrow_mut());
         self.data.borrow_mut().operation = Some(ConfigWork {
+            restore: None,
             levels: None,
             arming: None,
             migration: None,
@@ -704,6 +718,7 @@ impl BusOwner {
                 w.terminal
                     && w.migration.as_ref().is_none_or(|m| m.released)
                     && w.levels.as_ref().is_none_or(|l| l.released)
+                    && w.restore.as_ref().is_none_or(|r| r.released)
             }) {
                 // A request to inspect is not evidence that inspection worked.
                 // Keep the receipt and its barrier across busy/stale reads.
@@ -788,6 +803,7 @@ impl BusOwner {
         self.poll_arming();
         self.poll_migration(inspected.as_ref());
         self.poll_levels(inspected.as_ref());
+        self.poll_restore(inspected.as_ref());
         let receipts: Vec<_> = {
             let mut d = self.data.borrow_mut();
             let mut receipts: Vec<_> = d
@@ -841,7 +857,7 @@ impl BusOwner {
             .borrow()
             .operation
             .as_ref()
-            .filter(|o| o.levels.is_none())
+            .filter(|o| o.levels.is_none() && o.restore.is_none())
             .and_then(|o| o.receipt.clone().map(|r| (o.request.clone(), r)));
         if let Some((request, report)) =
             pending.and_then(|(request, r)| r.report().map(|report| (request, report)))
@@ -871,6 +887,9 @@ impl BusOwner {
             self.publish();
         }
         if self.finish_level_publication() {
+            self.publish();
+        }
+        if self.finish_restore_publication() {
             self.publish();
         }
         self.recover_level_input();

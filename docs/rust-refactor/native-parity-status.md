@@ -169,3 +169,11 @@ The [reviewed full-config origin API](./native-full-config-origin.md) retains
 original Rec node/input generations alongside configuration CAS, with no weaker
 fallback. It is integrated independently of automatic Rec restore. Source-only
 authority does not establish graph convergence or resolve unsupported layouts.
+
+A separate, unreviewed [bounded Rec restore owner candidate](./native-rec-restore-candidate.md)
+uses that strong API for valid initial or memory preferences and matching local
+channel capacity. It retains original input identity, actual receipt and shared
+lease through post-report readback and accepted presentation. This does not add
+general layout migration, active-recording reload/structural policy, clock effects,
+profile import or automatic recording. The reviewed public checkpoint at
+`f9fc8e7c` remains backend authority only until this owner candidate clears review.

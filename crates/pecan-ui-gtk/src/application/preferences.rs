@@ -21,6 +21,7 @@ pub struct PreferencesState {
     document: SettingsV1,
     loaded: Option<LoadedSettings>,
     ready: bool,
+    restore_allowed: bool,
     persistent: bool,
     edit: u64,
     view: u64,
@@ -39,6 +40,7 @@ impl PreferencesState {
             document: SettingsV1::default(),
             loaded: None,
             ready: !persistent,
+            restore_allowed: !persistent,
             persistent,
             edit: 0,
             view: 0,
@@ -51,6 +53,20 @@ impl PreferencesState {
             draining: false,
             closed: false,
         }
+    }
+    /// Automatic idle restore never consumes corrupt/future fallback defaults,
+    /// pending reloads or a protected/paused disk baseline.
+    pub(super) fn restorable_buses(&self) -> Option<pecan_core::domain::buses::BusConfig> {
+        (self.restore_allowed
+            && self.editing_allowed()
+            && self.blocked.is_none()
+            && !self.paused
+            && !self.recovery_required()
+            && !self
+                .pending
+                .values()
+                .any(|r| matches!(r, Request::Reload | Request::Recover(_))))
+        .then(|| self.document.preferences().buses.clone())
     }
     pub fn document(&self) -> &SettingsV1 {
         &self.document
@@ -256,6 +272,17 @@ impl PreferencesState {
         let pending = self.pending.remove(&request);
         if request < self.baseline_request {
             return;
+        }
+        if let SettingsEvent::Loaded { request, snapshot } = event {
+            self.restore_allowed = *request == 0
+                && !self.ready
+                && matches!(
+                    snapshot.status(),
+                    NativeLoadStatus::Loaded | NativeLoadStatus::Missing
+                );
+        }
+        if matches!(event, SettingsEvent::Recovered { .. }) {
+            self.restore_allowed = false;
         }
         match event {
             SettingsEvent::Loaded { snapshot, .. }

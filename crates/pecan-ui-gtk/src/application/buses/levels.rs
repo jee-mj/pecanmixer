@@ -8,14 +8,14 @@ use pecan_core::{
 };
 
 #[derive(Clone)]
-struct Binding {
+pub(super) struct Binding {
     registry: RegistryBinding,
     node: u32,
     serial: Option<u64>,
     inputs: Vec<u32>,
 }
 impl Binding {
-    fn capture(frame: &HistoryGraph, config: &ConfigSnapshot) -> Result<Self, String> {
+    pub(super) fn capture(frame: &HistoryGraph, config: &ConfigSnapshot) -> Result<Self, String> {
         let local = config
             .local
             .as_ref()
@@ -58,7 +58,7 @@ impl Binding {
             inputs,
         })
     }
-    fn matches(&self, frame: &HistoryGraph) -> bool {
+    pub(super) fn matches(&self, frame: &HistoryGraph) -> bool {
         if !self.registry.matches(frame) {
             return false;
         }
@@ -301,6 +301,7 @@ impl BusOwner {
             Self::remember_migration(&mut d);
             Self::remember_levels(&mut d);
             d.operation = Some(ConfigWork {
+                restore: None,
                 request: request.clone(),
                 ticket,
                 expected: config.revision,
