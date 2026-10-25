@@ -24,6 +24,7 @@ impl BusOwner {
         &self,
         origin: &Origin,
         buses: BusConfig,
+        preference: super::super::preferences::RecEdit,
     ) -> Result<Request, Error> {
         let backend = self
             .service
@@ -100,6 +101,14 @@ impl BusOwner {
             .map(|b| b.key)
             .collect();
         let (ticket, lease) = self.session.reserve_external().map_err(Error::Owner)?;
+        if let Err(error) = self.record_preference(preference) {
+            self.session.release_external(&lease);
+            return Err(error);
+        }
+        if let Err(error) = self.validate(origin) {
+            self.session.release_external(&lease);
+            return Err(error);
+        }
         let request = Request(Rc::new(()));
         {
             let mut d = self.data.borrow_mut();

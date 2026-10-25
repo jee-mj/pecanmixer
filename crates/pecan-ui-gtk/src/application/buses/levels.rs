@@ -278,6 +278,22 @@ impl BusOwner {
             return Err("Level authority changed during inspection.".into());
         }
         let (ticket, lease) = self.session.reserve_external()?;
+        if let Some(change) = &change {
+            if let Err(error) = self.record_level_preference(&capture.bus.key, change) {
+                self.session.release_external(&lease);
+                return Err(error);
+            }
+        }
+        if self.session.admission_closed()
+            || !self
+                .session
+                .witnessed_graph()
+                .as_ref()
+                .is_some_and(|f| binding.matches(f))
+        {
+            self.session.release_external(&lease);
+            return Err("Original Rec authority changed during preference handoff.".into());
+        }
         let request = Request(Rc::new(()));
         {
             let mut d = self.data.borrow_mut();
@@ -323,7 +339,45 @@ impl BusOwner {
         self.publish();
         Ok(request)
     }
+    fn record_level_preference(&self, key: &str, change: &Change) -> Result<(), String> {
+        use super::super::preferences::RecEdit;
+        self.record_preference(match change {
+            Change::Db(db) => RecEdit::Db {
+                bus: key.into(),
+                db: *db,
+            },
+            Change::Mute(mute) => RecEdit::Mute {
+                bus: key.into(),
+                mute: *mute,
+            },
+        })
+        .map_err(|e| e.to_string())
+    }
     fn change_level(&self, request: &Request, change: Change, ended: bool) -> Result<(), String> {
+        let key = {
+            let d = self.data.borrow();
+            let w = d
+                .operation
+                .as_ref()
+                .filter(|w| &w.request == request && !w.terminal)
+                .ok_or("The original level interaction is unavailable.")?;
+            let l = w
+                .levels
+                .as_ref()
+                .filter(|l| !l.ended && l.failed.is_none())
+                .ok_or("Level input already ended; use fresh input.")?;
+            if self.session.admission_closed()
+                || !self
+                    .session
+                    .witnessed_graph()
+                    .as_ref()
+                    .is_some_and(|f| l.binding.matches(f))
+            {
+                return Err("Original Rec authority is no longer available for input.".into());
+            }
+            l.key.clone()
+        };
+        self.record_level_preference(&key, &change)?;
         let send = {
             let mut d = self.data.borrow_mut();
             let w = d

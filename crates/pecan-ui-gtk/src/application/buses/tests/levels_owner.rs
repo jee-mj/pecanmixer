@@ -2,7 +2,7 @@
 use super::*;
 use crate::recording_buses::levels::{Capture, Change, Event, Reply};
 
-fn setup_levels() -> (Rc<BusOwner>, Rc<Fake>, FixtureDriver) {
+pub(super) fn setup_levels() -> (Rc<BusOwner>, Rc<Fake>, FixtureDriver) {
     let (owner, fake, driver) = setup();
     let mut native = (*owner.session.graph().unwrap().value).clone();
     native.knopen.iter_mut().find(|n| n.id == 30).unwrap().naam =
@@ -14,7 +14,7 @@ fn setup_levels() -> (Rc<BusOwner>, Rc<Fake>, FixtureDriver) {
     assert_eq!(owner.level_support(), ui::Support::Available);
     (owner, fake, driver)
 }
-fn capture(owner: &BusOwner, key: &str) -> Capture<Origin> {
+pub(super) fn capture(owner: &BusOwner, key: &str) -> Capture<Origin> {
     let origin = owner.origin().unwrap();
     let configuration = origin
         .0
@@ -72,7 +72,12 @@ fn end(owner: &BusOwner, request: &Request, db: f64) {
         Reply::Accepted
     ));
 }
-fn complete(fake: &Fake, index: usize, outcome: LocalConfigOutcome, publish: bool) -> ConfigReport {
+pub(super) fn complete(
+    fake: &Fake,
+    index: usize,
+    outcome: LocalConfigOutcome,
+    publish: bool,
+) -> ConfigReport {
     let (_, intent, receipt) = fake.gains.borrow()[index].clone();
     let mut snapshot = fake.config.borrow().clone();
     match &outcome {

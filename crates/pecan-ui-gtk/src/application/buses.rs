@@ -109,7 +109,10 @@ struct Data {
     level_reports: VecDeque<ConfigReport>,
     level_recovery: bool,
 }
+type PreferenceSink = dyn Fn(super::preferences::RecEdit) -> Result<(), String>;
 pub struct BusOwner {
+    preference_sink: RefCell<Option<Rc<PreferenceSink>>>,
+    preference_handoff: Cell<bool>,
     pub(super) session: Session,
     service: Option<Rc<dyn Service>>,
     data: RefCell<Data>,
@@ -189,6 +192,8 @@ impl BusOwner {
                 level_recovery: false,
             }),
             polling: Cell::new(false),
+            preference_sink: RefCell::default(),
+            preference_handoff: Cell::new(false),
             root,
             view,
             tools,
@@ -230,6 +235,20 @@ impl BusOwner {
         });
         owner.poll();
         owner
+    }
+    pub(crate) fn bind_preference_edits(&self, sink: Rc<PreferenceSink>) {
+        *self.preference_sink.borrow_mut() = Some(sink);
+    }
+    fn record_preference(&self, edit: super::preferences::RecEdit) -> Result<(), Error> {
+        let sink = self.preference_sink.borrow().clone();
+        let Some(sink) = sink else { return Ok(()) };
+        if self.preference_handoff.get() {
+            return Err(Self::error("Wait for the current preference edit."));
+        }
+        self.preference_handoff.set(true);
+        let result = sink(edit).map_err(Error::Owner);
+        self.preference_handoff.set(false);
+        result
     }
     pub fn widget(&self) -> &gtk::Box {
         &self.root
@@ -399,15 +418,19 @@ impl BusOwner {
             ));
         }
         if matches!(action, ui::Action::Arm { .. }) && self.recording_active() {
-            return self.submit_arming(origin, expected);
+            let edit = super::preferences::RecEdit::configuration(&action, buses, &expected)
+                .map_err(Error::Owner)?;
+            return self.submit_arming(origin, expected, edit);
         }
         self.idle()?;
         if !matches!(action, ui::Action::Arm { .. }) && self.has_routes(origin) {
             return Err(Self::error("Routed layout migration remains pending."));
         }
         let mut configuration = current.clone();
+        let edit = super::preferences::RecEdit::configuration(&action, buses, &expected)
+            .map_err(Error::Owner)?;
         configuration.buses = expected;
-        self.submit_config(origin, configuration)
+        self.submit_config(origin, configuration, Some(edit))
     }
     pub fn initialize(&self, origin: &Origin) -> Result<Request, Error> {
         self.validate(origin)?;
@@ -423,12 +446,13 @@ impl BusOwner {
         if snapshot.local.as_ref().is_none_or(|b| b.channels != 2) {
             return Err(Self::error("Default metadata adoption needs an observed local two-channel filter; other layouts remain pending."));
         }
-        self.submit_config(origin, super::default_idle_configuration())
+        self.submit_config(origin, super::default_idle_configuration(), None)
     }
     fn submit_config(
         &self,
         origin: &Origin,
         configuration: IdleBusConfig,
+        preference: Option<super::preferences::RecEdit>,
     ) -> Result<Request, Error> {
         let backend = self
             .service
@@ -441,6 +465,16 @@ impl BusOwner {
             .ok_or_else(|| Self::error("No configuration revision."))?
             .revision;
         let (ticket, lease) = self.session.reserve_external().map_err(Error::Owner)?;
+        if let Some(edit) = preference {
+            if let Err(error) = self.record_preference(edit) {
+                self.session.release_external(&lease);
+                return Err(error);
+            }
+        }
+        if let Err(error) = self.validate(origin) {
+            self.session.release_external(&lease);
+            return Err(error);
+        }
         let request = Request(Rc::new(()));
         Self::remember_arming(&mut self.data.borrow_mut());
         Self::remember_migration(&mut self.data.borrow_mut());
