@@ -332,7 +332,9 @@ fn active_gain_mute_and_muted_db_edits_change_wav_samples_without_restarting() {
         f.commands.recording_snapshot().unwrap().revision,
         membership
     );
-    let after = recording.try_report().unwrap();
+    // Sample-count updates can briefly make the writer report unavailable.
+    // Inspect the first readable status, not a preferred lifecycle state.
+    let after = until(&recording, |_| true);
     assert_eq!(after.progress, RecordingProgress::StartedLocally);
     assert!(Arc::ptr_eq(&before.tracks, &after.tracks));
     assert_eq!(
