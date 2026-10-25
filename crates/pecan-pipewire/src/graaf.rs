@@ -142,13 +142,28 @@ impl Graaf {
         self.opdrachten.enqueue_native(intent)
     }
 
-    /// Local idle configuration only. Admission is not completion or observed
-    /// ports. Poll the returned receipt; no recording command is enabled here.
+    /// Compatibility/bootstrap configuration, bound to configuration CAS at
+    /// admission. Retained native controls/restore must use `configure_idle_from`
+    /// with their original authenticated graph. Admission is not completion.
     pub fn configure_idle(
         &self,
         intent: crate::bus_config::IdleConfigIntent,
     ) -> Result<crate::bus_config::ConfigReceipt, crate::bus_config::ConfigError> {
         self.opdrachten.enqueue_config(intent)
+    }
+
+    /// Full idle configuration bound to the owned Rec node/input generations
+    /// observed by the caller. Retain this witness with the original intent;
+    /// never authenticate a newer graph to rebind a stale request. The witness
+    /// survives unrelated graph revisions/publication-cache eviction.
+    /// Completion is local readback, not observed ports or server convergence.
+    /// Shrink/routed layout edits still require the staged migration protocol.
+    pub fn configure_idle_from(
+        &self,
+        origin: &pecan_core::history_identity::HistoryGraph,
+        intent: crate::bus_config::IdleConfigIntent,
+    ) -> Result<crate::bus_config::ConfigReceipt, crate::bus_config::ConfigError> {
+        self.opdrachten.enqueue_config_from(origin, intent)
     }
 
     /// Level-only local configuration, including during native recording.

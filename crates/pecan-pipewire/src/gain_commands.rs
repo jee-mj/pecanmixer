@@ -14,7 +14,7 @@ impl Commands {
         let (mut work, receipt) = Prepared::new(intent)?;
         let mut state = self.0.try_lock().map_err(|_| ConfigError::Busy)?;
         state.gain_admission(&work)?;
-        work.gain_binding = Some(state.gain_origin_binding(origin)?);
+        work.gain_binding = Some(state.rec_origin_binding(origin)?);
         if state.pending.len() >= NORMAL_CAPACITY
             || state.pending.iter().filter(|q| q.config.is_some()).count() >= MAX_CONFIG_PENDING
         {
@@ -141,7 +141,10 @@ impl Commands {
 }
 
 impl State {
-    fn gain_origin_binding(&self, origin: &HistoryGraph) -> Result<GainBinding, ConfigError> {
+    pub(super) fn rec_origin_binding(
+        &self,
+        origin: &HistoryGraph,
+    ) -> Result<RecBinding, ConfigError> {
         let current = self.gain_binding()?;
         let graph = &origin.graph().value;
         // Registry generations alone do not describe the channel assignment:
@@ -260,7 +263,7 @@ impl State {
         Ok(())
     }
 
-    fn gain_binding(&self) -> Result<GainBinding, ConfigError> {
+    fn gain_binding(&self) -> Result<RecBinding, ConfigError> {
         let local = self
             .config
             .snapshot
@@ -312,7 +315,7 @@ impl State {
             }
             inputs.push((p.id, generation));
         }
-        Ok(GainBinding {
+        Ok(RecBinding {
             epoch: self.graph.stamp.epoch,
             node,
             generation,
