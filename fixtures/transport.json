@@ -1,0 +1,13 @@
+{
+  "bezig": true,
+  "map": "Recordings/fixture-take",
+  "seconden": 1.25,
+  "bussen": {
+    "Stereo": 1.25
+  },
+  "klok": {
+    "bpm": 120.0,
+    "lock": true
+  },
+  "fout": null
+}

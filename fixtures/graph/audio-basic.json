@@ -1,0 +1,164 @@
+{
+  "verbonden": true,
+  "rate": 48000,
+  "quantum": 256,
+  "standaard_sink": "alsa_output.fixture",
+  "standaard_bron": null,
+  "wireplumber": [
+    33
+  ],
+  "knopen": [
+    {
+      "id": 20,
+      "serial": 20,
+      "naam": "spotify",
+      "beschrijving": null,
+      "bijnaam": null,
+      "klasse": "Stream/Output/Audio",
+      "apparaat": null,
+      "app": "Spotify",
+      "media": "Fixture track",
+      "stand": "running",
+      "doel": "10",
+      "volume": [
+        0.5,
+        0.5
+      ],
+      "mute": false
+    },
+    {
+      "id": 30,
+      "serial": 30,
+      "naam": "pecanmixer.rec",
+      "beschrijving": "Rec bus",
+      "bijnaam": null,
+      "klasse": "Stream/Input/Audio",
+      "apparaat": null,
+      "app": "Pecan Mixer",
+      "media": null,
+      "stand": "running",
+      "doel": null,
+      "volume": [
+        1.0,
+        1.0
+      ],
+      "mute": false
+    },
+    {
+      "id": 10,
+      "serial": 10,
+      "naam": "alsa_output.fixture",
+      "beschrijving": "Fixture speakers",
+      "bijnaam": "Speakers",
+      "klasse": "Audio/Sink",
+      "apparaat": 47,
+      "app": null,
+      "media": null,
+      "stand": "running",
+      "doel": null,
+      "volume": [
+        1.0,
+        1.0
+      ],
+      "mute": false
+    }
+  ],
+  "poorten": [
+    {
+      "id": 202,
+      "knoop": 20,
+      "volgnummer": 1,
+      "naam": "output_FR",
+      "alias": null,
+      "ingang": false,
+      "soort": "audio",
+      "kanaal": "FR",
+      "monitor": false,
+      "fysiek": false,
+      "groep": null
+    },
+    {
+      "id": 101,
+      "knoop": 10,
+      "volgnummer": 0,
+      "naam": "playback_FL",
+      "alias": null,
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "FL",
+      "monitor": false,
+      "fysiek": true,
+      "groep": null
+    },
+    {
+      "id": 301,
+      "knoop": 30,
+      "volgnummer": 0,
+      "naam": "rec_1",
+      "alias": null,
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "AUX0",
+      "monitor": false,
+      "fysiek": false,
+      "groep": null
+    },
+    {
+      "id": 201,
+      "knoop": 20,
+      "volgnummer": 0,
+      "naam": "output_FL",
+      "alias": null,
+      "ingang": false,
+      "soort": "audio",
+      "kanaal": "FL",
+      "monitor": false,
+      "fysiek": false,
+      "groep": null
+    },
+    {
+      "id": 302,
+      "knoop": 30,
+      "volgnummer": 1,
+      "naam": "rec_2",
+      "alias": null,
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "AUX1",
+      "monitor": false,
+      "fysiek": false,
+      "groep": null
+    },
+    {
+      "id": 102,
+      "knoop": 10,
+      "volgnummer": 1,
+      "naam": "playback_FR",
+      "alias": null,
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "FR",
+      "monitor": false,
+      "fysiek": true,
+      "groep": null
+    }
+  ],
+  "kabels": [
+    {
+      "id": 500,
+      "uit_knoop": 20,
+      "uit_poort": 201,
+      "in_knoop": 10,
+      "in_poort": 101,
+      "client": 33
+    },
+    {
+      "id": 501,
+      "uit_knoop": 20,
+      "uit_poort": 202,
+      "in_knoop": 10,
+      "in_poort": 102,
+      "client": 33
+    }
+  ]
+}

@@ -1,0 +1,314 @@
+# Functional native parity matrix
+
+This is a source-level implementation matrix, not a hardware/desktop acceptance
+report. The full functional JS port remains the goal. The legacy React/Tauri
+application is retained. Reviewed entrypoint adoption starts at `20e9f90c`. The
+[bus/backend integration record](./native-bus-backend-integration.md) identifies the
+subsequent owner adapter, corrected dynamic-arming and idle-migration libraries,
+their independent gates and exact cloud checks. "Candidate" means independently
+reviewable source exists, not completed live acceptance. The corrected bus owner
+has independently cleared its original probes; this reviewed batch preserves the
+existing CI driver. The [routing owner follow-up](./native-routing-owner-candidate.md)
+now mounts routing through the same Session and BusOwner, with independently
+cleared receipt retention and reset-witness correction. The reviewed meter
+follow-up now reprojects adopted layouts through the same accepted graph/batch.
+Reviewed arming, idle migration, Folder and Rec-level owner adapters are now mounted.
+Rec gains/mute use original registry authority and shared one-flight admission
+while preserving unrelated channels and stored muted dB; these local edits do
+not enter graph Undo. Normal authenticated bus-definition adoption now
+immediately applies the existing history guards against the retained current
+witness. The separately reviewed explicit-recovery follow-up below now applies
+the same guards before releasing recovery ownership; queued-input parity remains
+separate.
+
+The independently reviewed [same-frame history follow-up](./native-history-layout-candidate.md)
+reconciles the existing guards at normal authenticated bus-definition adoption,
+using the retained current witness without a fabricated revision or command.
+It preserves unaffected steps and existing shared-work gates; exact reviewed
+source `bbda7649` is adopted unchanged. Explicit recovery and queued-input parity
+are outside that follow-up.
+
+The independently reviewed [explicit-recovery follow-up](./native-explicit-recovery-history-candidate.md)
+uses the same existing reconciler after authenticated current inspection and
+before clearing uncertainty. Exact reviewed `1875221e` removes affected Rec
+Undo/Redo entries immediately without waiting for another graph publication,
+preserving unrelated steps, actual frozen outcomes and all pending-work gates.
+No rollback, failed-prefix Undo, command, ticket or revision is invented.
+
+The independently reviewed [sequential reset follow-up](./native-large-route-reset-candidate.md)
+executes Back to auto beyond 32 commands and its captured inverse under one
+retained history operation. Native children remain at most 32 commands, with
+original authority checks between children, real retained reports and one final
+acknowledgment. Partial effects stop future batches and require explicit
+recovery. After reconnect and actual closure, metadata initialization becomes
+eligible on the next normal clock tick after graph acceptance, not immediately;
+the failed parent remains retained and routing still needs explicit recovery.
+Three of four unchanged independent probes passed; the immediate-readiness
+expectation passed only after adding that normal tick. Extra closure/epoch/clock
+probes and the exact reviewed candidate's hosted CI passed.
+
+| Original behavior and source | Rust/native state | Remaining gate |
+|---|---|---|
+| Graph subscription, disconnect/reconnect, rate/quantum (`src/api.ts`, `src/App.tsx`) | Reviewed exact-frame owner/coordinator/finalization shell source | Live audio/desktop acceptance |
+| Apps/hardware/destination grouping, numbered channel pairs, stable ordering (`src/mixer.ts`, `src/indeling.ts`) | Initial pure audio projection and reviewed fixtures | Complete locale/corner-case parity and live acceptance |
+| Per-strip gain, preserve unselected channels (`stripDb`, `metDb`, `Kaart` in `src/Mixer.tsx`) | Reviewed one-flight controller, latest desired target and observed final full-vector history | Audio/input acceptance |
+| Whole-node mute (`Kaart`, `muteStap`) | Reviewed immutable mute action/registry identity and canceled held-activation source | Audio/input acceptance |
+| Partial-pair mute and restore prior gain (`voorMute`, `Kaart`) | Reviewed policy plus serialized receipt/graph memory commit and complete-vector undo | Audio/input acceptance |
+| Drag/fine drag, wheel grouping, rounding, double-click reset (`Fader`) | Reviewed policy and owner coordinator; ordinary refresh preserves desired keyboard position; unconfirmed held input requires release | Physical input acceptance |
+| Independent output destination and Rec-bus selections (`bewerkt`, `bewerkteBus`, `kiesBewerkt` in `src/App.tsx`) | Bus owner and routing page share independent choices without audio commands; Session/meters use the same adopted definitions and normal/explicit recovery reconcile existing history guards | Reconnect/layout acceptance |
+| Normal/manual/custom route states and green/R toggles (`BronStrip`, `schakel`, `schakelRoute`) | Mounted routing shares selections/configuration, history and actual reports; explicit recovery checks original-receipt closure, current authenticated inspection and released history; custom routes open the patchbay | Busy/unknown inspection remains gated; server convergence and audio/input acceptance are unproven |
+| Back to auto / manual route count (`telHandwerk`, `terugNaarAutoStap`) | Mounted count/confirmation and bounded sequential reset/inverse use one captured history step, at most 32 native commands per child, original-generation witnesses, retained real reports, combined observation and explicit partial recovery | 16,384 planned-action / 512-child / 30-second bounds; clock-driven reconnect initialization; audio/input and policy-manager acceptance |
+| Cable create/remove/move, selection/delete/cancel (`src/Patchbay.tsx`, `src/handelingen.ts`) | Reviewed keyboard/pointer libraries attached to reviewed coordinator source | Physical-input acceptance |
+| Patch module positioning and reconnect behavior (`Plekken`, `ModuleKaart`) | Reviewed session movement/rearrange and reconnect aliases on retained view | Session-layout and physical-input acceptance |
+| Undo/redo queue and keyboard shortcuts (`src/geschiedenis.ts`, `src/handelingen.ts`, `src/App.tsx`) | Reviewed generation/selector guards, shared receipts, immutable button activation, observed gesture history and same-frame normal/explicit-recovery guard reconciliation; standard window Ctrl/Meta+Z, Shift+Z and Y bindings preserve native editor history and allow later autorepeat activations | Busy/stale shortcut activations are dropped; JS queued input and physical/audio acceptance remain |
+| Add/remove/link buses, Rec gain/mute/arming (`src/bussen.ts`, `Mixer`) | Bus owner mounts typed idle config/readback and correlated controls; Session/routing/meters use adopted definitions; corrected dynamic arming is wired through shared owner admission/retained receipts; idle routed Add/split/join/remove use reviewed retained migration receipts, original source proofs and authenticated final-input witnesses; reviewed Rec gain/mute owner retains original witness, one-flight/coalesced targets and final flush for idle/known native recording, without graph Undo | Saved-layout shrink/topology replay, explicit partial append repair and observed-port/desktop acceptance; active structural edits remain an explicit product-decision gate |
+| Record/stop, per-bus start/stop, elapsed time, folder action (`src/Transport.tsx`, `src/api.ts`) | Bus owner adds explicit-root all-armed/per-bus start, captured stable stop IDs, retained receipts and quit diagnostics; Folder is mounted with latest-start authority and off-UI preparation/launch/reaping; reviewed elapsed producer/adapter preserve measurement age and use the existing clock/oldest-take formatter | Live elapsed/recording/desktop acceptance and sample alignment remain unproven; all-armed membership is preflight only, not atomic CAS |
+| MIDI clock/start-stop, MIDI tabs/route/activity (`src/MidiMixer.tsx`, `src/midi.ts`, `src/MidiMeter.tsx`) | Legacy MIDI feature flag remains disabled | Preserve disabled status; separately define/verify any enabled MIDI parity scope |
+| Meter ballistics/peak hold, per-channel rendering (`src/meters.ts`, `src/Meter.tsx`) | Entrypoint uses Session-adopted definitions for same-graph split/add/join/remove reprojection; retained wrappers, registry bindings, graph-before-peaks and visibility gating remain | Capture freshness/availability protocol and live/animation acceptance remain |
+| Hide/show strips/rows and reconnect names (`src/App.tsx`, `Mixer`) | Reviewed display panel/filter/save bridge; full graph/origin/history retained | Transient IDs must not become durable identity; reconnect/desktop acceptance |
+| Row height and destination split preferences (`useRijGewichten`, `Greep`, `Deling`) | Reviewed adjacent-pair/split resize/reset input and request-aware save triggers | Physical input acceptance |
+| Saved buses, hidden keys, clock preference and layout (`leesBussen`, `leesKlok`, `leesVerborgen`) | Versioned contract/storage plus display bridge and accepted Rec layout/dB/mute/arming writeback through the existing coalesced worker/final drain; latest intent survives backend failure and older saves, while saved MIDI/clock/display values are preserved; reviewed once-per-epoch idle startup/reconnect restore includes unknown metadata, same-capacity routed initialization/regrouping and nondecreasing growth, retaining original authority/pairs/suffix evidence through fresh readback and accepted presentation | Shrink/topology replay, automatic failed-prefix repair, pending/uncertain prior-work recovery, explicit reload/recovery policy, import and clock effects remain gated; no user profile access performed |
+| Tray open/close/quit, autostart/single instance (`src-tauri/src/tray.rs`, `autostart.rs`, `lib.rs`) | Reviewed shell and explicit-context desktop worker/tray/CLI controls; generated login arguments retain the same authorized root, executable assertion and settings/recording paths; one retained worker/drain and result-bound controls; ordinary launch only inspects and explicit changes protect legacy entries | Existing rootless entries need explicit update; complete session/process arbitration, native packaging identity and actual desktop/login acceptance remain |
+| Graceful recorder shutdown/error/timeout handling | Reviewed backend/legacy completion and native hold/tagged-handle/off-UI settings drain | Live recording/quit acceptance; no fsync/crash-durability claim |
+| Accessible controls, keyboard navigation, responsive layout (`src/*.tsx`, `src/styles.css`) | Synthetic native names/focus/layout checks; control candidate | End-to-end keyboard/AT-SPI/Orca, physical Wayland/X11, scale/theme/distro acceptance |
+| JS/Node/Tauri/WebKit removal and distribution | Deferred deliberately | All functional/acceptance gates, measured performance, packaging/license closure before cutover |
+
+Candidate tests use hand-authored synthetic data. No actual device identifiers,
+topology, audio captures, private runtime logs or user profile data belong in
+this public matrix or its fixtures. Real audio correctness, live restart behavior,
+real-time performance, memory/CPU measurements and physical desktop acceptance
+remain distinct, unperformed gates.
+
+## Remaining work by user-visible feature
+
+This groups source-level functional gaps separately from physical acceptance.
+Pending product policies remain unchanged.
+
+| Feature | Remaining behavior | Already implemented |
+|---|---|---|
+| Rapid Undo/Redo | Legacy `geschiedenis.ts` queues operations with 250 ms spacing. Native busy/stale activations currently drop; equivalent queued intent behavior is not ported. | Guarded history, standard shortcuts, observed gesture steps and normal/explicit-recovery reconciliation. |
+| Large routing changes | Reset/inverse execution is now bounded at 16,384 planned actions, 512 real children and 30 seconds. Partial effects need explicit recovery; other oversized actions retain their single-intent limit. Live audio/input and policy-manager acceptance remain unperformed. | Back to auto beyond 32 commands, one inverse/history acknowledgment, original witness validation between children and retained real outcomes; normal/Rec/custom routing and patchbay editing. |
+| Saved Rec configuration and edit recovery | A saved layout smaller than current capacity (including a one-channel saved layout at initial two-channel startup) is not automatically restored. Partial bus edits still require an explicit repair workflow; external reload/apply policy remains gated. Legacy does not persist a graph topology, so arbitrary topology replay is not added as a parity requirement. | Once-per-epoch idle initialization/regrouping/growth preserving existing pairs, gain/mute/arming writeback and retained actual receipts. |
+| Changing layout during recording | Add/remove/coupling while recording remains disabled pending an explicit product decision about segmentation versus disabling those edits. | Recording/start/stop, active gains/mute, dynamic arming, elapsed display, Folder and finalization. |
+| Everyday desktop launch and upgrade | Normal launch currently uses memory preferences unless a settings path is supplied; recording needs an explicit root, and login controls need explicit native-artifact/config-root context. Finish intended default locations, existing-preference migration and process/context behavior as part of native packaging/usage, without implicit profile takeover. | One owner/window, explicit-path settings, reviewed tray/login controls and preserved login arguments. |
+| Mixer ordering | Rust's locale-independent label comparison is not browser `localeCompare`. Complete supported locale/grouping corner-case parity still needs evidence or an intentional documented choice. | Generic grouping, numbered pairs, channel projections and legacy-oracle fixtures. |
+
+Distribution/cutover is also unfinished: native build/test runs without Node,
+but legacy JS/TS/Tauri, Node-dependent workflows and their assets are retained
+until replacement parity and acceptance. Issue #1 still requires full build/
+development dependency removal, packaging/usage and license verification before
+cutover. No version bump, merge or release is part of this checkpoint.
+
+Acceptance is a separate gate: real audio/device/reconnect/recording correctness,
+physical desktop/tray/login/Wayland/X11/AT-SPI behavior and measured performance
+remain unperformed. Meter capture freshness/availability and sample timing are
+not established by synthetic widgets. Disabled MIDI/clock behavior remains
+disabled as in the supported legacy baseline, not an automatic new feature.
+A directory picker and durable patch positions are not original parity requirements.
+
+The [display settings candidate](./native-display-settings.md) preserves graph/origin state and applies no audio settings. Its original base focus defect was separately corrected; the combined source reconciliation is cleared while production ownership, history and live-control gates remain.
+
+The [combined native UI source batch](./native-ui-source-batch.md) records constructor reconciliation, the cleared source publication gate and the backend capture-identity correction now integrated in the identity follow-up.
+
+The [identity follow-up](./native-identity-batch.md) closes retained history selector/generation and backend capture-retention source gates. Later owner/entrypoint wiring adopts these guards; audio/desktop acceptance remains incomplete.
+
+The [finalization-aware shell](./native-finalization-shell.md) adds one retained owner/window/clock, shared admission shutdown and real completion/settings-drain wiring. Its reviewed source is installed by native startup; fixture mode retains a separate synthetic owner.
+
+The [held history activation correction](./native-held-history-activation.md) prevents a held/retired Undo or Redo callback from adopting a newly exposed entry. Independent owner re-review cleared its native-input and same-graph before/after regressions.
+
+The [earlier reviewed source integration batch](./reviewed-native-source-batch.md) supersedes pending-review markers for its listed slices. Later reviewed startup adopts those controllers; the current bus adapter below has separately cleared its Refresh correction gate.
+
+The [continuous gain/partial mute candidate](./native-gesture-coordinator.md) composes the pure policies with owner identity, one-flight samples, observed memory and one grouped history step. Its original three input findings were independently reproduced and corrected. The corrected source is independently cleared; executable startup and acceptance status are unchanged.
+
+The [gesture review correction candidate](./native-gesture-review-correction.md) addresses held-mute semantic substitution, unconfirmed held-key retries and lost keyboard accumulation. Independent re-review clears `5608d2f4`, including the former failures and fresh-input controls. The combined source retains its guards and the separate settings display hooks.
+
+The [settings result/display bridge candidate](./native-settings-bridge.md) retains local/disk revisions, wires display-only edits and admits the final dirty document before worker close. Its settings-only delta is independently cleared. The [next combined source candidate](./native-parity-source-batch.md) reconciles it with the corrected gesture source and records the separate combined-tree gate. No executable or audio-settings adoption is implied.
+
+The [native entrypoint adoption candidate](./native-startup-adoption.md) wires one owner/shell, explicit path or memory settings, functional mixer/patchbay and authenticated accepted-batch telemetry. Its entrypoint wiring has independently cleared and is public at `20e9f90c`. The subsequent bus/configuration/recording owner wiring below has a separate integration record.
+
+The [bus/configuration/recording owner candidate](./native-bus-owner-adapter.md) adds a shared ticket/admission lease, exact edited revision handoffs, retained native receipts and common-quit diagnostic audit. Its original busy-Refresh finding is corrected at `cb24a2ba`; independent re-review clears all nine original probes and three additional recovery/authentication probes. The reviewed dynamic-arming owner/UI follow-up now adopts the arming library. Reviewed idle routed Add/split/join/remove now use the retained migration owner, including direct retention of the observed final-input witness for Add. Structural edits during recording/finalization remain gated pending the user's product decision. Module positions match the original session-only behavior; durable persistence is not required for parity.
+
+The [routing surface](../../crates/pecan-ui-gtk/src/routing/README.md) and correction
+`8240f71b` retain configuration uncertainty across zero-effect route rejection.
+The [reviewed routing owner](./native-routing-owner-candidate.md) mounts them with
+shared selection/history, exact configuration/graph preflight and retained real
+reports. It preserves the separately reviewed focus correction `37a79f6c` and
+both CI fixture corrections. Replacement/disconnect cannot erase unfinished work;
+terminal nonzero in-progress counts cannot prove quiescence. Reset plans above
+32 commands remain rejected without truncation. No real backend/audio acceptance
+or active-recording structural-policy decision is implied by source publication.
+
+The [meter follow-up](../../crates/pecan-ui-gtk/src/meters/adapter/README.md) combines
+independently cleared `6e2daac6` and `a4225824`. Its read-only accessor uses exactly
+the configuration behind `volume_model`; normal workspace polling adopts layout
+changes without manufacturing a graph revision or adding a consumer/timer. It
+preserves unaffected wrappers, retires removed keys and clears shared samples,
+hold and clipping before incoming peaks. This closes the startup-default meter
+projection gap. It does not establish sample freshness/health or implement
+immediate history reconciliation.
+
+The [reviewed receipt-local closure API](./native-execution-closure.md) now exposes
+nonblocking Pending/Closed evidence on the original retained receipt. A terminal
+report's frozen counts remain historical. Closed prevents further local dispatch
+callbacks for that receipt; it does not establish server convergence, rollback,
+observation or recorder finalization. The initial library checkpoint did not
+reopen recovery latches. The subsequent
+[reviewed explicit owner recovery](./native-routing-recovery-candidate.md) now
+combines the original receipt proof, current owned graph/configuration inspection
+and released history ownership. It retains the original failed/unconfirmed
+outcome and adds no failed-prefix undo, command or graph publication. Held input,
+retired controls and reentrant inspection cannot recover a later request.
+Busy/unknown inspection and finalization remain gated. Reset batching above 32
+commands, server-convergence proof and hardware acceptance remain separate.
+
+The [dynamic arming owner/UI candidate](./native-dynamic-arming-owner.md) connects
+existing active Arm/Armed controls to the reviewed backend protocol and retains
+parent/child outcomes separately. Independent re-review clears `10fb50f5`,
+including child-polling reentry, busy-child retention and original-request
+validation before lease release. Idle migration adoption and active-recording
+structural policy remain separate gates.
+
+The [reviewed idle migration owner](./native-idle-migration-owner.md) adopts the
+existing backend for idle routed split/join/remove, retaining actual receipts,
+readbacks and graph-before-release evidence. Independent re-review clears
+`5c131247`, including reconcilable lost-epoch completion and matched owner/widget
+terminal barriers. The separately reviewed routed Add owner below extends this
+path; active-recording structural policy remains a separate gate.
+
+The independently reviewed [idle AddStereo backend](./native-idle-add-stereo.md)
+now appends two authenticated suffix inputs through the existing migration
+protocol while preserving original route endpoints. Its retained
+`MigrationReport::observed_inputs` supplies final node/input generations directly;
+the owner must combine that with its original prefix/source proof, actual fresh
+configuration and accepted terminal presentation. Backend inclusion alone does
+not enable the separate `routed_add` capability. The reviewed owner below now
+adopts those proofs. Explicit partial repair and active structural edits remain
+gated; the active structural policy awaits the user's product decision.
+
+The independently reviewed [routed Add owner](./native-routed-add-owner-candidate.md)
+adopts that retained backend witness through the existing migration lease and
+accepted-presentation barrier. Exact source `6e0cc8fd` clears 151 owner checks per
+mode and four additional replacement/stale/retired/reconnect/foreign-route probes.
+Its append succeeds only with Observed, zero in-progress calls, exact fresh
+readback and accepted current presentation; original prefix/source generations
+and the retained final-input witness must both match. No evicted observation
+frame lookup or replacement-origin rebinding is used. Partial repair and active
+structural policy remain separate, and no hardware/audio acceptance is implied.
+
+The reviewed [Folder owner adoption](./native-folder-owner.md) mounts
+the corrected helper with actual latest-start receipt authority and explicit
+worker-based preparation/launch/reaping. Independent correction review clears
+`07e6edaf`, including retained cancelled-worker capacity and prepared-plan path
+correlation before launch. It is included in the matrix above. Its original
+missing elapsed producer is adopted in the separately reviewed follow-up below.
+
+The reviewed [elapsed adoption](./native-elapsed-adoption-candidate.md)
+adopts independently cleared producer `38db4706` through retained measurement
+instants and the existing transport clock. It compensates different observation
+ages without restamping cached reports or rebinding edit controls. This new UI
+delta clears independently at `bcdd4553` and is included here. Source adoption
+does not establish physical timing, sample alignment or recording acceptance.
+
+The [reviewed Rec-level libraries](./native-rec-level-library-integration.md)
+preserve logical gain/mute semantics and provide retained typed controls plus a
+gain-only backend path. Original-origin interface `bfad5259` and the subsequent
+[reviewed Rec owner](./native-rec-level-owner-candidate.md), corrected at
+`594e46eb`, are now adopted. Native callbacks require the original Session
+witness and known Rec identity/ownership; one shared lease spans coalesced
+samples, actual readback, final flush and matched terminal presentation. Newer
+superseding state becomes explicit uncertainty without replay; genuinely older
+readback waits. Refresh archives the original outcome before fresh admission;
+unknown logical metadata requires authenticated initialization, now available
+through the eligible idle saved-layout restore below. Stored
+dB/mute/arming and unselected channels are preserved, with no graph Undo for
+these local edits. Opening, unknown ownership and finalizing fresh input remain
+gated; active-recording structural edits and hardware acceptance remain separate.
+
+The [reviewed standard GTK history shortcuts](./native-history-shortcuts.md)
+now adopt the original Ctrl/Meta+Z, Shift+Z and Y chords outside native inputs.
+Each activation selects current guarded history; a later autorepeat may act
+after acknowledgement or focus return. Busy/stale activations are dropped with
+no queue/retry. Existing pointer/Space/Enter guards remain separate. Independent
+review passes 33 targeted history checks and three additional native probe
+groups. This does not close JS queued-intent or physical input acceptance.
+
+The [reviewed Rec preference writeback](./native-rec-preference-writeback.md)
+merges accepted user fields into the latest settings document, independent of
+backend completion. Passive readback and default initialization never save or
+restore it. Original MIDI/clock/display values survive, older saves cannot
+replace newer edits, and common quit drains the final desired document off UI.
+Saved intent is not proof of applied audio. The separately reviewed bounded
+restore below adopts original-generation authority for initialization or
+nondecreasing growth without moving routes. Shrink, topology replay and explicit
+recording/reload policy remain separate. Writeback and shortcut bindings alone
+add no audio restore.
+
+The [reviewed full-config origin API](./native-full-config-origin.md) retains
+original Rec node/input generations alongside configuration CAS, with no weaker
+fallback. It is integrated independently of automatic Rec restore. Source-only
+authority does not establish graph convergence or resolve unsupported layouts.
+
+The independently reviewed [saved-layout backend](./native-saved-layout-growth.md)
+now supplies `restore_idle_layout(SavedLayoutIntent)` for explicit same-capacity
+regrouping/initialization or nondecreasing growth, including unknown logical/
+transport metadata. Original HistoryGraph/configuration/membership authority,
+existing endpoint pairs, final suffix generations and partial uncertainty remain
+bound through the existing migration engine. Corrected `7e940a97` accounts for
+transport changes in local outcome and revision publication. The independently
+reviewed owner follow-up below now adopts this primitive. Automatic repair/reload,
+shrink, topology replay and active-recording structural behavior remain gated.
+
+The initial independently reviewed [bounded Rec restore owner](./native-rec-restore-candidate.md)
+uses strong authority for valid initial or memory preferences and matching local
+channel capacity. It retains original input identity, actual receipt and shared
+lease through post-report readback and accepted presentation. This does not add
+general layout migration, active-recording reload/structural policy, clock effects,
+profile import or automatic recording. Corrected owner `3c318cee` independently
+clears original foreign-route probes while preserving the owned routed-layout
+gate. Its source is adopted without runtime reconciliation onto `f9fc8e7c`.
+
+The independently reviewed [saved-layout owner follow-up](./native-saved-layout-owner-candidate.md)
+extends that existing once-per-epoch idle startup/reconnect path to unknown
+metadata, equal-capacity routed initialization/regrouping and nondecreasing
+growth, preserving existing endpoint pairs. Corrected `466d56bf` retains original
+HistoryGraph/CAS/membership, prefix/source and actual final suffix generations,
+zero-in-progress terminal receipts, subsequent fresh authenticated readback and
+accepted presentation before releasing the same Session lease. Queued recording
+ownership latches the captured epoch at admission/inspection without poisoning a
+later idle epoch. No settings schema/writeback, graph Undo, audio recording,
+automatic repair/retry, shrink/topology replay or active structural policy is
+added. Local/observed evidence is not audio/server acceptance.
+
+The [reviewed desktop helper library](./native-desktop-library-integration.md)
+preserves explicit native settings/recording launch arguments and a distinct
+native autostart identity without touching legacy entries. The separately
+reviewed worker/tray adoption below now uses it; real desktop/login acceptance
+remains unperformed.
+
+The independently reviewed [reconnect-after-completed-edits owner](./native-rec-reconnect-edits-candidate.md)
+addresses the retained successful user-operation gate on `d0d8f23f`. It requires
+closed original receipts, released ownership and fresh authenticated idle
+presentation before archiving old work and capturing current preferences for a
+new request. Pending/uncertain work, recording reload and shrinking/topology replay remain
+gated. Corrected `91afa807` is integrated with the unchanged pure desktop helper.
+Recording observed by the owner latches its existing epoch skip even if nested
+polling publishes joined state before returning; a later epoch can recover.
+
+The independently reviewed [explicit desktop worker/tray source](./native-desktop-adoption-candidate.md)
+uses one existing settings worker/drain, separate memory preference capability and
+explicit CLI root/native-artifact context. Ordinary launch never enables an entry.
+It retains actual results and original control tokens; legacy takeover and profile
+discovery are excluded. The independently reviewed
+[login-context follow-up](./native-desktop-login-continuity.md) now retains the
+explicit management root and matching native executable in generated login
+arguments, including relocation. Existing rootless entries are inspected without
+rewrite and need explicit enable/update or release refresh to gain that context.
+Already-running primary context is not replaced by secondary activation; full
+session arbitration and real login acceptance remain unfinished. Correction `bc438072`
+preserves a newer queued presentation source against retired callbacks while
+retaining same-source ordering, bounded storage and reserved Quit. Independent
+re-review clears its unchanged action/file assertions and three additional probes.
+The [integration record](./native-desktop-owner-integration.md) distinguishes those
+reviewed libraries and mounted explicit-context controls from remaining desktop
+acceptance and session work. No actual user profile or login entry is operated by
+the synthetic checks.

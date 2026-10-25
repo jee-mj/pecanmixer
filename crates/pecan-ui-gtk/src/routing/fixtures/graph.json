@@ -1,0 +1,398 @@
+{
+  "verbonden": true,
+  "rate": 48000,
+  "quantum": 128,
+  "standaard_sink": "synthetic.output.default",
+  "standaard_bron": "synthetic.capture.default",
+  "wireplumber": [
+    77
+  ],
+  "knopen": [
+    {
+      "id": 10,
+      "serial": 10001,
+      "naam": "synthetic.player",
+      "klasse": "Stream/Output/Audio",
+      "volume": [
+        1,
+        1
+      ],
+      "stand": "running",
+      "doel": null,
+      "app": null,
+      "media": null,
+      "beschrijving": null,
+      "bijnaam": null
+    },
+    {
+      "id": 11,
+      "serial": 11001,
+      "naam": "synthetic.player.custom",
+      "klasse": "Stream/Output/Audio",
+      "volume": [
+        1,
+        1
+      ],
+      "stand": "running",
+      "doel": null,
+      "app": null,
+      "media": null,
+      "beschrijving": null,
+      "bijnaam": null
+    },
+    {
+      "id": 20,
+      "serial": 20001,
+      "naam": "synthetic.output.default",
+      "klasse": "Audio/Sink",
+      "volume": [
+        1,
+        1
+      ],
+      "stand": "running",
+      "doel": null,
+      "app": null,
+      "media": null,
+      "beschrijving": null,
+      "bijnaam": null
+    },
+    {
+      "id": 21,
+      "serial": 21001,
+      "naam": "synthetic.output.other",
+      "klasse": "Audio/Sink",
+      "volume": [
+        1,
+        1
+      ],
+      "stand": "running",
+      "doel": null,
+      "app": null,
+      "media": null,
+      "beschrijving": null,
+      "bijnaam": null
+    },
+    {
+      "id": 30,
+      "serial": 30001,
+      "naam": "pecanmixer-opname",
+      "klasse": "Audio/Sink",
+      "volume": [
+        1,
+        1
+      ],
+      "stand": "running",
+      "doel": null,
+      "app": null,
+      "media": null,
+      "beschrijving": null,
+      "bijnaam": null
+    },
+    {
+      "id": 40,
+      "serial": 40001,
+      "naam": "synthetic.capture.default",
+      "klasse": "Audio/Source",
+      "volume": [
+        1,
+        1
+      ],
+      "stand": "running",
+      "doel": null,
+      "app": null,
+      "media": null,
+      "beschrijving": null,
+      "bijnaam": null
+    },
+    {
+      "id": 41,
+      "serial": 41001,
+      "naam": "synthetic.capture.other",
+      "klasse": "Audio/Source",
+      "volume": [
+        1,
+        1
+      ],
+      "stand": "running",
+      "doel": null,
+      "app": null,
+      "media": null,
+      "beschrijving": null,
+      "bijnaam": null
+    },
+    {
+      "id": 50,
+      "serial": 50001,
+      "naam": "synthetic.input.app",
+      "klasse": "Stream/Input/Audio",
+      "volume": [
+        1,
+        1
+      ],
+      "stand": "running",
+      "doel": null,
+      "app": null,
+      "media": null,
+      "beschrijving": null,
+      "bijnaam": null
+    }
+  ],
+  "poorten": [
+    {
+      "id": 110,
+      "knoop": 10,
+      "naam": "synthetic.output_FL",
+      "ingang": false,
+      "soort": "audio",
+      "kanaal": "FL",
+      "monitor": false,
+      "fysiek": false,
+      "volgnummer": 0
+    },
+    {
+      "id": 111,
+      "knoop": 10,
+      "naam": "synthetic.output_FR",
+      "ingang": false,
+      "soort": "audio",
+      "kanaal": "FR",
+      "monitor": false,
+      "fysiek": false,
+      "volgnummer": 1
+    },
+    {
+      "id": 120,
+      "knoop": 11,
+      "naam": "synthetic.output_FL",
+      "ingang": false,
+      "soort": "audio",
+      "kanaal": "FL",
+      "monitor": false,
+      "fysiek": false,
+      "volgnummer": 0
+    },
+    {
+      "id": 121,
+      "knoop": 11,
+      "naam": "synthetic.output_FR",
+      "ingang": false,
+      "soort": "audio",
+      "kanaal": "FR",
+      "monitor": false,
+      "fysiek": false,
+      "volgnummer": 1
+    },
+    {
+      "id": 210,
+      "knoop": 20,
+      "naam": "synthetic.input_FL",
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "FL",
+      "monitor": false,
+      "fysiek": false,
+      "volgnummer": 0
+    },
+    {
+      "id": 211,
+      "knoop": 20,
+      "naam": "synthetic.input_FR",
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "FR",
+      "monitor": false,
+      "fysiek": false,
+      "volgnummer": 1
+    },
+    {
+      "id": 220,
+      "knoop": 21,
+      "naam": "synthetic.input_FL",
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "FL",
+      "monitor": false,
+      "fysiek": false,
+      "volgnummer": 0
+    },
+    {
+      "id": 221,
+      "knoop": 21,
+      "naam": "synthetic.input_FR",
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "FR",
+      "monitor": false,
+      "fysiek": false,
+      "volgnummer": 1
+    },
+    {
+      "id": 410,
+      "knoop": 40,
+      "naam": "synthetic.output_FL",
+      "ingang": false,
+      "soort": "audio",
+      "kanaal": "FL",
+      "monitor": false,
+      "fysiek": false,
+      "volgnummer": 0
+    },
+    {
+      "id": 411,
+      "knoop": 40,
+      "naam": "synthetic.output_FR",
+      "ingang": false,
+      "soort": "audio",
+      "kanaal": "FR",
+      "monitor": false,
+      "fysiek": false,
+      "volgnummer": 1
+    },
+    {
+      "id": 420,
+      "knoop": 41,
+      "naam": "synthetic.output_FL",
+      "ingang": false,
+      "soort": "audio",
+      "kanaal": "FL",
+      "monitor": false,
+      "fysiek": false,
+      "volgnummer": 0
+    },
+    {
+      "id": 421,
+      "knoop": 41,
+      "naam": "synthetic.output_FR",
+      "ingang": false,
+      "soort": "audio",
+      "kanaal": "FR",
+      "monitor": false,
+      "fysiek": false,
+      "volgnummer": 1
+    },
+    {
+      "id": 510,
+      "knoop": 50,
+      "naam": "synthetic.input_FL",
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "FL",
+      "monitor": false,
+      "fysiek": false,
+      "volgnummer": 0
+    },
+    {
+      "id": 511,
+      "knoop": 50,
+      "naam": "synthetic.input_FR",
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "FR",
+      "monitor": false,
+      "fysiek": false,
+      "volgnummer": 1
+    },
+    {
+      "id": 310,
+      "knoop": 30,
+      "naam": "rec_1",
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "AUX0",
+      "monitor": false,
+      "fysiek": false,
+      "volgnummer": 0
+    },
+    {
+      "id": 311,
+      "knoop": 30,
+      "naam": "rec_2",
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "AUX1",
+      "monitor": false,
+      "fysiek": false,
+      "volgnummer": 1
+    },
+    {
+      "id": 312,
+      "knoop": 30,
+      "naam": "rec_3",
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "AUX2",
+      "monitor": false,
+      "fysiek": false,
+      "volgnummer": 2
+    },
+    {
+      "id": 313,
+      "knoop": 30,
+      "naam": "rec_4",
+      "ingang": true,
+      "soort": "audio",
+      "kanaal": "AUX3",
+      "monitor": false,
+      "fysiek": false,
+      "volgnummer": 3
+    }
+  ],
+  "kabels": [
+    {
+      "id": 1000,
+      "uit_knoop": 10,
+      "uit_poort": 110,
+      "in_knoop": 20,
+      "in_poort": 210,
+      "client": 77
+    },
+    {
+      "id": 1001,
+      "uit_knoop": 10,
+      "uit_poort": 111,
+      "in_knoop": 20,
+      "in_poort": 211,
+      "client": 77
+    },
+    {
+      "id": 1010,
+      "uit_knoop": 10,
+      "uit_poort": 110,
+      "in_knoop": 30,
+      "in_poort": 310,
+      "client": null
+    },
+    {
+      "id": 1011,
+      "uit_knoop": 10,
+      "uit_poort": 111,
+      "in_knoop": 30,
+      "in_poort": 311,
+      "client": null
+    },
+    {
+      "id": 1020,
+      "uit_knoop": 40,
+      "uit_poort": 410,
+      "in_knoop": 21,
+      "in_poort": 220,
+      "client": 999
+    },
+    {
+      "id": 1021,
+      "uit_knoop": 40,
+      "uit_poort": 411,
+      "in_knoop": 21,
+      "in_poort": 221,
+      "client": 999
+    },
+    {
+      "id": 1030,
+      "uit_knoop": 11,
+      "uit_poort": 120,
+      "in_knoop": 21,
+      "in_poort": 220,
+      "client": 999
+    }
+  ]
+}

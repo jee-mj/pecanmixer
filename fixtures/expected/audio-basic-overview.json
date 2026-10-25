@@ -1,0 +1,73 @@
+{
+  "connected": true,
+  "rate": 48000,
+  "quantum": 256,
+  "nodes": [
+    {
+      "id": 10,
+      "label": "Fixture speakers",
+      "name": "alsa_output.fixture",
+      "class": "Audio/Sink",
+      "ports": [
+        {
+          "id": 101,
+          "label": "playback_FL",
+          "input": true,
+          "kind": "audio",
+          "channel": "FL"
+        },
+        {
+          "id": 102,
+          "label": "playback_FR",
+          "input": true,
+          "kind": "audio",
+          "channel": "FR"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "label": "Rec bus",
+      "name": "pecanmixer.rec",
+      "class": "Stream/Input/Audio",
+      "ports": [
+        {
+          "id": 301,
+          "label": "rec_1",
+          "input": true,
+          "kind": "audio",
+          "channel": "AUX0"
+        },
+        {
+          "id": 302,
+          "label": "rec_2",
+          "input": true,
+          "kind": "audio",
+          "channel": "AUX1"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "label": "Spotify",
+      "name": "spotify",
+      "class": "Stream/Output/Audio",
+      "ports": [
+        {
+          "id": 201,
+          "label": "output_FL",
+          "input": false,
+          "kind": "audio",
+          "channel": "FL"
+        },
+        {
+          "id": 202,
+          "label": "output_FR",
+          "input": false,
+          "kind": "audio",
+          "channel": "FR"
+        }
+      ]
+    }
+  ]
+}

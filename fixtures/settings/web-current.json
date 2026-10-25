@@ -1,0 +1,7 @@
+{
+  "pecanmixer.bussen": "{\"bussen\":[2,1,1],\"stand\":{\"rec-1-2\":{\"db\":-6,\"mute\":false,\"gewapend\":true},\"rec-3\":{\"db\":0,\"mute\":true},\"rec-4\":{\"db\":-12,\"mute\":false,\"gewapend\":false}},\"midi\":false}",
+  "pecanmixer.verborgen": "[\"firefox|apps|output_FL,output_FR#1\",\"rij|hardware\",\"bus|rec-3\",\"midi|Midi-Bridge/Fixture Keyboard|Fixture Keyboard: MIDI 1 (capture)\",\"rij|hardware\"]",
+  "pecanmixer.klok": "{\"klok\":987654321,\"start_stop\":true}",
+  "pecanmixer.rijen": "{\"apps\":1.5,\"hardware\":0.75,\"bestemmingen\":0.75}",
+  "pecanmixer.deling": "356"
+}

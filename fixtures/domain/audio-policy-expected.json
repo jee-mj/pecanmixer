@@ -1,0 +1,269 @@
+{
+  "apps": [
+    {
+      "node": 20,
+      "key": "firefox|apps|output_FL,output_FR",
+      "name": "Firefox",
+      "channels": [
+        0,
+        1
+      ],
+      "ports": [
+        200,
+        201
+      ],
+      "targetable": true,
+      "bus": null
+    },
+    {
+      "node": 21,
+      "key": "firefox|apps|output_FL,output_FR#1",
+      "name": "Firefox",
+      "channels": [
+        0,
+        1
+      ],
+      "ports": [
+        210,
+        211
+      ],
+      "targetable": true,
+      "bus": null
+    },
+    {
+      "node": 22,
+      "key": "voice|apps|output_MONO",
+      "name": "Voice",
+      "channels": [
+        0
+      ],
+      "ports": [
+        220
+      ],
+      "targetable": true,
+      "bus": null
+    }
+  ],
+  "hardware": [
+    {
+      "node": 11,
+      "key": "alsa_input.fixture|hardware|capture_FL,capture_FR",
+      "name": "Studio",
+      "channels": [
+        0,
+        1
+      ],
+      "ports": [
+        110,
+        111
+      ],
+      "targetable": true,
+      "bus": null
+    }
+  ],
+  "destinations": [
+    {
+      "node": 50,
+      "key": "virtual|bestemmingen|playback_FL,playback_FR",
+      "name": "Virtual",
+      "channels": [
+        0,
+        1
+      ],
+      "ports": [
+        500,
+        501
+      ],
+      "targetable": true,
+      "bus": null
+    },
+    {
+      "node": 10,
+      "key": "alsa_output.fixture|bestemmingen|playback_AUX0,playback_AUX1",
+      "name": "Out 1/2",
+      "channels": [
+        0,
+        1
+      ],
+      "ports": [
+        100,
+        101
+      ],
+      "targetable": true,
+      "bus": null
+    },
+    {
+      "node": 10,
+      "key": "alsa_output.fixture|bestemmingen|playback_AUX2,playback_AUX3",
+      "name": "Out 3/4",
+      "channels": [
+        2,
+        3
+      ],
+      "ports": [
+        102,
+        103
+      ],
+      "targetable": false,
+      "bus": null
+    },
+    {
+      "node": 30,
+      "key": "bus|rec-1-2",
+      "name": "Rec 1/2",
+      "channels": [
+        0,
+        1
+      ],
+      "ports": [
+        300,
+        301
+      ],
+      "targetable": false,
+      "bus": "rec-1-2"
+    },
+    {
+      "node": 30,
+      "key": "bus|rec-3",
+      "name": "Rec 3",
+      "channels": [
+        2
+      ],
+      "ports": [
+        302
+      ],
+      "targetable": false,
+      "bus": "rec-3"
+    },
+    {
+      "node": 30,
+      "key": "bus|rec-4",
+      "name": "Rec 4",
+      "channels": [
+        3
+      ],
+      "ports": [
+        303
+      ],
+      "targetable": false,
+      "bus": "rec-4"
+    },
+    {
+      "node": 30,
+      "key": "bus|rec-5-6",
+      "name": "Rec 5/6",
+      "channels": [
+        4,
+        5
+      ],
+      "ports": [
+        304,
+        305
+      ],
+      "targetable": false,
+      "bus": "rec-5-6"
+    },
+    {
+      "node": 40,
+      "key": "recorder|bestemmingen|input_FL,input_FR",
+      "name": "Recorder",
+      "channels": [
+        0,
+        1
+      ],
+      "ports": [
+        400,
+        401
+      ],
+      "targetable": true,
+      "bus": null
+    }
+  ],
+  "manual": {
+    "links": [
+      3,
+      9,
+      12,
+      13
+    ],
+    "targets": [
+      22
+    ],
+    "restore": [
+      [
+        210,
+        100
+      ],
+      [
+        211,
+        101
+      ],
+      [
+        110,
+        400
+      ],
+      [
+        111,
+        401
+      ]
+    ],
+    "detached": 2
+  },
+  "groups": [
+    {
+      "title": "Apps · playing",
+      "keys": [
+        "firefox>",
+        "firefox>#1",
+        "voice>"
+      ]
+    },
+    {
+      "title": "Hardware in",
+      "keys": [
+        "alsa_input.fixture>"
+      ]
+    },
+    {
+      "title": "Other · out",
+      "keys": [
+        "filter>"
+      ]
+    },
+    {
+      "title": "Hardware out",
+      "keys": [
+        "alsa_output.fixture<"
+      ]
+    },
+    {
+      "title": "Virtual out",
+      "keys": [
+        "virtual<"
+      ]
+    },
+    {
+      "title": "Apps · recording",
+      "keys": [
+        "pecanmixer-opname<",
+        "recorder<"
+      ]
+    }
+  ],
+  "visible_links": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    12,
+    13
+  ],
+  "hidden": [
+    "monitors"
+  ]
+}

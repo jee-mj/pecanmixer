@@ -1,0 +1,31 @@
+{
+  "widths": [
+    2,
+    1,
+    1,
+    2
+  ],
+  "states": {
+    "rec-1-2": {
+      "db": 0,
+      "mute": false,
+      "armed": true
+    },
+    "rec-3": {
+      "db": -6,
+      "mute": false,
+      "armed": true
+    },
+    "rec-4": {
+      "db": -12,
+      "mute": true,
+      "armed": false
+    },
+    "rec-5-6": {
+      "db": 6,
+      "mute": false,
+      "armed": true
+    }
+  },
+  "midi": true
+}

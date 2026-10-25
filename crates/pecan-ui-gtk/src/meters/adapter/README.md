@@ -1,0 +1,177 @@
+# Accepted-batch telemetry presentation
+
+`meters::TelemetryAdapter<I>` is an isolated GTK adapter over the existing
+`MeterFeed`/`MeterWidget` and pure mixer/audio projections. It starts no backend,
+capture, worker, inbox consumer or polling timer. Main, Session, application owner,
+settings, audio commands and backend/core interfaces are unchanged.
+
+The separate [entrypoint adoption candidate](../../../../../docs/rust-refactor/native-startup-adoption.md)
+now mounts this unchanged adapter through the owning workspace's one Session
+poll. That new wiring, witness factory and viewport integration require their
+own independent review; the original isolated adapter clearance is unchanged.
+
+The caller passes the batch already returned by its sole consumer, such as the
+existing `Session::poll()` call. Do not drain an inbox or call Session::poll a
+second time just to feed these widgets. The adapter applies an accepted graph
+before that batch's peaks. Peaks require the exact current epoch/revision;
+equal-stamp peak frames replace in delivery order. There is one graph/peak feed
+and no extra frame queue or idle publication queue.
+
+## Caller authority
+
+For a connected graph publication, supply `MeterSources` with the exact graph
+stamp **and owned Arc**, validated `BusConfig::definitions()` and an opaque binding
+per node. `I: Clone + Eq` must identify the backend owner/epoch, node generation
+and relevant audio-port generations/mapping. Use all audio ports conservatively;
+a node-only binding does not detect a replaced port. Bindings must come from the
+authoritative witness for that exact publication, not the observer, names,
+numeric IDs or serial comparisons. Missing node bindings leave those meters
+unbound. Changed tokens force unbind/reset/rebind even for identical public DTOs.
+
+The `fc67e261` base does not export a per-object registry binding type. This
+generic boundary allows the later core `RegistryBinding` to be supplied after
+its prerequisite is reviewed/integrated, without adding a second backend
+identity API. Production wiring must construct/validate that full binding from
+the exact native witness; this slice does not manufacture it. The existing
+MeterWidget also conservatively requires a DTO serial. Even a supplied identity
+does not make a missing-serial source available in this slice.
+
+Missing or mismatched source publications deactivate/unbind existing widgets
+and report a projection error. They do not guess a new authority. Explicit
+`rebind_current(sources)` requires the retained exact graph, clears old samples
+first, and can restore authority or update bus presentation without a new graph
+revision. `reset_sources()` removes authority while the caller obtains a witness.
+
+## Projection, mounting and visibility
+
+The pure `Mixer::build` supplies each strip's channel indices: one Channel widget
+is retained per selected channel. The pure `audio::layout` supplies each module's
+`meter_channels`: one Mini widget is retained per nonempty group. No stereo,
+grouping, routing or capture policy is copied into the adapter. `MeterKey`
+combines surface, numeric node address, domain item key and bar index only for
+presentation lookup; it is never command or registry authority.
+
+`meters()` exposes the current specifications/widgets; `meter(key)` finds one.
+The caller mounts them next to the corresponding strip/module and keeps the
+same widget when its key persists. Tokens/channels are rebound as needed; labels
+are updated from the new domain projection. Removing/disconnecting a source or
+dropping the adapter retires externally retained widgets as well.
+
+New widgets and both surfaces start inactive. The shell must set
+`set_surface_active(Mixer/Patchbay, visible)` for its window/tab and
+`set_visible_keys(surface, keys)` from actual layout/viewport visibility. Only
+bound, on-screen meters in active surfaces register GTK frame ticks. Hidden
+surfaces retain the last viewport selection; new keys need a new visibility
+publication. Unmapping also stops ticks through the existing widget. Scroll
+occlusion detection/virtualization remains caller work, not an inferred property
+of mapped GTK children. Hidden time has no animation catch-up loop; resume uses
+the one latest peak frame.
+
+`new(widget_limit)` bounds the combined retained channel/mini inventory; Default
+uses 512. Projection validates the entire desired inventory before adding GTK
+widgets. An over-budget projection retires old bindings and reports the limit;
+it does not partially mount new widgets. Pure domain projection work is still
+proportional to the supplied structural graph; this is not a performance budget
+for arbitrary graphs. Peak-only batches do not reproject or rebuild widgets.
+
+## Samples and reset
+
+`clear_samples()` explicitly clears levels/hold/clipping while retaining source
+bindings. The caller can invoke it when its authoritative capture state requires
+a reset. It must not infer failure from a batch without peaks. The DTO has no
+capture timestamp, sequence within a stamp, sample age or unavailable reason.
+This adapter adds none: it cannot reject reordered replay at the same stamp or
+distinguish a stopped producer from unchanged/absent samples. A node peak vector
+can also omit selected channels. The existing pure meter math handles their
+values; `MeterReading::has_frame` describes node-frame presence, not capture
+health, complete channels, audio arrival or hardware acceptance.
+
+## Synthetic checks and remaining integration
+
+Tests cover domain-derived indices, graph/peak ordering, stale/future stamps,
+equal-stamp delivery, unchanged widgets, byte-identical registry replacement,
+missing/copied authority, explicit reset/rebind, missing serial/channel data,
+disconnect/reconnect/drop, hidden/offscreen resume, a 10,000-frame one-slot storm,
+and atomic projection limits on a generic 100-node graph. All graphs/tokens and
+labels are authored public synthetic fixtures. There is no server, hardware,
+user profile, capture, runtime log or desktop-session dependency.
+
+Cloud checks pass: ten new adapter cases in both default and accessibility modes,
+18 focused meter cases with accessibility assertions, the complete 169-test
+default GTK suite, native GTK build, scoped formatting and whitespace checks.
+GTK checks use a deliberately started Xvfb/private bus with fatal criticals.
+
+The new owner/witness/mounting/viewport wiring is separately reviewable in the
+entrypoint candidate. Detailed capture reset/availability signals and live
+acceptance remain unfinished. Fixture
+population/counters do not establish audio correctness, real-time/CPU/latency
+budgets, physical display throughput, Wayland or desktop accessibility acceptance.
+
+## Configuration reprojection caller contract (reviewed integration)
+
+The application telemetry boundary now offers `apply_definitions(session, batch,
+definitions)`, taking validated `BusDef` values from the Session's adopted bus
+configuration. Its cache detects a definition change without rescanning the graph
+on unchanged peak-only ticks. Configuration-only changes use the retained exact
+graph, rebuild node/audio-port registry bindings from its accepted witness, and
+reuse `rebind_current` before applying this batch's peaks. A graph and new
+definitions in the same batch are projected before peaks as well. No stamp or
+graph Arc is reconstructed, and there is no second inbox consumer.
+
+Existing meter keys retain their GTK wrappers; removed keys are retired. Patchbay
+mini-meters retain their module mapping on configuration-only changes. This uses
+the adapter's existing conservative reconciliation rule: definition changes clear
+shared samples/hold/clipping before accepting fresh samples, including unaffected
+sources. It introduces no capture-health or sample-age inference.
+
+The isolated telemetry half at `6e2daac6` is independently cleared by 360 clean
+all-feature GTK cases and four additional probe groups: conservative sample/hold/
+clipping clearing, unavailable-definition recovery, stale/future stamp rejection,
+channel projection and missing serial/port-generation authority. Its wrapper
+still supplied startup defaults, so this clearance alone did not establish
+production adoption.
+
+The separate integration at `a4225824` adds the read-only crate-private
+`Session::bus_definitions() -> Option<Vec<BusDef>>`, derived from exactly the
+adopted configuration used by `volume_model`. The ordinary telemetry wrapper now
+passes that value to `apply_definitions`; it supplies no new configuration/graph
+authority, consumer, timer or audio command. Independent review clears the delta
+with eight telemetry cases and an additional authority control, including the
+unchanged old-wrapper failure reproduction. Core/backend, routing, history
+reduction/admission and application polling order remain unchanged.
+
+The two added synthetic workspace checks cover configuration-only split, add,
+join and remove, stable unaffected widgets, same-stamp peak ordering, coalesced
+unchanged-frame storms and changed/missing port generations. They explicitly
+supply definitions through the candidate boundary, rather than asserting that
+the production wrapper already uses them. No hardware, audio service, real user
+configuration or private topology is involved.
+
+The isolated telemetry half passes all 360 all-feature GTK cases, including seven application
+telemetry checks, plus native build, formatting and whitespace checks. These
+checks establish the supplied-definition boundary; production accessor/wrapper
+adoption has a separate review gate. The additional integration regression first
+fails on the startup-default wrapper (stereo instead of adopted mono keys), then
+passes with the accessor wiring. It exercises normal workspace polling without a
+direct telemetry call across split/add/join/remove, same-stamp peaks, unchanged
+wrapper/module retention, conservative clearing, rejected invalid definitions and
+unchanged graph/history/audio-admission state.
+
+The accessor/wiring candidate passes **361 all-feature and 319 default GTK
+tests**, native build, formatting and whitespace checks on isolated cloud
+Xvfb/private D-Bus. Its only production changes beyond `6e2daac6` are the
+read-only accessor and wrapper call. Core/backend/legacy suites and the aggregate
+validator were not repeated for that GTK-only candidate. Source review is now
+cleared; combined publication checks are recorded separately below.
+Capture freshness/availability limits and configuration-driven history
+reconciliation remain separate.
+
+Combined integration onto routing checkpoint `fafda497` passes the locked native
+aggregate: **86 validator controls, 72 core, 192 backend and 361 all-feature GTK
+tests**, formatting/build, Cargo/ELF closure checks, three headless fixtures and
+three controlled smokes. It records zero Node-tool attempts. The unchanged
+candidate source also passed 319 default GTK tests and hosted run
+[40145860099](https://github.com/jee-mj/pecanmixer/actions/runs/40145860099)
+at exact head `a4225824`. All program source remains identical to that reviewed
+candidate, including the original workspace poll order. The separate
+execution-closure/recovery work is excluded from this checkpoint.

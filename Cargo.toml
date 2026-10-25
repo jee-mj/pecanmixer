@@ -1,0 +1,10 @@
+[workspace]
+resolver = "2"
+members = ["crates/pecan-core", "crates/pecan-pipewire", "crates/pecan-ui-gtk", "src-tauri"]
+default-members = ["crates/pecan-core"]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+async-channel = "2"
+pipewire = "0.10"

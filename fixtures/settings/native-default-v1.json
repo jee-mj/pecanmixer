@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "preferences": {
+    "buses": {
+      "widths": [
+        2
+      ],
+      "states": {
+        "rec-1-2": {
+          "db": 0.0,
+          "mute": false,
+          "armed": true
+        }
+      },
+      "midi": true
+    },
+    "hidden": [],
+    "clock": {
+      "start_stop": false
+    },
+    "rows": {
+      "apps": 1.0,
+      "hardware": 1.0,
+      "destinations": 1.0
+    },
+    "destination_width_px": null
+  }
+}

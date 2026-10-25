@@ -1,13 +1,15 @@
 pub mod autostart;
-pub mod graaf;
-pub mod meter;
-pub mod midimeter;
-pub mod opname;
+mod backend_adapter;
+mod quit;
+pub use pecan_pipewire::graaf;
+pub use pecan_pipewire::meter;
+pub use pecan_pipewire::midimeter;
+pub use pecan_pipewire::opname;
 pub mod tray;
 
-use tauri::{Emitter, Manager, State, WindowEvent};
+use tauri::{Manager, State, WindowEvent};
 
-use graaf::{BusOpname, Graaf, Melding, Momentopname, Opdracht, Opties};
+use graaf::{BusOpname, Graaf, Momentopname, Opdracht, Opties};
 
 #[tauri::command]
 fn haal_graaf(g: State<Graaf>) -> Momentopname {
@@ -81,9 +83,12 @@ fn zet_mute(g: State<Graaf>, knoop: u32, mute: bool) {
 
 pub fn run() {
     tauri::Builder::default()
+        .manage(quit::QuitAdapter::default())
         // Een tweede start (uit het menu, terwijl hij al in de tray staat)
         // haalt alleen het venster van de eerste tevoorschijn.
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| tray::toon_venster(app)))
+        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
+            tray::toon_venster(app)
+        }))
         .on_window_event(|venster, e| {
             // Sluiten is verbergen: de app blijft in de tray, en routes,
             // meters en opnames lopen door. Stoppen gaat via Quit in de tray.
@@ -101,30 +106,7 @@ pub fn run() {
             if !std::env::args().any(|a| a == "--hidden") {
                 tray::toon_venster(app.handle());
             }
-            let handle = app.handle().clone();
-            app.manage(Graaf::start(Box::new(move |m| match m {
-                Melding::Graaf(g) => {
-                    let (verbonden, rate) = (g.verbonden, g.rate);
-                    tray::werk_bij(&handle, |s| {
-                        s.verbonden = verbonden;
-                        s.rate = rate;
-                    });
-                    let _ = handle.emit("graaf", g);
-                }
-                Melding::Pieken(p) => {
-                    let _ = handle.emit("pieken", p);
-                }
-                Melding::Midi(m) => {
-                    let _ = handle.emit("midi", m);
-                }
-                Melding::Transport(t) => {
-                    tray::werk_bij(&handle, |s| {
-                        s.opname = t.bezig;
-                        s.bussen = t.bussen.keys().cloned().collect();
-                    });
-                    let _ = handle.emit("transport", t);
-                }
-            })));
+            app.manage(backend_adapter::start(app.handle().clone()));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

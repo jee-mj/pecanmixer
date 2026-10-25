@@ -1,0 +1,47 @@
+name: Native Rust validation
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CARGO_BUILD_JOBS: 2
+      CARGO_TERM_COLOR: never
+    steps:
+      # Anonymous exact-SHA checkout of this public repository avoids requiring
+      # a Node-based checkout action, credentials, submodules or user profiles.
+      - name: Check out the event commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: Install native build and synthetic test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config clang libclang-dev libgtk-4-dev \
+            libpipewire-0.3-dev libspa-0.2-dev binutils \
+            xvfb xauth dbus dbus-x11 libxtst6
+          rustup toolchain install stable --profile minimal --component rustfmt
+          rustup default stable
+      - name: Build, test and inventory the native target
+        shell: bash
+        run: bash scripts/native/check.sh
