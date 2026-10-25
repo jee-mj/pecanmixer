@@ -212,11 +212,18 @@ impl PreferencesState {
         operation: SettingsOperation,
         send: impl FnOnce(SettingsOperation) -> Result<u64, SubmissionError>,
     ) -> Result<u64, SubmissionError> {
+        if matches!(&operation, SettingsOperation::Desktop(_)) {
+            return Err(SubmissionError {
+                reason: SubmissionFailure::NotReady,
+                operation,
+            });
+        }
         let desired = match &operation {
             SettingsOperation::Save(doc) | SettingsOperation::Recover { settings: doc, .. } => {
                 Some(doc.clone())
             }
             SettingsOperation::Reload => None,
+            SettingsOperation::Desktop(_) => unreachable!(),
         };
         if desired.is_some()
             && (!self.ready
@@ -239,6 +246,7 @@ impl PreferencesState {
             SettingsOperation::Save(_) => 0,
             SettingsOperation::Reload => 1,
             SettingsOperation::Recover { .. } => 2,
+            SettingsOperation::Desktop(_) => unreachable!(),
         };
         match send(operation) {
             Ok(id) => {
@@ -268,6 +276,9 @@ impl PreferencesState {
         }
     }
     pub(super) fn event(&mut self, event: &SettingsEvent) {
+        if matches!(event, SettingsEvent::Desktop { .. }) {
+            return;
+        }
         let request = event.request();
         let pending = self.pending.remove(&request);
         if request < self.baseline_request {
@@ -285,6 +296,7 @@ impl PreferencesState {
             self.restore_allowed = false;
         }
         match event {
+            SettingsEvent::Desktop { .. } => unreachable!(),
             SettingsEvent::Loaded { snapshot, .. }
             | SettingsEvent::Saved { snapshot, .. }
             | SettingsEvent::Recovered { snapshot, .. } => {

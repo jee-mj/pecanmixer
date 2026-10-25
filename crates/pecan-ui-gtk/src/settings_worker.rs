@@ -2,7 +2,9 @@
 //! audio effects. Submission is admission only; consume the matching result.
 //! Both queues are bounded. Drain results before joining off-UI on shutdown;
 //! dropping this handle detaches and does not promise queued saves completed.
+mod desktop;
 use crate::settings_storage::{LoadedSettings, RecoveredSettings, SettingsFile, StorageError};
+pub use desktop::{DesktopContext, DesktopOperation, DesktopReply, DesktopResult};
 use pecan_core::settings::SettingsV1;
 use std::{
     io,
@@ -17,6 +19,7 @@ use std::{
 pub const SETTINGS_QUEUE_CAPACITY: usize = 16;
 #[derive(Debug)]
 pub enum SettingsOperation {
+    Desktop(DesktopOperation),
     Reload,
     Save(SettingsV1),
     /// Recover only the exact input snapshot the user explicitly reviewed.
@@ -41,6 +44,10 @@ pub struct SubmissionError {
 }
 #[derive(Debug)]
 pub enum SettingsEvent {
+    Desktop {
+        request: u64,
+        result: DesktopResult,
+    },
     /// The initial explicit load has request 0; later reloads have their own ID.
     Loaded {
         request: u64,
@@ -69,7 +76,8 @@ pub enum SettingsEvent {
 impl SettingsEvent {
     pub fn request(&self) -> u64 {
         match self {
-            Self::Loaded { request, .. }
+            Self::Desktop { request, .. }
+            | Self::Loaded { request, .. }
             | Self::Saved { request, .. }
             | Self::Recovered { request, .. }
             | Self::Failed { request, .. }
@@ -86,6 +94,8 @@ pub struct SettingsWorker {
     events: Receiver<SettingsEvent>,
     thread: JoinHandle<()>,
     next: u64,
+    preferences: bool,
+    desktop: bool,
 }
 impl SettingsWorker {
     /// Starting this explicit worker performs its initial load on that worker,
@@ -93,20 +103,61 @@ impl SettingsWorker {
     pub fn start(file: SettingsFile) -> io::Result<Self> {
         Self::start_store(file)
     }
+    pub fn start_with_desktop(
+        file: Option<SettingsFile>,
+        context: DesktopContext,
+    ) -> io::Result<Self> {
+        if file
+            .as_ref()
+            .is_some_and(|f| f.path() == context.file.path())
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Settings and desktop entry must use separate files.",
+            ));
+        }
+        Self::start_parts(file.map(|f| Box::new(f) as Box<dyn Store>), Some(context))
+    }
+    pub fn supports_preferences(&self) -> bool {
+        self.preferences
+    }
+    pub fn supports_desktop(&self) -> bool {
+        self.desktop
+    }
     fn start_store(store: impl Store) -> io::Result<Self> {
+        Self::start_parts(Some(Box::new(store)), None)
+    }
+    fn start_parts(
+        store: Option<Box<dyn Store>>,
+        desktop: Option<DesktopContext>,
+    ) -> io::Result<Self> {
+        let preferences = store.is_some();
+        let has_desktop = desktop.is_some();
         let (sender, requests) = mpsc::sync_channel(SETTINGS_QUEUE_CAPACITY);
         let (events_tx, events) = mpsc::sync_channel(SETTINGS_QUEUE_CAPACITY);
         let thread = thread::Builder::new()
             .name("pecanmixer-settings".into())
-            .spawn(move || run(store, requests, events_tx))?;
+            .spawn(move || run(store, desktop, requests, events_tx))?;
         Ok(Self {
             sender,
             events,
             thread,
             next: 0,
+            preferences,
+            desktop: has_desktop,
         })
     }
     pub fn submit(&mut self, operation: SettingsOperation) -> Result<u64, SubmissionError> {
+        let supported = match &operation {
+            SettingsOperation::Desktop(_) => self.desktop,
+            _ => self.preferences,
+        };
+        if !supported {
+            return Err(SubmissionError {
+                reason: SubmissionFailure::NotReady,
+                operation,
+            });
+        }
         let Some(request) = self.next.checked_add(1) else {
             return Err(SubmissionError {
                 reason: SubmissionFailure::IdExhausted,
@@ -176,64 +227,85 @@ impl Store for SettingsFile {
         SettingsFile::recover(self, from, next)
     }
 }
-fn run(store: impl Store, requests: Receiver<Work>, events: SyncSender<SettingsEvent>) {
-    let mut current = store.load().map_err(Arc::new);
-    let initial = match &current {
-        Ok(snapshot) => SettingsEvent::Loaded {
-            request: 0,
-            snapshot: snapshot.clone(),
-        },
-        Err(error) => SettingsEvent::Failed {
-            request: 0,
-            error: error.clone(),
-        },
-    };
-    if events.send(initial).is_err() {
-        return;
+fn run(
+    store: Option<Box<dyn Store>>,
+    desktop: Option<DesktopContext>,
+    requests: Receiver<Work>,
+    events: SyncSender<SettingsEvent>,
+) {
+    let mut current = store.as_ref().map(|s| s.load().map_err(Arc::new));
+    if let Some(initial) = &current {
+        let initial = match initial {
+            Ok(snapshot) => SettingsEvent::Loaded {
+                request: 0,
+                snapshot: snapshot.clone(),
+            },
+            Err(error) => SettingsEvent::Failed {
+                request: 0,
+                error: error.clone(),
+            },
+        };
+        if events.send(initial).is_err() {
+            return;
+        }
     }
     for Work { request, operation } in requests {
         let event = match operation {
-            SettingsOperation::Reload => match store.load() {
-                Ok(snapshot) => {
-                    current = Ok(snapshot.clone());
-                    SettingsEvent::Loaded { request, snapshot }
-                }
-                Err(error) => failed(request, error, &mut current),
+            SettingsOperation::Desktop(operation) => SettingsEvent::Desktop {
+                request,
+                result: desktop
+                    .as_ref()
+                    .expect("desktop admission checked")
+                    .execute(operation),
             },
-            SettingsOperation::Save(next) => match &current {
-                Err(error) => SettingsEvent::Blocked {
-                    request,
-                    error: error.clone(),
-                },
-                Ok(from) => match store.save(from, &next) {
-                    Ok(snapshot) => {
-                        current = Ok(snapshot.clone());
-                        SettingsEvent::Saved { request, snapshot }
-                    }
-                    Err(error) => failed(request, error, &mut current),
-                },
-            },
-            SettingsOperation::Recover { from, settings } => {
-                match store.recover(&from, &settings) {
-                    Ok(recovered) => {
-                        current = Ok(recovered.loaded.clone());
-                        SettingsEvent::Recovered {
+            operation => {
+                let store = store.as_ref().expect("preference admission checked");
+                let current = current.as_mut().expect("preference baseline");
+                match operation {
+                    SettingsOperation::Reload => match store.load() {
+                        Ok(snapshot) => {
+                            *current = Ok(snapshot.clone());
+                            SettingsEvent::Loaded { request, snapshot }
+                        }
+                        Err(error) => failed(request, error, current),
+                    },
+                    SettingsOperation::Save(next) => match current {
+                        Err(error) => SettingsEvent::Blocked {
                             request,
-                            snapshot: recovered.loaded,
-                            backup: recovered.backup,
+                            error: error.clone(),
+                        },
+                        Ok(from) => match store.save(from, &next) {
+                            Ok(snapshot) => {
+                                *current = Ok(snapshot.clone());
+                                SettingsEvent::Saved { request, snapshot }
+                            }
+                            Err(error) => failed(request, error, current),
+                        },
+                    },
+                    SettingsOperation::Recover { from, settings } => {
+                        match store.recover(&from, &settings) {
+                            Ok(recovered) => {
+                                *current = Ok(recovered.loaded.clone());
+                                SettingsEvent::Recovered {
+                                    request,
+                                    snapshot: recovered.loaded,
+                                    backup: recovered.backup,
+                                }
+                            }
+                            Err(error) => failed(request, error, current),
                         }
                     }
-                    Err(error) => failed(request, error, &mut current),
+                    SettingsOperation::Desktop(_) => unreachable!(),
                 }
             }
         };
-        // Blocking only this dedicated I/O worker bounds retained results. A
-        // dropped consumer unblocks it and prevents further queued operations.
+        // Only this dedicated I/O worker can block on the bounded result queue.
         if events.send(event).is_err() {
             break;
         }
     }
 }
+
 fn failed(
     request: u64,
     error: StorageError,

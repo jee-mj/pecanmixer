@@ -12,6 +12,7 @@ use std::{
 
 #[derive(Clone, Debug, Default)]
 pub struct SettingsSummary {
+    pub desktop: Option<(u64, crate::settings_worker::DesktopResult)>,
     pub results: u64,
     pub last_request: u64,
     pub errors: Vec<String>,
@@ -26,6 +27,17 @@ impl SettingsSummary {
         self.results += 1;
         self.last_request = self.last_request.max(event.request());
         match event {
+            SettingsEvent::Desktop { request, result } => {
+                if let Err(error) = &result {
+                    self.failures += 1;
+                    if self.errors.len() < 32 {
+                        self.errors.push(error.to_string());
+                    }
+                }
+                if self.desktop.as_ref().is_none_or(|(old, _)| *old <= request) {
+                    self.desktop = Some((request, result));
+                }
+            }
             SettingsEvent::Loaded { snapshot, .. } | SettingsEvent::Saved { snapshot, .. } => {
                 self.recovery_required = snapshot.recovery_required()
             }
