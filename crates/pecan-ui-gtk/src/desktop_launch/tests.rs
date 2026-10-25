@@ -368,3 +368,120 @@ fn only_exact_native_argument_template_is_recognized() {
         assert_eq!(entry_format(altered.as_bytes()), None);
     }
 }
+
+#[test]
+fn management_context_roundtrips_existing_cli_without_guessing_authority() {
+    for root in [
+        "/synthetic/config root",
+        "/synthetic/\"$cash`tick\\literal%U/café",
+    ] {
+        let executable = PathBuf::from("/synthetic/native \"$cash`app\\image");
+        let command = LaunchCommand::new(executable.clone())
+            .unwrap()
+            .with_paths(
+                Some("/synthetic/settings %U.json".into()),
+                Some("/synthetic/recordings".into()),
+            )
+            .unwrap()
+            .with_management_context(root.into())
+            .unwrap();
+        for mode in [LaunchMode::Visible, LaunchMode::Hidden] {
+            let options = crate::startup::Options::parse(
+                command.argv(mode).into_iter().skip(1).map(Into::into),
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(
+                options.autostart_config_root.as_deref(),
+                Some(Path::new(root))
+            );
+            assert_eq!(options.native_executable.as_ref(), Some(&executable));
+            assert_eq!(options.settings.as_deref(), command.settings());
+            assert_eq!(options.recording_root.as_deref(), command.recording_root());
+            assert_eq!(options.hidden, mode == LaunchMode::Hidden);
+            assert_eq!(options.tray, mode == LaunchMode::Hidden);
+            let file = glib::KeyFile::new();
+            file.load_from_data(
+                &format!("[Desktop Entry]\nExec={}\n", command.exec_value(mode)),
+                glib::KeyFileFlags::NONE,
+            )
+            .unwrap();
+            let raw = file.string("Desktop Entry", "Exec").unwrap();
+            let argv = glib::shell_parse_argv(raw.as_str()).unwrap();
+            let actual = argv
+                .iter()
+                .map(|s| s.to_str().unwrap().to_owned())
+                .collect::<Vec<_>>();
+            let expected = command
+                .argv(mode)
+                .into_iter()
+                .map(|s| s.replace('%', "%%"))
+                .collect::<Vec<_>>();
+            assert_eq!(actual, expected);
+        }
+        assert_eq!(
+            native_command(command.autostart_entry().as_bytes()),
+            Some(command)
+        );
+    }
+}
+
+#[test]
+fn management_context_is_explicit_paired_bounded_and_cannot_rebind_executable() {
+    let plain = LaunchCommand::new("/synthetic/native").unwrap();
+    assert!(!plain
+        .argv(LaunchMode::Hidden)
+        .iter()
+        .any(|v| v == "--native-executable" || v == "--autostart-config-root"));
+    let managed = plain
+        .clone()
+        .with_management_context("/synthetic/config".into())
+        .unwrap();
+    assert_eq!(
+        managed
+            .clone()
+            .with_management_context("/synthetic/other".into())
+            .unwrap_err(),
+        CommandError::ManagementContextMismatch
+    );
+    let entry = managed.autostart_entry();
+    for altered in [
+        entry.replace(
+            "--native-executable \"/synthetic/native\"",
+            "--native-executable \"/synthetic/foreign\"",
+        ),
+        entry.replace("--native-executable \"/synthetic/native\"", ""),
+        entry.replace("--autostart-config-root \"/synthetic/config\"", ""),
+        entry.replace("--autostart-config-root", "--unknown-root"),
+    ] {
+        assert_eq!(entry_format(altered.as_bytes()), None);
+    }
+    assert_eq!(
+        plain
+            .clone()
+            .with_management_context("relative".into())
+            .unwrap_err(),
+        CommandError::NotAbsolute
+    );
+    assert_eq!(
+        plain
+            .clone()
+            .with_management_context("/synthetic/../config".into())
+            .unwrap_err(),
+        CommandError::InvalidManagementRoot
+    );
+    assert_eq!(
+        plain
+            .with_management_context("/synthetic/line\npath".into())
+            .unwrap_err(),
+        CommandError::ControlCharacter
+    );
+    let long_executable =
+        LaunchCommand::new(format!("/{}", "\\".repeat(MAX_PATH_BYTES - 1))).unwrap();
+    assert_eq!(
+        long_executable
+            .with_management_context("/synthetic/config".into())
+            .unwrap_err(),
+        CommandError::TooLong
+    );
+}

@@ -1,11 +1,12 @@
 # Explicit native desktop launch boundary
 
-This imports the previously reviewed helper `c9c4e00f8207e474b14ca98b9c04972cd9e3fa4c`
-onto PR2 `d0d8f23fa77d1930dd5401addb2d1b1d990c50dc`, then narrows ownership to the
-native identity and preserves the two explicit native path options. Its staged
+This retains the reviewed native helper derived from
+`c9c4e00f8207e474b14ca98b9c04972cd9e3fa4c`. PR2 `48597f7` already mounts desktop
+controls through the explicit paired CLI context and its serialized worker. The
+continuity follow-up keeps that context in generated login arguments. Its staged
 writer, path-bound snapshots, bounded reads, error/reload rules and personal-only
-disable behavior are reused. No startup, preferences-worker, shell, tray, backend
-or packaging caller is added. It does not install or launch anything implicitly.
+disable behavior are reused. No session manager, discovery, automatic enable,
+backend action or packaging change is added.
 
 ## Commands and identity
 
@@ -14,7 +15,8 @@ let command = LaunchCommand::resolve(&supplied_current_exe, supplied_appimage.as
     .with_paths(
         Some("/synthetic/preferences/native.json".into()),
         Some("/synthetic/recordings".into()),
-    )?;
+    )?
+    .with_management_context("/synthetic/authorized-config-root".into())?;
 let normal = command.argv(LaunchMode::Visible);
 let hidden = command.argv(LaunchMode::Hidden);
 ```
@@ -22,13 +24,22 @@ let hidden = command.argv(LaunchMode::Hidden);
 The supplied AppImage path takes precedence over its temporary mounted executable.
 There is no APPIMAGE, HOME or XDG lookup, path canonicalization, process creation,
 or check that the supplied artifact actually starts the native application.
-Future callers must establish that native executable/bundle authority themselves.
+Callers must establish that native executable/bundle authority themselves.
 
 `with_paths(settings, recording_root)` accepts only these known, absolute UTF-8
 paths, retaining their exact values. Settings needs a filename. Controls/NUL and
 overlong paths return typed errors. Missing options stay missing: this does not
 choose a profile or recording directory. In the current native parser, omission
 means memory-only settings and no selected recording root.
+
+`with_management_context(root)` adds the existing paired CLI flags
+`--autostart-config-root ROOT --native-executable EXECUTABLE`. The executable
+assertion is the exact same explicitly selected path as argv[0]; there is no
+independent second artifact or mounted/current-process fallback. `DesktopContext::new`
+adds its already authorized root this way, so the normal login parser recreates
+the same management capability, settings choice and recording root. Root changes,
+unrepresentable paths and combined-size overflow fail instead of dropping context.
+Ordinary commands without an explicit management context still contain no such flags.
 
 Both launch modes retain `--settings PATH` and `--recording-root PATH` when supplied.
 Visible launch adds neither hidden nor tray flags. Hidden launch adds exactly
@@ -45,6 +56,10 @@ adapter. If legacy-template bytes appear at the native filename, they are report
 as `Managed(Legacy)` for explanation and all mutating operations reject them.
 Custom/unknown contents remain conflicts. The marker/template is recognition,
 not authenticated ownership of a file someone deliberately made identical.
+Entries declaring a different management root are conflicts at this file boundary;
+they cannot be adopted, refreshed or removed through another root. Existing native
+entries without management arguments remain recognized and are never rewritten by
+inspection alone. Explicit enable/update or refresh can add the supplied context.
 
 ## Escaping and bounds
 
@@ -62,10 +77,12 @@ This is separate from percent characters in non-executable arguments. Paths are
 bounded to 8192 UTF-8 bytes each, and construction also checks the complete escaped
 entry against the reader's 64 KiB bound. It cannot write an entry too large to reload.
 
-Recognition parses only the exact generated native template with the two known
-options and hidden/tray suffix, then requires byte-identical regeneration. Unknown
-or duplicated options, missing markers, raw field-code requests and edited entries
-are preserved. GLib key-file/argv and GIO preflight fixtures never launch a program;
+Recognition parses only the exact generated native template with the known path
+options, optional paired management context and hidden/tray suffix, then requires
+byte-identical regeneration. A missing half of the pair or a native-executable
+value different from argv[0] is a conflict. Unknown or duplicated options, missing
+markers, raw field-code requests and edited entries are preserved. GLib key-file/argv
+and GIO preflight fixtures never launch a program;
 they do not establish physical desktop/locale or runtime field-expansion acceptance.
 
 ## Explicit file operations
@@ -84,7 +101,10 @@ child. All filesystem calls belong on the future serialized off-UI worker.
    snapshot and `changed`; identical enable and missing disable are no-ops.
 3. Release refresh changes only an existing native entry's executable. Its stored
    settings/recording paths survive even if this ordinary launch omits or changes
-   them; changing those options requires explicit enable/update. It never creates
+   them; changing those options requires explicit enable/update. An existing
+   management root also survives; the executable and its assertion relocate
+   together. For an older rootless entry, refresh may attach the caller's explicit
+   current context. It never creates
    a missing entry or takes over legacy/custom content. Debug refresh
    performs no I/O and returns its supplied snapshot, so use load for fresh state.
 4. Reload after ChangedOnDisk. There is no automatic replacement/recovery of a
@@ -106,12 +126,13 @@ durability or successful login launch.
 
 ## Owner seams and remaining decisions
 
-No live autostart is mounted. Future adoption must supply the explicit native
-launch identity, settings/recording paths, config root and refresh mode. Reuse the
-existing bounded preferences worker for typed desktop requests/results, independent
-of SettingsV1 persistence/readiness and file errors. Keep an admitted request until
-its actual result, report conflicts/pending/errors truthfully, and drain/join that
-same worker through the existing quit lifecycle. No GTK/ksni callback should do I/O.
+The existing explicit-context owner still supplies native launch identity,
+settings/recording paths, config root and refresh mode. Its bounded preferences
+worker, pending/result correlation and quit drain are unchanged; only construction
+of its command retains the context. Inspecting on launch never enables or refreshes
+a file. No GTK/ksni callback should do I/O. A login-started primary can recreate
+controls from its recorded context; an already-running primary keeps its existing
+single-instance context. No context switching/arbitration protocol is introduced.
 
 Default profile/root discovery, native packaging/AppImage entrypoint verification,
 ordinary launcher installation, simultaneous legacy/native startup and eventual
@@ -123,6 +144,7 @@ Run the existing focused suite with
 `cargo test -p pecan-ui-gtk --locked --lib desktop_launch::`.
 Fixtures use authored generic values and `/tmp` directories. They cover argument
 preservation through the actual native option parser, both escaping layers,
-percent data, combined size bounds, native/legacy coexistence, stale snapshots,
+percent data, management continuity and executable assertions, combined size bounds,
+other-root protection, native/legacy coexistence, stale snapshots,
 idempotence, relocation, conflicts, symlinks, interruption and post-publish errors.
 No real profile, generated process, login session, audio server or hardware is used.

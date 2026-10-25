@@ -190,6 +190,85 @@ fn native_relocation_cannot_publish_an_oversized_preserved_command() {
         EntryState::Managed(EntryFormat::Native)
     );
 }
+
+#[test]
+fn login_context_survives_enable_reload_and_relocation_without_discovery() {
+    let dir = TempXdg::new();
+    let file = dir.file();
+    let original = command()
+        .with_paths(
+            Some(dir.0.join("settings %U.json")),
+            Some(dir.0.join("recordings")),
+        )
+        .unwrap()
+        .with_management_context(dir.0.clone())
+        .unwrap();
+    let missing = file.load().unwrap();
+    assert!(!file.path().exists());
+    let enabled = file.enable(&missing, &original).unwrap();
+    assert!(enabled.changed);
+    let captured = file.load().unwrap().launch_command().unwrap();
+    assert_eq!(captured, original);
+    let moved = LaunchCommand::new("/synthetic/explicitly trusted moved native.AppImage").unwrap();
+    let result = file
+        .refresh(&enabled.snapshot, &moved, RefreshMode::Release)
+        .unwrap();
+    let actual = result.snapshot.launch_command().unwrap();
+    assert_eq!(actual.management_root(), Some(dir.0.as_path()));
+    assert_eq!(actual.settings(), original.settings());
+    assert_eq!(actual.recording_root(), original.recording_root());
+    let options = crate::startup::Options::parse(
+        actual
+            .argv(super::super::LaunchMode::Hidden)
+            .into_iter()
+            .skip(1)
+            .map(Into::into),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(options.autostart_config_root, Some(dir.0.clone()));
+    assert_eq!(
+        options.native_executable.as_deref(),
+        Some(moved.executable())
+    );
+    assert_ne!(
+        options.native_executable.as_deref(),
+        Some(original.executable())
+    );
+    file.disable(&result.snapshot).unwrap();
+    assert!(!file.path().exists());
+}
+
+#[test]
+fn foreign_management_root_is_not_adopted_or_written() {
+    let dir = TempXdg::new();
+    let other = TempXdg::new();
+    let file = dir.file();
+    let foreign = command().with_management_context(other.0.clone()).unwrap();
+    let missing = file.load().unwrap();
+    assert!(matches!(
+        file.enable(&missing, &foreign),
+        Err(FileError::Command(CommandError::ManagementContextMismatch))
+    ));
+    assert!(!file.directory.exists());
+    let snapshot = dir.put(foreign.autostart_entry().as_bytes());
+    assert_eq!(snapshot.state(), EntryState::Conflict);
+    assert!(snapshot.launch_command().is_none());
+    assert!(matches!(
+        file.enable(&snapshot, &command()),
+        Err(FileError::Conflict)
+    ));
+    assert!(matches!(file.disable(&snapshot), Err(FileError::Conflict)));
+    assert!(matches!(
+        file.refresh(&snapshot, &command(), RefreshMode::Release),
+        Err(FileError::Conflict)
+    ));
+    assert_eq!(
+        fs::read(file.path()).unwrap(),
+        foreign.autostart_entry().as_bytes()
+    );
+    assert!(!other.file().path().exists());
+}
 fn failure() -> io::Error {
     io::Error::other("synthetic interrupted desktop write")
 }

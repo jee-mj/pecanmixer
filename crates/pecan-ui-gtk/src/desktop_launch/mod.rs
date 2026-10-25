@@ -39,6 +39,8 @@ pub enum CommandError {
     ControlCharacter,
     EqualSign,
     PercentInExecutable,
+    ManagementContextMismatch,
+    InvalidManagementRoot,
     TooLong,
 }
 impl std::fmt::Display for CommandError {
@@ -53,6 +55,7 @@ pub struct LaunchCommand {
     executable: PathBuf,
     settings: Option<PathBuf>,
     recording_root: Option<PathBuf>,
+    management_root: Option<PathBuf>,
 }
 impl LaunchCommand {
     /// APPIMAGE takes precedence over the temporary mounted current executable.
@@ -91,6 +94,7 @@ impl LaunchCommand {
             executable,
             settings: None,
             recording_root: None,
+            management_root: None,
         })
     }
     pub fn executable(&self) -> &Path {
@@ -106,23 +110,35 @@ impl LaunchCommand {
     ) -> Result<Self, CommandError> {
         for (path, file) in [(settings.as_ref(), true), (recording_root.as_ref(), false)] {
             if let Some(path) = path {
-                if !path.is_absolute() {
-                    return Err(CommandError::NotAbsolute);
-                }
-                if file && path.file_name().is_none() {
-                    return Err(CommandError::NoFileName);
-                }
-                let text = path.to_str().ok_or(CommandError::NotUtf8)?;
-                if text.chars().any(char::is_control) {
-                    return Err(CommandError::ControlCharacter);
-                }
-                if text.len() > MAX_PATH_BYTES {
-                    return Err(CommandError::TooLong);
-                }
+                validate_argument_path(path, file)?;
             }
         }
         self.settings = settings;
         self.recording_root = recording_root;
+        self.bounded()
+    }
+    /// Retain an explicitly authorized desktop-management root. Its paired
+    /// native-executable assertion always names this same executable, never a
+    /// discovered mount/current process or an independently rebound artifact.
+    pub fn with_management_context(mut self, root: PathBuf) -> Result<Self, CommandError> {
+        validate_argument_path(&root, false)?;
+        if root
+            .components()
+            .any(|c| c == std::path::Component::ParentDir)
+        {
+            return Err(CommandError::InvalidManagementRoot);
+        }
+        if self
+            .management_root
+            .as_ref()
+            .is_some_and(|old| old != &root)
+        {
+            return Err(CommandError::ManagementContextMismatch);
+        }
+        self.management_root = Some(root);
+        self.bounded()
+    }
+    fn bounded(self) -> Result<Self, CommandError> {
         // Escaped arguments can expand to four bytes per input byte. Never
         // publish a command that our bounded reader cannot subsequently load.
         if self.autostart_entry().len() > storage::MAX_ENTRY_BYTES as usize {
@@ -135,6 +151,9 @@ impl LaunchCommand {
     }
     pub fn recording_root(&self) -> Option<&Path> {
         self.recording_root.as_deref()
+    }
+    pub fn management_root(&self) -> Option<&Path> {
+        self.management_root.as_deref()
     }
     /// Argument vector for inspection/adaptation, not a shell command to execute.
     pub fn argv(&self, mode: LaunchMode) -> Vec<String> {
@@ -149,6 +168,14 @@ impl LaunchCommand {
             args.extend([
                 "--recording-root".into(),
                 root.to_str().expect("validated path").into(),
+            ]);
+        }
+        if let Some(root) = &self.management_root {
+            args.extend([
+                "--autostart-config-root".into(),
+                root.to_str().expect("validated path").into(),
+                "--native-executable".into(),
+                self.text().into(),
             ]);
         }
         if mode == LaunchMode::Hidden {
@@ -188,6 +215,23 @@ impl LaunchCommand {
             .to_str()
             .expect("validated UTF-8 executable")
     }
+}
+
+fn validate_argument_path(path: &Path, file: bool) -> Result<(), CommandError> {
+    if !path.is_absolute() {
+        return Err(CommandError::NotAbsolute);
+    }
+    if file && path.file_name().is_none() {
+        return Err(CommandError::NoFileName);
+    }
+    let text = path.to_str().ok_or(CommandError::NotUtf8)?;
+    if text.chars().any(char::is_control) {
+        return Err(CommandError::ControlCharacter);
+    }
+    if text.len() > MAX_PATH_BYTES {
+        return Err(CommandError::TooLong);
+    }
+    Ok(())
 }
 
 fn quote_argument(text: &str) -> String {
@@ -241,11 +285,12 @@ fn parse_native(raw: &str) -> Option<LaunchCommand> {
         .iter()
         .map(|s| s.to_str())
         .collect::<Option<Vec<_>>>()?;
-    if !(3..=7).contains(&argv.len()) || argv[argv.len() - 2..] != ["--hidden", "--tray"] {
+    if !(3..=11).contains(&argv.len()) || argv[argv.len() - 2..] != ["--hidden", "--tray"] {
         return None;
     }
     let command = LaunchCommand::new(unescape_percent(argv[0])?).ok()?;
-    let (mut settings, mut recording_root) = (None, None);
+    let (mut settings, mut recording_root, mut management_root, mut native_executable) =
+        (None, None, None, None);
     let mut i = 1;
     while i < argv.len() - 2 {
         let value = PathBuf::from(unescape_percent(*argv.get(i + 1)?)?);
@@ -254,11 +299,20 @@ fn parse_native(raw: &str) -> Option<LaunchCommand> {
                 settings = Some(value)
             }
             "--recording-root" if recording_root.is_none() => recording_root = Some(value),
+            "--autostart-config-root" if management_root.is_none() => management_root = Some(value),
+            "--native-executable" if native_executable.is_none() => native_executable = Some(value),
             _ => return None,
         }
         i += 2;
     }
-    command.with_paths(settings, recording_root).ok()
+    let command = command.with_paths(settings, recording_root).ok()?;
+    match (management_root, native_executable) {
+        (None, None) => Some(command),
+        (Some(root), Some(executable)) if executable == command.executable() => {
+            command.with_management_context(root).ok()
+        }
+        _ => None,
+    }
 }
 fn unescape_percent(value: &str) -> Option<String> {
     let mut out = String::new();

@@ -109,6 +109,21 @@ fn desktop_memory_capability_does_not_load_or_require_preferences_or_enable_on_l
     state.event(&event(&worker));
     assert_eq!(state.menu(true).unwrap().checked, Some(true));
     let command = state.snapshot.as_ref().unwrap().launch_command().unwrap();
+    assert_eq!(command.management_root(), Some(temp.0.as_path()));
+    let login = crate::startup::Options::parse(
+        command
+            .argv(crate::desktop_launch::LaunchMode::Hidden)
+            .into_iter()
+            .skip(1)
+            .map(Into::into),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(login.autostart_config_root, Some(temp.0.clone()));
+    assert_eq!(
+        login.native_executable.as_deref(),
+        Some(command.executable())
+    );
     assert!(command.settings().is_none());
     assert_eq!(
         command.recording_root().unwrap(),
