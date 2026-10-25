@@ -29,8 +29,8 @@ reconciliation remain separate.
 | Cable create/remove/move, selection/delete/cancel (`src/Patchbay.tsx`, `src/handelingen.ts`) | Reviewed keyboard/pointer libraries attached to reviewed coordinator source | Physical-input acceptance |
 | Patch module positioning and reconnect behavior (`Plekken`, `ModuleKaart`) | Reviewed session movement/rearrange and reconnect aliases on retained view | Session-layout and physical-input acceptance |
 | Undo/redo queue and keyboard shortcuts (`src/geschiedenis.ts`, `src/handelingen.ts`, `src/App.tsx`) | Reviewed generation/selector guards, shared receipts, immutable history activation and one-step observed gesture history | Queued input, complete shortcuts and audio/input acceptance |
-| Add/remove/link buses, Rec gain/mute/arming (`src/bussen.ts`, `Mixer`) | Bus owner mounts typed idle config/readback and correlated controls; Session/routing/meters use adopted definitions; corrected arming and staged idle migration are backend libraries | Editable bus gain/mute, saved config effects and immediate configuration-driven history reconciliation; arming/migration owner adapters and observed-port acceptance; active structural edits remain a user-decision gate |
-| Record/stop, per-bus start/stop, elapsed time, folder action (`src/Transport.tsx`, `src/api.ts`) | Bus owner adds explicit-root all-armed/per-bus start, captured stable stop IDs, retained receipts and quit diagnostics | Directory picker/folder action, elapsed/alignment, dynamic-arming owner adoption and live recording acceptance; all-armed membership is preflight only, not atomic CAS |
+| Add/remove/link buses, Rec gain/mute/arming (`src/bussen.ts`, `Mixer`) | Bus owner mounts typed idle config/readback and correlated controls; Session/routing/meters use adopted definitions; corrected dynamic arming is wired through shared owner admission/retained receipts; staged idle migration remains a backend library | Editable bus gain/mute, saved config effects and immediate configuration-driven history reconciliation; idle migration owner adapter and observed-port acceptance; active structural edits remain a user-decision gate |
+| Record/stop, per-bus start/stop, elapsed time, folder action (`src/Transport.tsx`, `src/api.ts`) | Bus owner adds explicit-root all-armed/per-bus start, captured stable stop IDs, retained receipts and quit diagnostics | Folder action, elapsed/alignment and live recording acceptance; all-armed membership is preflight only, not atomic CAS |
 | MIDI clock/start-stop, MIDI tabs/route/activity (`src/MidiMixer.tsx`, `src/midi.ts`, `src/MidiMeter.tsx`) | Legacy MIDI feature flag remains disabled | Preserve disabled status; separately define/verify any enabled MIDI parity scope |
 | Meter ballistics/peak hold, per-channel rendering (`src/meters.ts`, `src/Meter.tsx`) | Entrypoint uses Session-adopted definitions for same-graph split/add/join/remove reprojection; retained wrappers, registry bindings, graph-before-peaks and visibility gating remain | Capture freshness/availability protocol and live/animation acceptance remain |
 | Hide/show strips/rows and reconnect names (`src/App.tsx`, `Mixer`) | Reviewed display panel/filter/save bridge; full graph/origin/history retained | Transient IDs must not become durable identity; reconnect/desktop acceptance |
@@ -67,7 +67,7 @@ The [settings result/display bridge candidate](./native-settings-bridge.md) reta
 
 The [native entrypoint adoption candidate](./native-startup-adoption.md) wires one owner/shell, explicit path or memory settings, functional mixer/patchbay and authenticated accepted-batch telemetry. Its entrypoint wiring has independently cleared and is public at `20e9f90c`. The subsequent bus/configuration/recording owner wiring below has a separate integration record.
 
-The [bus/configuration/recording owner candidate](./native-bus-owner-adapter.md) adds a shared ticket/admission lease, exact edited revision handoffs, retained native receipts and common-quit diagnostic audit. Its original busy-Refresh finding is corrected at `cb24a2ba`; independent re-review clears all nine original probes and three additional recovery/authentication probes. Active arming and idle migration are backend libraries; their native owner/UI adapters remain unavailable. Structural edits during recording/finalization remain gated pending the user's product decision. Module positions match the original session-only behavior; durable persistence is not required for parity.
+The [bus/configuration/recording owner candidate](./native-bus-owner-adapter.md) adds a shared ticket/admission lease, exact edited revision handoffs, retained native receipts and common-quit diagnostic audit. Its original busy-Refresh finding is corrected at `cb24a2ba`; independent re-review clears all nine original probes and three additional recovery/authentication probes. The reviewed dynamic-arming owner/UI follow-up now adopts the arming library. Idle migration remains a backend library without an owner adapter. Structural edits during recording/finalization remain gated pending the user's product decision. Module positions match the original session-only behavior; durable persistence is not required for parity.
 
 The [routing surface](../../crates/pecan-ui-gtk/src/routing/README.md) and correction
 `8240f71b` retain configuration uncertainty across zero-effect route rejection.
@@ -104,6 +104,7 @@ commands, server-convergence proof and hardware acceptance remain separate.
 
 The [dynamic arming owner/UI candidate](./native-dynamic-arming-owner.md) connects
 existing active Arm/Armed controls to the reviewed backend protocol and retains
-parent/child outcomes separately. It is awaiting independent review; the public
-capability matrix above is not upgraded by this candidate record. Idle migration
-adoption and active-recording structural policy remain separate gates.
+parent/child outcomes separately. Independent re-review clears `10fb50f5`,
+including child-polling reentry, busy-child retention and original-request
+validation before lease release. Idle migration adoption and active-recording
+structural policy remain separate gates.
