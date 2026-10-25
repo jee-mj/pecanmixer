@@ -8,9 +8,13 @@ use pecan_core::{
     graph::Opdracht,
     history_backend::{bind_history_plan, HistoryResults},
     inbox::{InboxBatch, LatestInbox},
-    native_command::{NativeProgress, NativeReceipt, NativeReport},
+    native_command::{NativeExecution, NativeProgress, NativeReceipt, NativeReport},
 };
-use std::{cell::RefCell, rc::Rc, sync::Arc};
+use std::{
+    cell::RefCell,
+    rc::{Rc, Weak},
+    sync::Arc,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Status {
@@ -59,12 +63,15 @@ enum Delivery {
 /// identity isolates old controller callbacks even if numeric tickets repeat in
 /// a replacement session. The backend receipt remains the only success source.
 #[derive(Clone)]
-pub struct Request(Rc<RefCell<Delivery>>, NativeReceipt);
+pub struct Request(Rc<RefCell<Delivery>>, NativeReceipt, Weak<Inner>);
 impl Request {
     /// Actual backend evidence, retained independently of presentation/history
     /// invalidation. Terminal status alone does not establish quiescence.
     pub(crate) fn native_report(&self) -> NativeReport {
         self.1.report()
+    }
+    pub(crate) fn same_request(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
     }
 }
 struct Pending {
@@ -210,6 +217,48 @@ impl Session {
                 .as_ref()
                 .is_some_and(|p| Rc::ptr_eq(&p.request.0, &request.0))
     }
+    /// Read-only prerequisite check; a frozen in-progress count is historical.
+    pub(crate) fn recovery_ready(&self, request: &Request, graph: &Graph) -> Result<(), String> {
+        if !request.2.upgrade().is_some_and(|s| Rc::ptr_eq(&s, &self.0)) {
+            return Err("Recovery belongs to another application session.".into());
+        }
+        if request.1.execution() != NativeExecution::Closed {
+            return Err("Local execution is still pending; retain the original receipt.".into());
+        }
+        self.0
+            .state
+            .borrow()
+            .recovery_ready(request, graph, &request.native_report())
+    }
+    /// Called only after BusOwner inspected current authenticated configuration.
+    /// Reopen local admission, never upgrade the report or record prefix undo.
+    pub(crate) fn recover_request(
+        &self,
+        request: &Request,
+        graph: &Graph,
+        buses: &pecan_core::domain::buses::BusConfig,
+    ) -> Result<(), String> {
+        buses.definitions().map_err(|e| format!("{e:?}"))?;
+        self.recovery_ready(request, graph)?;
+        let frame = self
+            .0
+            .endpoint
+            .recovery_witness(graph)
+            .map_err(|e| format!("Current native graph inspection unavailable: {e:?}"))?;
+        if frame.graph().stamp != graph.stamp || !Arc::ptr_eq(&frame.graph().value, &graph.value) {
+            return Err("Recovery inspection returned a different native frame.".into());
+        }
+        let report = request.native_report();
+        let mut state = self.0.state.borrow_mut();
+        state.recovery_ready(request, graph, &report)?;
+        state.uncertain = None;
+        state.history.buses = buses.clone();
+        state.history_context = Rc::new(());
+        state.status = Status::Unconfirmed(
+            "Local dispatch closed; current state inspected. The original routing outcome remains unconfirmed or partially applied; no rollback is established.".into(),
+        );
+        Ok(())
+    }
     /// Called only with BusOwner's authenticated, accepted graph/configuration.
     /// Preserve the definitions captured by outstanding work until it releases
     /// the shared gate; do not replan that work using a new layout.
@@ -350,6 +399,7 @@ impl Session {
                         request: Request(
                             Rc::new(RefCell::new(Delivery::Invalidated(message.clone()))),
                             receipt,
+                            Rc::downgrade(&self.0),
                         ),
                         ticket,
                         source: origin.stamp,
@@ -360,6 +410,7 @@ impl Session {
                 let request = Request(
                     Rc::new(RefCell::new(Delivery::Native(NativeProgress::Queued))),
                     receipt.clone(),
+                    Rc::downgrade(&self.0),
                 );
                 s.pending = Some(Pending {
                     ticket,
@@ -464,6 +515,51 @@ impl Session {
     }
 }
 impl State {
+    fn recovery_ready(
+        &self,
+        request: &Request,
+        graph: &Graph,
+        report: &NativeReport,
+    ) -> Result<(), String> {
+        if self.admission_closed
+            || self.pending.is_some()
+            || self.history.busy()
+            || self.volume.busy()
+            || self.external.is_some()
+        {
+            return Err(
+                "Release current history/gesture/configuration ownership before recovery.".into(),
+            );
+        }
+        if !matches!(
+            report.progress,
+            NativeProgress::Unconfirmed { .. } | NativeProgress::Rejected { .. }
+        ) {
+            return Err("Recovery requires the original terminal failure outcome.".into());
+        }
+        if !self.witnessed
+            || !graph.value.verbonden
+            || !self
+                .graph
+                .as_ref()
+                .is_some_and(|g| g.stamp == graph.stamp && Arc::ptr_eq(&g.value, &graph.value))
+            || (graph.stamp.epoch, graph.stamp.revision)
+                < (report.source.epoch, report.source.revision)
+        {
+            return Err(
+                "Recovery requires the current authenticated connected native graph.".into(),
+            );
+        }
+        if self.uncertain.as_ref().is_some_and(|held| {
+            !held.request.same_request(request)
+                || held.ticket != report.ticket
+                || held.source != report.source
+                || held.commands != report.command_count
+        }) {
+            return Err("Another or mismatched receipt still owns the uncertainty hold.".into());
+        }
+        Ok(())
+    }
     fn poll_uncertain(&mut self) {
         let Some(held) = self.uncertain.as_ref() else {
             return;

@@ -105,6 +105,16 @@ impl FixtureDriver {
     }
 }
 impl Endpoint for Fixture {
+    fn recovery_witness(&self, graph: &Graph) -> Result<HistoryGraph, AdmissionError> {
+        self.frames
+            .borrow()
+            .back()
+            .filter(|f| {
+                f.graph().stamp == graph.stamp && Arc::ptr_eq(&f.graph().value, &graph.value)
+            })
+            .cloned()
+            .ok_or(AdmissionError::OriginUnavailable)
+    }
     fn witness(&self, graph: &Graph) -> Result<HistoryGraph, AdmissionError> {
         self.frames
             .borrow()

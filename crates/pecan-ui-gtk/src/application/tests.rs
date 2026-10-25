@@ -18,6 +18,64 @@ fn graph() -> Momentopname {
     }
     graph
 }
+#[test]
+fn explicit_recovery_rejects_foreign_requests_and_copied_frames_without_upgrading_receipts() {
+    let (_, session, driver, origin, ids) = setup();
+    let request = session
+        .execute(
+            &origin,
+            "Synthetic failed mute",
+            Action::Mute {
+                node: 20,
+                muted: true,
+            },
+        )
+        .unwrap()
+        .unwrap();
+    let admitted = driver.take_requests().pop().unwrap();
+    admitted.reporter.set(NativeProgress::Unconfirmed {
+        reason: NativeFailure::ObservationTimedOut,
+        counts: Counts {
+            submitted: 1,
+            ..Default::default()
+        },
+    });
+    admitted.reporter.seal_execution();
+    session.poll();
+    let current = driver.publish((*origin.value).clone(), ids);
+    session.poll();
+    let frozen = request.native_report();
+    let copied = Graph {
+        stamp: current.stamp,
+        value: Arc::new((*current.value).clone()),
+    };
+    let configuration = default_idle_configuration().buses;
+    assert!(session
+        .recover_request(&request, &copied, &configuration)
+        .is_err());
+    let (_foreign_owner, other, _other_driver, other_graph, _) = setup();
+    let foreign = other
+        .execute(
+            &other_graph,
+            "Synthetic other owner",
+            Action::Mute {
+                node: 20,
+                muted: true,
+            },
+        )
+        .unwrap()
+        .unwrap();
+    assert!(session
+        .recover_request(&foreign, &current, &configuration)
+        .is_err());
+    assert_eq!(request.native_report(), frozen);
+    session
+        .recover_request(&request, &current, &configuration)
+        .unwrap();
+    assert_eq!(request.native_report(), frozen);
+    assert_eq!(session.history_lengths(), (0, 0));
+    assert!(driver.take_requests().is_empty());
+}
 fn generations(g: &Momentopname) -> BTreeMap<u32, u64> {
     g.knopen
         .iter()

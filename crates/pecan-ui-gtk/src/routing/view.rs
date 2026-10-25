@@ -11,6 +11,7 @@ enum Key {
     Reset,
     Confirm,
     Cancel,
+    Recover,
 }
 struct State<O> {
     model: RefCell<Model<O>>,
@@ -23,6 +24,7 @@ struct State<O> {
     buttons: RefCell<Vec<(Key, gtk::Button)>>,
     input: Rc<ActivationInput>,
     callback: RefCell<Option<Rc<Handler<O>>>>,
+    recovery: RefCell<Option<Rc<dyn Fn() -> Result<(), String>>>>,
     offered: RefCell<Option<Capture<O>>>,
     scheduled: Cell<bool>,
     presentation: RefCell<Rc<()>>,
@@ -86,6 +88,7 @@ impl<O: Clone + 'static> RoutingControls<O> {
             buttons: RefCell::new(vec![]),
             input: input.clone(),
             callback: RefCell::new(None),
+            recovery: RefCell::new(None),
             offered: RefCell::new(None),
             scheduled: Cell::new(false),
             presentation: RefCell::new(Rc::new(())),
@@ -205,6 +208,18 @@ impl<O: Clone + 'static> RoutingControls<O> {
     }
     pub fn pending(&self) -> Option<RequestToken> {
         self.0.model.borrow().pending()
+    }
+    /// The owner binds this to one retained original request. Reuse the same
+    /// capture-or-cancel input guard as routing, including focus retirement.
+    pub(crate) fn bind_recovery(&self, handler: Option<Rc<dyn Fn() -> Result<(), String>>>) {
+        *self.0.recovery.borrow_mut() = handler;
+        self.0.render();
+    }
+    /// A provisional projection refresh cannot release the retained routing
+    /// latch when the owner's final native inspection/ownership check fails.
+    pub(crate) fn recovery_failed(&self, message: &str) {
+        self.0.model.borrow_mut().reconcile = true;
+        self.unavailable(message);
     }
     pub fn status_text(&self) -> String {
         self.0.status.text().into()
@@ -387,6 +402,24 @@ impl<O: Clone + 'static> State<O> {
             },
         );
         self.tools.append(&reset);
+        if self.recovery.borrow().is_some() {
+            let recovery = self.button(
+                Key::Recover,
+                "Inspect and refresh routing status",
+                connected && !self.input.blocked(),
+                |s| {
+                    let handler = s.recovery.borrow().clone();
+                    if let Some(handler) = handler {
+                        if let Err(error) = handler() {
+                            *s.last_error.borrow_mut() = Some(error);
+                        }
+                    }
+                    s.render();
+                    Ok(())
+                },
+            );
+            self.tools.append(&recovery);
+        }
         self.confirmation.set_visible(confirming.is_some());
         if let Some(counts) = confirming {
             self.confirmation.append(&label(&format!("{} manual routes will be reset: {} links, {} target overrides, {} disconnected streams. WirePlumber takes over again. Rec routes are kept.",counts.total(),counts.links,counts.targets,counts.detached)));

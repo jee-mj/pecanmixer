@@ -54,6 +54,10 @@ type Graph = Stamped<Arc<Momentopname>>;
 trait Endpoint {
     fn witness(&self, graph: &Graph) -> Result<HistoryGraph, AdmissionError>;
     fn dispatch(&self, intent: NativeIntent) -> Result<NativeReceipt, AdmissionError>;
+    /// Recovery needs the current owned frame, not merely a retained origin.
+    fn recovery_witness(&self, _graph: &Graph) -> Result<HistoryGraph, AdmissionError> {
+        Err(AdmissionError::OriginUnavailable)
+    }
 }
 impl Endpoint for Graaf {
     fn witness(&self, graph: &Graph) -> Result<HistoryGraph, AdmissionError> {
@@ -61,6 +65,18 @@ impl Endpoint for Graaf {
     }
     fn dispatch(&self, intent: NativeIntent) -> Result<NativeReceipt, AdmissionError> {
         self.dispatch_native(intent)
+    }
+    fn recovery_witness(&self, graph: &Graph) -> Result<HistoryGraph, AdmissionError> {
+        let current = pecan_core::backend::Backend::current_graph(self);
+        if current.stamp != graph.stamp || !Arc::ptr_eq(&current.value, &graph.value) {
+            return Err(AdmissionError::OriginUnavailable);
+        }
+        let frame = self.history_graph(graph)?;
+        let current = pecan_core::backend::Backend::current_graph(self);
+        if current.stamp != graph.stamp || !Arc::ptr_eq(&current.value, &graph.value) {
+            return Err(AdmissionError::OriginUnavailable);
+        }
+        Ok(frame)
     }
 }
 

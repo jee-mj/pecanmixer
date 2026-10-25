@@ -47,6 +47,7 @@ struct Fake {
     takes: RefCell<Vec<Rc<Take>>>,
     stops: RefCell<Vec<Stop>>,
     hook: RefCell<Option<Box<dyn Fn()>>>,
+    read_hook: RefCell<Option<Box<dyn Fn()>>>,
 }
 impl Fake {
     fn new(epoch: u64) -> Rc<Self> {
@@ -79,6 +80,7 @@ impl Fake {
             takes: RefCell::default(),
             stops: RefCell::default(),
             hook: RefCell::default(),
+            read_hook: RefCell::default(),
         })
     }
     fn admit(
@@ -204,11 +206,16 @@ impl Service for Fake {
         } else {
             vec![]
         };
-        Some(Readback {
+        let readback = Readback {
             revision: self.membership.get(),
             config: self.config.borrow().clone(),
             takes,
-        })
+        };
+        let hook = self.read_hook.borrow_mut().take();
+        if let Some(hook) = hook {
+            hook();
+        }
+        Some(readback)
     }
     fn configure(&self, intent: IdleConfigIntent) -> Result<Rc<dyn ConfigPoll>, Error> {
         let receipt = Rc::new(Config {

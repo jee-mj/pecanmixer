@@ -124,6 +124,91 @@ const SPACE: c_ulong = 0x20;
 const RETURN: c_ulong = 0xff0d;
 const ESCAPE: c_ulong = 0xff1b;
 const TAB: c_ulong = 0xff09;
+#[gtk::test]
+fn xtest_recovery_return_cannot_transfer_to_fresh_routing_before_native_release() {
+    use pecan_core::native_command::{Counts, NativeFailure};
+    let (v, g, _) = view();
+    let events = Rc::new(RefCell::new(vec![]));
+    let seen = events.clone();
+    v.bind_intents(move |event| {
+        seen.borrow_mut().push(event);
+        Ok(())
+    });
+    let window = gtk::Window::builder()
+        .child(v.widget())
+        .default_width(1000)
+        .default_height(850)
+        .build();
+    window.present();
+    let input = Input::new(&window);
+    let (source, destination) = first(&v.0.model.borrow());
+    let key = Key::Route(source, destination);
+    button(&v, &key).emit_clicked();
+    let Event::History(intent) = events.borrow_mut().pop().unwrap() else {
+        panic!("history handoff")
+    };
+    let crate::routing::Input::Execute { action, .. } = &intent.history else {
+        panic!("routing action")
+    };
+    let command_count =
+        pecan_core::domain::history::plan(action, &intent.graph.value, &intent.bus_configuration)
+            .unwrap()
+            .len();
+    assert!(v.report(
+        &intent.request,
+        NativeReport {
+            ticket: 7,
+            source: g.stamp,
+            command_count,
+            progress: NativeProgress::Unconfirmed {
+                reason: NativeFailure::ObservationTimedOut,
+                counts: Counts {
+                    submitted: 1,
+                    ..Default::default()
+                }
+            },
+        }
+    ));
+    let recovered = Rc::new(Cell::new(0));
+    let calls = recovered.clone();
+    let weak = Rc::downgrade(&v.0);
+    let next = Stamped {
+        stamp: Stamp {
+            epoch: g.stamp.epoch,
+            revision: g.stamp.revision + 1,
+        },
+        value: Arc::new((*g.value).clone()),
+    };
+    let next_owner = owner(&next);
+    v.bind_recovery(Some(Rc::new(move || {
+        let view = RoutingControls(weak.upgrade().ok_or("retired fixture")?);
+        view.reconciled(capture(&next, &next_owner))
+            .map_err(|e| e.to_string())?;
+        view.bind_recovery(None);
+        calls.set(calls.get() + 1);
+        Ok(())
+    })));
+    focus_fresh(&v, &Key::Recover);
+    input.key(RETURN, true);
+    settle(300); // Same asynchronous GTK activation interval as the existing Return regression.
+    assert_eq!(recovered.get(), 1);
+    assert!(v.0.input.held() && v.0.input.blocked());
+    input.key(RETURN, true);
+    settle(40);
+    assert!(
+        events.borrow().is_empty(),
+        "held recovery tail must not become a new route"
+    );
+    assert_eq!(recovered.get(), 1);
+    input.key(RETURN, false);
+    focus_fresh(&v, &key);
+    input.key(SPACE, true);
+    input.key(SPACE, false);
+    settle(300);
+    assert_eq!(events.borrow().len(), 1, "fresh route activation recovers");
+    window.close();
+    settle(30);
+}
 fn settle(ms: u64) {
     let end = Instant::now() + Duration::from_millis(ms);
     let context = glib::MainContext::default();

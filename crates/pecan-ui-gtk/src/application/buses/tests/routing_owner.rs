@@ -1,4 +1,5 @@
 //! Real owner/controller handoffs using only injected synthetic services.
+mod recovery;
 use super::*;
 use crate::application::{routes::Routes, NativeWorkspace};
 use pecan_core::{

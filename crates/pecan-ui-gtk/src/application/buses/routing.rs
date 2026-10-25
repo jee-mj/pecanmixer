@@ -82,6 +82,39 @@ impl BusOwner {
         graph: &Graph,
         buses: &BusConfig,
     ) -> Result<(), String> {
+        self.inspect_routing(origin, graph, buses)?;
+        self.session.adopt_buses(graph, buses)
+    }
+    /// Inspect without clearing configuration barriers or adopting definitions
+    /// through an unresolved Session hold. The owner commits recovery later.
+    pub(crate) fn routing_recovery_capture(
+        &self,
+    ) -> Result<(Capture<Origin>, Graph, BusConfig), String> {
+        let origin = self.origin().ok_or("Bus presentation unavailable.")?;
+        let graph = self.routing_graph(&origin)?;
+        let buses = origin
+            .0
+            .config
+            .as_ref()
+            .and_then(|c| c.configuration.as_ref())
+            .map(|c| c.buses.clone())
+            .ok_or("Known configuration is required for recovery.")?;
+        if self.view.configuration_pending() {
+            return Err(
+                "Reconcile the separate configuration operation before routing recovery.".into(),
+            );
+        }
+        self.inspect_routing(&origin, &graph, &buses)?;
+        let capture = Capture::from_bus_controls(graph.clone(), &self.view, Budget::default())
+            .map_err(|e| e.to_string())?;
+        Ok((capture, graph, buses))
+    }
+    fn inspect_routing(
+        &self,
+        origin: &Origin,
+        graph: &Graph,
+        buses: &BusConfig,
+    ) -> Result<(), String> {
         self.routing_navigation(origin, graph)?;
         self.validate(origin).map_err(|e| e.to_string())?;
         let expected = origin
@@ -114,6 +147,6 @@ impl BusOwner {
         if self.data.borrow().config.as_ref() != Some(expected) {
             return Err("Configuration changed during routing preflight.".into());
         }
-        self.session.adopt_buses(graph, buses)
+        Ok(())
     }
 }
