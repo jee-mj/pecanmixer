@@ -1,8 +1,8 @@
-# Saved Rec preference writeback candidate
+# Saved Rec preference writeback
 
-This candidate starts at `6b1ccc1e` and adds only writeback of accepted user Rec
-layout, dB, mute and arming intent. It is separate from PR2 until independent
-review. Entrypoint mode selection, backend/core APIs, keyboard files, schema version,
+Reviewed `3b9f6133` starts at `6b1ccc1e` and adds only writeback of accepted user
+Rec layout, dB, mute and arming intent. It independently clears the writeback
+contract and is now integrated with separately reviewed standard GTK shortcuts. Entrypoint mode selection, backend/core APIs, keyboard files, schema version,
 dependencies and legacy application remain unchanged. Loading/reloading settings,
 reconnect and passive backend readback issue no automatic Rec restore or start.
 
@@ -135,6 +135,17 @@ Node-tool attempt inventory is empty.
 
 Source/privacy, whitespace, unchanged versions/manifests/lockfile and untouched
 core/backend/keyboard-file checks pass. No final failed check or environment
-blocker remains. Candidate hosted status and independent review are separate
-receipts; no PR2 adoption, automatic restore, hardware/audio, physical desktop
-or performance acceptance is claimed.
+blocker remains. The exact candidate hosted run 40163554352 succeeds. Independent review passes
+19 Rec checks, 11 preference checks and three additional probes for delayed-save
+coalescing, rejected gain through layout/unrelated settings, and protected input
+with quit. No automatic restore, hardware/audio, physical desktop or performance
+acceptance is claimed. Combined adoption receipts are recorded below/in the PR.
+
+The combined reviewed adoption with standard GTK shortcuts passes 86 validator
+controls, 76 core, 219 backend, 468 feature GTK and 414 default GTK tests, native
+build/formatting/dependency audits, three headless fixtures, three GTK smokes,
+ten legacy library tests and compilation of five legacy examples. No Node-tool
+attempt is recorded. Runtime writeback modules match `3b9f6133` exactly; automatic
+restore and the original-generation full-config API remain absent. Privacy/scope,
+whitespace and unchanged versions/lockfile checks pass. Hosted exact-head evidence
+is recorded separately in the PR description.
