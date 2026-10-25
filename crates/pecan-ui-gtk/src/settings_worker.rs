@@ -329,6 +329,15 @@ impl SettingsWorker {
         save_gate: Option<(SyncSender<()>, Receiver<()>)>,
         fail_after_publish: bool,
     ) -> io::Result<Self> {
+        Self::fixture_with_desktop(file, load_gate, save_gate, fail_after_publish, None)
+    }
+    pub(crate) fn fixture_with_desktop(
+        file: SettingsFile,
+        load_gate: Option<(SyncSender<()>, Receiver<()>)>,
+        save_gate: Option<(SyncSender<()>, Receiver<()>)>,
+        fail_after_publish: bool,
+        desktop: Option<DesktopContext>,
+    ) -> io::Result<Self> {
         struct Fixture {
             file: SettingsFile,
             load: std::sync::Mutex<Option<(SyncSender<()>, Receiver<()>)>>,
@@ -372,11 +381,14 @@ impl SettingsWorker {
                 self.file.recover(from, next)
             }
         }
-        Self::start_store(Fixture {
-            file,
-            load: std::sync::Mutex::new(load_gate),
-            save: std::sync::Mutex::new(save_gate),
-            fail: std::sync::atomic::AtomicBool::new(fail_after_publish),
-        })
+        Self::start_parts(
+            Some(Box::new(Fixture {
+                file,
+                load: std::sync::Mutex::new(load_gate),
+                save: std::sync::Mutex::new(save_gate),
+                fail: std::sync::atomic::AtomicBool::new(fail_after_publish),
+            })),
+            desktop,
+        )
     }
 }

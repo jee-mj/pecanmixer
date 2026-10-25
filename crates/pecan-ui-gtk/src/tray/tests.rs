@@ -152,6 +152,7 @@ fn blocked_registration_cannot_block_quit_admission_or_close_and_busy_update_ret
         thread::current().id()
     );
     let snapshot = TraySnapshot {
+        autostart: None,
         connected: true,
         rate: Some(48000),
         quit: QuitPhase::Idle,
@@ -222,6 +223,7 @@ fn stalled_update_retains_only_latest_pending_state_on_the_same_worker() {
     .unwrap();
     adapter
         .try_update(TraySnapshot {
+            autostart: None,
             rate: Some(1),
             ..Default::default()
         })
@@ -232,6 +234,7 @@ fn stalled_update_retains_only_latest_pending_state_on_the_same_worker() {
     for rate in 2..=50000 {
         adapter
             .try_update(TraySnapshot {
+                autostart: None,
                 rate: Some(rate),
                 ..Default::default()
             })
@@ -344,6 +347,7 @@ fn failed_worker_revokes_availability_and_rejects_later_presentation() {
         thread::sleep(Duration::from_millis(1));
     }
     let snapshot = TraySnapshot {
+        autostart: None,
         connected: true,
         ..Default::default()
     };
@@ -353,4 +357,41 @@ fn failed_worker_revokes_availability_and_rejects_later_presentation() {
         mailbox.drain().tray.map(|e| e.availability),
         Some(TrayAvailability::Unavailable)
     );
+}
+
+#[test]
+fn desktop_tray_callback_retains_offered_source_and_unknown_is_not_false_disabled() {
+    let (mailbox, _wake) = ActionMailbox::new();
+    let mut icon = Icon {
+        mailbox: mailbox.clone(),
+        snapshot: TraySnapshot::default(),
+        generation: 1,
+        control: control(),
+    };
+    assert!(matches!(&icon.menu()[0], MenuItem::Standard(item) if !item.enabled));
+    icon.snapshot.autostart = Some(AutostartMenu {
+        source: 7,
+        checked: Some(false),
+        enabled: true,
+        status: "Synthetic missing native entry".into(),
+    });
+    let mut old = icon.menu();
+    icon.snapshot.autostart = Some(AutostartMenu {
+        source: 9,
+        checked: None,
+        enabled: false,
+        status: "Synthetic pending inspection".into(),
+    });
+    let MenuItem::Checkmark(item) = old.remove(0) else {
+        panic!("known state needs checkmark")
+    };
+    (item.activate)(&mut icon);
+    assert_eq!(
+        mailbox.drain().autostart,
+        Some(AutostartAction {
+            source: 7,
+            enabled: true
+        })
+    );
+    assert!(matches!(&icon.menu()[0], MenuItem::Standard(item) if !item.enabled));
 }

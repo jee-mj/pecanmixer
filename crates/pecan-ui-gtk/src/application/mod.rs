@@ -4,6 +4,7 @@
 //! synthetic endpoint: it never constructs a Graaf or connects to PipeWire.
 mod buses;
 mod coordinator;
+mod desktop;
 mod drain;
 mod fixture;
 mod folders;

@@ -3,8 +3,14 @@
 //! Application actions never wait for tray presentation or D-Bus acknowledgement.
 mod mailbox;
 use crate::lifetime::{QuitPhase, TrayAvailability};
-use ksni::{blocking::TrayMethods, menu::StandardItem, MenuItem, ToolTip};
-pub use mailbox::{ActionBatch, ActionMailbox, ConsumerStopped, TrayEvidence, VisibilityAction};
+use ksni::{
+    blocking::TrayMethods,
+    menu::{CheckmarkItem, StandardItem},
+    MenuItem, ToolTip,
+};
+pub use mailbox::{
+    ActionBatch, ActionMailbox, AutostartAction, ConsumerStopped, TrayEvidence, VisibilityAction,
+};
 use std::{
     io,
     sync::{
@@ -17,7 +23,15 @@ use std::{
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AutostartMenu {
+    pub source: u64,
+    pub checked: Option<bool>,
+    pub enabled: bool,
+    pub status: String,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TraySnapshot {
+    pub autostart: Option<AutostartMenu>,
     pub connected: bool,
     pub rate: Option<u32>,
     pub quit: QuitPhase,
@@ -25,6 +39,7 @@ pub struct TraySnapshot {
 impl Default for TraySnapshot {
     fn default() -> Self {
         Self {
+            autostart: None,
             connected: false,
             rate: None,
             quit: QuitPhase::Idle,
@@ -116,7 +131,33 @@ impl ksni::Tray for Icon {
     fn menu_about_to_show(&mut self) {}
     fn menu(&self) -> Vec<MenuItem<Self>> {
         let offered = self.snapshot.quit.clone();
+        let desktop = self.snapshot.autostart.clone();
+        let source = desktop.as_ref().map_or(0, |d| d.source);
+        let label = desktop.as_ref().map_or_else(
+            || "Native login entry (explicit context required)".into(),
+            |d| format!("Native login entry · {}", d.status),
+        );
+        let login = match desktop.as_ref().and_then(|d| d.checked) {
+            Some(checked) => CheckmarkItem {
+                label,
+                checked,
+                enabled: desktop.as_ref().is_some_and(|d| d.enabled)
+                    && matches!(offered, QuitPhase::Idle),
+                activate: Box::new(move |icon: &mut Self| {
+                    let _ = icon.mailbox.autostart(source, !checked);
+                }),
+                ..Default::default()
+            }
+            .into(),
+            None => StandardItem {
+                label,
+                enabled: false,
+                ..Default::default()
+            }
+            .into(),
+        };
         vec![
+            login,
             StandardItem {
                 label: status(&self.snapshot),
                 enabled: false,

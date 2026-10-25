@@ -192,3 +192,11 @@ new request. Pending/uncertain work, recording reload and general layouts remain
 gated. Corrected `91afa807` is integrated with the unchanged pure desktop helper.
 Recording observed by the owner latches its existing epoch skip even if nested
 polling publishes joined state before returning; a later epoch can recover.
+
+A separate, unreviewed [explicit desktop worker/tray candidate](./native-desktop-adoption-candidate.md)
+uses one existing settings worker/drain, separate memory preference capability and
+explicit CLI root/native-artifact context. Ordinary launch never enables an entry.
+It retains actual results and original control tokens; legacy takeover and profile
+discovery are excluded. Generated login arguments do not yet retain management
+context, so full autostart/session parity remains unfinished. The candidate is not
+in PR2 before independent review and combined adoption checks.
