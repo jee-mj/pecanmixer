@@ -410,3 +410,105 @@ fn active_layout_opening_finalization_missing_directory_and_quit_remain_gated() 
     owner.stop_all().unwrap();
     assert!(fake.arms.borrow().len() == 1);
 }
+
+struct ReentrantChild {
+    report: RefCell<Option<TakeStatus>>,
+    hook: RefCell<Option<Box<dyn Fn()>>>,
+}
+impl TakePoll for ReentrantChild {
+    fn report(&self) -> Option<TakeStatus> {
+        let report = self.report.borrow().clone();
+        let hook = self.hook.borrow_mut().take();
+        if let Some(hook) = hook {
+            hook();
+        }
+        report
+    }
+}
+fn reentrant_child(fake: &Fake) -> Rc<ReentrantChild> {
+    let child = child(fake, 0, "rec-2");
+    fake.takes.borrow_mut().pop(); // This child is available only in the arming receipt.
+    let child = Rc::new(ReentrantChild {
+        report: RefCell::new(child.report()),
+        hook: RefCell::default(),
+    });
+    fake.arms.borrow()[0]
+        .1
+         .0
+        .borrow_mut()
+        .as_mut()
+        .unwrap()
+        .additions[0]
+        .receipt = child.clone();
+    child
+}
+#[gtk::test]
+fn arming_child_report_can_read_owner_and_busy_child_keeps_original_handle() {
+    for busy in [false, true] {
+        let (owner, fake, _) = live();
+        change(&owner, "rec-2", true).unwrap();
+        let child = reentrant_child(&fake);
+        let original = child.report.borrow().clone();
+        if busy {
+            *child.report.borrow_mut() = None;
+        }
+        let read = Rc::new(Cell::new(false));
+        let weak = Rc::downgrade(&owner);
+        let called = read.clone();
+        *child.hook.borrow_mut() = Some(Box::new(move || {
+            let owner = weak.upgrade().unwrap();
+            assert_eq!(owner.recording_status().len(), 1);
+            assert!(owner.origin().is_some());
+            called.set(true);
+        }));
+        complete(&fake, 0, ArmingOutcome::AppliedLocally, true);
+        owner.poll();
+        assert!(read.get());
+        assert!(!owner.session.busy());
+        let receipt: Rc<dyn TakePoll> = child.clone();
+        if busy {
+            assert!(owner
+                .data
+                .borrow()
+                .orphans
+                .iter()
+                .any(|(_, r)| same_take(r, &receipt)));
+            assert_eq!(owner.recording_status().len(), 1);
+            *child.report.borrow_mut() = original;
+            owner.poll();
+        }
+        assert_eq!(owner.recording_status().len(), 2);
+        assert!(owner.data.borrow().orphans.is_empty());
+        assert!(!owner.data.borrow().protocol_invalid);
+    }
+}
+#[gtk::test]
+fn reentrant_child_poll_cannot_apply_old_result_or_release_new_arming_request() {
+    let (owner, fake, _) = live();
+    let first = change(&owner, "rec-2", true).unwrap();
+    let child = reentrant_child(&fake);
+    // A child can be attached before its parent's local completion is delivered.
+    child.report.borrow_mut().as_mut().unwrap().progress = RecordingProgress::StartedLocally;
+    complete(&fake, 0, ArmingOutcome::AppliedLocally, true);
+    let next = Rc::new(RefCell::new(None));
+    let next_result = next.clone();
+    let weak = Rc::downgrade(&owner);
+    *child.hook.borrow_mut() = Some(Box::new(move || {
+        let owner = weak.upgrade().unwrap();
+        owner.poll_arming();
+        owner.publish();
+        *next_result.borrow_mut() = Some(change(&owner, "rec-3", true).unwrap());
+    }));
+    owner.poll();
+    let second = next.borrow().clone().unwrap();
+    assert_ne!(first, second);
+    let d = owner.data.borrow();
+    let work = d.operation.as_ref().unwrap();
+    assert_eq!(work.request, second);
+    assert_eq!(work.ticket, fake.arms.borrow()[1].0.ticket);
+    assert!(!work.terminal);
+    assert_eq!(work.progress, ui::Progress::Queued);
+    assert!(owner.session.busy());
+    assert!(!d.protocol_invalid);
+    assert_eq!(d.takes.len(), 2);
+}

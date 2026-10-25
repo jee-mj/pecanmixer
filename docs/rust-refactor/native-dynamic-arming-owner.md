@@ -67,3 +67,27 @@ Candidate cloud validation:
 Only synthetic injected UI receipts, existing generic graph fixtures and backend
 fault/temporary-WAV fixtures were used. No user device names, topology, runtime
 logs, profile, audio input or workstation data were accessed or published.
+
+## Child-polling review correction
+
+Independent review blocked original candidate `9c1c86dd`: its arming poll held a
+mutable owner-state borrow while inspecting a child receipt. An injected child
+that read `recording_status()` deterministically panicked with an already-borrowed
+RefCell. This was an injected-contract defect, not an observed native/deployed
+crash. Passing hosted validation on that original source did not cover reentry.
+
+The correction obtains child reports without holding an owner-state borrow, then
+checks the original request identity again before retaining results or releasing
+its lease. Busy children keep their original handles. Two narrow regressions
+cover reading the owner during child polling (available and busy child reports),
+and reentry that completes the original operation and admits a new one. The old
+poll cannot apply its result to the new operation or release the new lease. The
+first regression fails before the correction with the reviewed borrow panic;
+both pass afterward, together with all 58 focused bus/routing owner cases.
+
+Correction validation: 58 focused owner tests, 336 default-feature GTK tests,
+379 all-feature GTK tests, formatting and native build pass. Core/backend execution, legacy tests/examples,
+closure audits and headless/smoke fixtures are unchanged and were not separately
+repeated for this UI-only correction; their passing evidence above belongs to
+`9c1c86dd`. Its hosted run `40149936652` also succeeded. Independent re-review and
+corrected-head hosted checks remain required separately before PR2 integration.

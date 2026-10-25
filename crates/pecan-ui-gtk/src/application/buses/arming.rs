@@ -161,6 +161,14 @@ impl BusOwner {
         let Some((request, report)) = pending.and_then(|(q, r)| r.report().map(|p| (q, p))) else {
             return;
         };
+        // Injected/native receipt inspection must not run under a UI state
+        // borrow. A child can inspect/reenter the owner; revalidate the original
+        // request below before retaining results or releasing its lease.
+        let children: Vec<_> = report
+            .additions
+            .iter()
+            .map(|c| c.receipt.report())
+            .collect();
         let mut d = self.data.borrow_mut();
         let Some(work) = d.operation.as_ref().filter(|w| w.request == request) else {
             return;
@@ -188,12 +196,12 @@ impl BusOwner {
             config_revision: work.expected.revision,
         };
         let desired = arm.armed.clone();
-        for child in &report.additions {
+        for (child, status) in report.additions.iter().zip(children) {
             if !desired.contains(&child.bus) {
                 d.protocol_invalid = true;
             }
             let receipt = child.receipt.clone();
-            if let Some(status) = receipt.report() {
+            if let Some(status) = status {
                 if child.new_take && status.source != expected {
                     d.protocol_invalid = true;
                     Self::pending_take(&mut d, Some(expected), receipt);
