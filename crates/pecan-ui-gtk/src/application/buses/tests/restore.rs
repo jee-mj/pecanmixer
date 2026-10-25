@@ -395,3 +395,91 @@ fn restore_same_identity_ordinary_observations_do_not_rebind_original_witness() 
     );
     assert_eq!(fake.restore_origins.borrow().len(), 1);
 }
+
+fn routed_restore(
+    unknown_metadata: bool,
+    owned_route: bool,
+    change_layout: bool,
+) -> (Rc<BusOwner>, Rc<Fake>) {
+    let (owner, fake, driver) = setup_restore();
+    let mut graph = (*owner.session.graph().unwrap().value).clone();
+    let mut foreign = graph.knopen.iter().find(|n| n.id == 30).unwrap().clone();
+    foreign.id = 900;
+    foreign.serial = Some(900);
+    let mut input = graph.poorten.iter().find(|p| p.id == 301).unwrap().clone();
+    input.id = 901;
+    input.knoop = 900;
+    graph.knopen.push(foreign);
+    graph.poorten.push(input);
+    graph.kabels.push(pecan_core::graph::Kabel {
+        id: 902,
+        uit_knoop: 20,
+        uit_poort: 201,
+        in_knoop: if owned_route { 30 } else { 900 },
+        in_poort: if owned_route { 301 } else { 901 },
+        client: None,
+    });
+    driver.publish(graph.clone(), generations(&graph));
+    owner.session.poll();
+    if unknown_metadata {
+        fake.config.borrow_mut().configuration = None;
+    }
+    owner.poll();
+    let mut preferences = SettingsV1::default().into_preferences();
+    if change_layout {
+        preferences.buses.widths = vec![1, 1];
+        preferences.buses = preferences.buses.with_db("rec-1", -12.).unwrap();
+    } else {
+        preferences.buses = preferences.buses.with_db("rec-1-2", -12.).unwrap();
+    }
+    let mut state = PreferencesState::new(false);
+    state.edit(SettingsV1::new(preferences).unwrap()).unwrap();
+    owner.restore_preferences(&state);
+    (owner, fake)
+}
+#[gtk::test]
+fn restore_foreign_rec_routes_do_not_block_known_owned_layout() {
+    let (owner, fake) = routed_restore(false, false, true);
+    assert_eq!(
+        fake.restore_origins.borrow().len(),
+        1,
+        "foreign routing is not owned layout authority"
+    );
+    assert_eq!(
+        fake.configs.borrow()[0].0.configuration.buses.widths,
+        [1, 1]
+    );
+    terminal(&fake, LocalConfigOutcome::Applied, true);
+    owner.poll();
+    owner.poll();
+    assert!(settled(&owner));
+}
+#[gtk::test]
+fn restore_foreign_rec_routes_do_not_block_unknown_owned_layout() {
+    let (owner, fake) = routed_restore(true, false, true);
+    assert_eq!(
+        fake.restore_origins.borrow().len(),
+        1,
+        "foreign routing must not consume the owned initialization attempt"
+    );
+    assert_eq!(
+        fake.configs.borrow()[0].0.configuration.buses.widths,
+        [1, 1]
+    );
+    terminal(&fake, LocalConfigOutcome::Applied, true);
+    owner.poll();
+    owner.poll();
+    assert!(settled(&owner));
+}
+#[gtk::test]
+fn restore_owned_rec_routes_preserve_layout_gate_but_allow_known_same_layout_gains() {
+    for unknown in [false, true] {
+        let (owner, fake) = routed_restore(unknown, true, true);
+        assert!(fake.restore_origins.borrow().is_empty());
+        assert!(fake.configs.borrow().is_empty());
+        assert!(!owner.session.busy());
+        assert!(owner.restore_status.text().contains("migration"));
+    }
+    let (_, fake) = routed_restore(false, true, false);
+    assert_eq!(fake.restore_origins.borrow().len(), 1);
+}

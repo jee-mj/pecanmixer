@@ -113,11 +113,25 @@ impl BusOwner {
             .configuration
             .as_ref()
             .is_none_or(|c| c.buses.widths != desired.buses.widths);
+        // Other application instances can publish identically named Rec nodes.
+        // Only cables touching the captured local filter constrain its layout.
+        let owned_routed = snapshot
+            .local
+            .as_ref()
+            .and_then(|l| l.node)
+            .is_some_and(|node| {
+                witness
+                    .graph()
+                    .value
+                    .kabels
+                    .iter()
+                    .any(|c| c.in_knoop == node || c.uit_knoop == node)
+            });
         if snapshot
             .local
             .as_ref()
             .is_none_or(|l| l.channels != desired_channels)
-            || layout_changed && self.has_routes(&origin)
+            || layout_changed && owned_routed
         {
             self.restore.borrow_mut().attempted = Some(revision);
             self.restore_message("Saved Rec layout needs a separate channel-count or routed-layout migration; automatic restore was not sent.");

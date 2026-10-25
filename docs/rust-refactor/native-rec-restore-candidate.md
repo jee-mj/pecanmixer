@@ -72,7 +72,7 @@ no graph Undo step and never invents rollback or successful-prefix history.
 
 ## Synthetic verification
 
-Twelve authored restore tests cover original exact Arc/witness admission,
+The initial twelve authored restore tests cover original exact Arc/witness admission,
 MIDI/clock masking without writeback, 1,000 repeated ticks, NoOp plus busy reads,
 delayed old readback versus superseding configuration, numeric-ID generation
 replacement, ordinary revisions retaining original authority, new-epoch restore,
@@ -106,7 +106,7 @@ for independent review; hardware/audio/physical desktop/performance are unrun.
   autostart/distribution and real desktop/audio acceptance remain separate parity
   work. Legacy JS/Tauri, versions and dependencies are preserved.
 
-Final local checks pass 86 validator controls, 76 core, 230 backend, 480 feature
+Initial `c6301335` local checks pass 86 validator controls, 76 core, 230 backend, 480 feature
 GTK and 426 default GTK tests, native build/formatting, Cargo/ELF audits, three
 headless fixtures and three controlled GTK smokes. The focused restore filter
 passes 16 checks (12 new cases and four existing controls). All ten legacy
@@ -115,3 +115,23 @@ and target packages were rebuilt. Zero Node attempts, whitespace/scope/privacy
 and unchanged core/backend/manifests/lockfile/version checks pass. No final
 failed check or dependency/environment blocker remains. Candidate hosted and
 independent-owner review remain separate pending gates.
+
+## Owned-filter route correction
+
+Independent review blocks `c6301335`: the general `has_routes` helper includes
+foreign Rec instances, so a foreign cable incorrectly consumes the owned filter's
+automatic restore attempt. Both known- and unknown-metadata cases reproduce with
+zero admissions before correction. The narrow fix checks only cables touching
+the captured `ConfigSnapshot.local.node` in the original witnessed graph. Backend
+route guards and owned routed-layout gates remain unchanged; no layout capability
+is added.
+
+Three new synthetic GTK cases pass afterward: foreign routing admits the matching
+owned capacity with known/unknown metadata; owned routed regrouping still admits
+nothing in either case; known unchanged grouping still permits gain restoration.
+The restore filter passes 19 checks in both default and feature modes, and all 11
+preferences checks, native build, formatting, whitespace and scope/privacy checks
+pass. Core/backend, legacy source, dependencies, versions and other owner paths
+are unchanged. The full initial suites are not rerun for this narrow correction;
+exact corrected-candidate hosted results and independent re-review remain pending.
+No PR2 publication or hardware/audio acceptance is implied.
