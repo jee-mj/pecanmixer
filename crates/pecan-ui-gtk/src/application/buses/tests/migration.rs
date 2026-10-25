@@ -3,6 +3,8 @@ use super::*;
 use pecan_core::graph::{Kabel, Soort};
 use pecan_pipewire::bus_migration::*;
 
+mod add;
+
 pub(super) struct Migration {
     report: RefCell<Option<MigrationReport>>,
     hook: RefCell<Option<Box<dyn Fn()>>>,
@@ -12,27 +14,33 @@ impl Migration {
         let configuration = fake.config.borrow().clone();
         let mut proposed = configuration.configuration.clone().unwrap();
         let key = match &intent.action {
-            LayoutAction::AddStereo => unreachable!("idle Add owner adoption remains gated"),
+            LayoutAction::AddStereo => None,
             LayoutAction::Split { bus }
             | LayoutAction::Join { bus }
-            | LayoutAction::Remove { bus } => bus,
+            | LayoutAction::Remove { bus } => Some(bus),
         };
-        let def = proposed
-            .buses
-            .definitions()
-            .unwrap()
-            .into_iter()
-            .find(|d| &d.key == key)
-            .unwrap();
+        let def = key.map(|key| {
+            proposed
+                .buses
+                .definitions()
+                .unwrap()
+                .into_iter()
+                .find(|d| &d.key == key)
+                .unwrap()
+        });
         proposed.buses = match intent.action {
+            LayoutAction::AddStereo => proposed.buses.add().unwrap(),
             LayoutAction::Remove { .. } => {
                 proposed
                     .buses
-                    .remove(def.index, &intent.origin.value)
+                    .remove(def.as_ref().unwrap().index, &intent.origin.value)
                     .unwrap()
                     .config
             }
-            _ => proposed.buses.change_coupling(def.index).unwrap(),
+            _ => proposed
+                .buses
+                .change_coupling(def.as_ref().unwrap().index)
+                .unwrap(),
         };
         Self {
             report: RefCell::new(Some(MigrationReport {
@@ -134,6 +142,7 @@ fn edit(owner: &BusOwner, action: ui::Action) -> Result<Request, Error> {
         .unwrap()
         .buses;
     let proposed = match &action {
+        ui::Action::AddStereo => Some(config.add().unwrap()),
         ui::Action::Split { bus } | ui::Action::Join { bus } => Some(
             config
                 .change_coupling(
@@ -203,7 +212,7 @@ fn removed(owner: &BusOwner, driver: &FixtureDriver, gens: &BTreeMap<u32, u64>) 
 fn routed_split_widget_retains_real_receipt_and_lease_until_local_result_is_displayed() {
     let (owner, fake, _, _) = routed();
     let origin = owner.origin().unwrap();
-    assert!(!button(owner.widget(), "Add stereo bus").is_sensitive());
+    assert!(button(owner.widget(), "Add stereo bus").is_sensitive());
     button(owner.widget(), "Split stereo").emit_clicked();
     let (intent, receipt) = fake.migrations.borrow()[0].clone();
     assert!(
@@ -263,6 +272,7 @@ fn routed_split_widget_retains_real_receipt_and_lease_until_local_result_is_disp
         ui::Progress::AppliedLocally
     );
 }
+
 #[gtk::test]
 fn routed_join_uses_migration_but_unrouted_add_keeps_its_existing_separate_path() {
     let (owner, fake, _, _) = routed();
@@ -536,7 +546,7 @@ fn migration_poll_is_reentrant_and_stale_preflights_do_not_submit() {
     );
 }
 #[gtk::test]
-fn wrong_proposal_source_and_routed_add_never_gain_migration_authority() {
+fn wrong_proposal_and_source_never_gain_migration_authority() {
     let (owner, fake, _, _) = routed();
     let origin = owner.origin().unwrap();
     let buses = &origin
@@ -549,7 +559,7 @@ fn wrong_proposal_source_and_routed_add_never_gain_migration_authority() {
         .unwrap()
         .buses;
     assert!(owner
-        .configure(&origin, ui::Action::AddStereo, Some(buses.add().unwrap()))
+        .configure(&origin, ui::Action::AddStereo, Some(buses.clone()))
         .is_err());
     assert!(owner
         .configure(

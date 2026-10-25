@@ -3,7 +3,7 @@ use super::*;
 use pecan_core::{
     backend::Stamp,
     graph::{Opdracht, Soort},
-    history_identity::RegistryBinding,
+    history_identity::{HistoryGraph, RegistryBinding},
 };
 use pecan_pipewire::bus_migration::{
     LayoutAction, LayoutIntent, MigrationOutcome, MigrationProgress, MigrationReport,
@@ -15,6 +15,10 @@ pub(super) struct Work {
     membership: RecordingRevision,
     proposed: IdleBusConfig,
     proof: Postcondition,
+    append: bool,
+    // Keep the backend's actual completion witness. A later observation/cache
+    // lookup cannot supply the generations that were observed at completion.
+    observed_inputs: Option<HistoryGraph>,
     receipt: Option<Rc<dyn MigrationPoll>>,
     last: Option<MigrationReport>,
     publication: Option<ConfigSnapshot>,
@@ -28,9 +32,49 @@ struct Postcondition {
     pairs: BTreeSet<(u32, u32)>,
 }
 impl Postcondition {
-    fn matches(&self, session: &Session, routes: bool) -> bool {
+    fn matches(
+        &self,
+        session: &Session,
+        routes: bool,
+        appended: Option<(&HistoryGraph, usize)>,
+    ) -> bool {
         let Some(frame) = session.witnessed_graph() else {
             return false;
+        };
+        let ports = if let Some((observed, channels)) = appended {
+            let graph = &observed.graph().value;
+            if !graph.knopen.iter().any(|n| {
+                n.id == self.node && n.serial == self.serial && pecan_core::domain::audio::is_bus(n)
+            }) {
+                return false;
+            }
+            let actual: Vec<_> = graph
+                .poorten
+                .iter()
+                .filter(|p| p.knoop == self.node && p.ingang && p.soort == Soort::Audio)
+                .collect();
+            let mut ids = BTreeSet::new();
+            let mapped = (1..=channels)
+                .map(|i| {
+                    let name = format!("rec_{i}");
+                    let mut matches = actual.iter().filter(|p| p.naam == name);
+                    let port = matches.next()?;
+                    (matches.next().is_none() && ids.insert(port.id)).then_some((port.id, name))
+                })
+                .collect::<Option<Vec<_>>>();
+            let Some(ports) = mapped.filter(|_| actual.len() == channels) else {
+                return false;
+            };
+            if !self.ports.iter().all(|p| ports.contains(p))
+                || !observed
+                    .bind_objects(ids.into_iter().chain(std::iter::once(self.node)))
+                    .is_some_and(|binding| binding.matches(&frame))
+            {
+                return false;
+            }
+            ports
+        } else {
+            self.ports.clone()
         };
         let graph = &frame.graph().value;
         self.binding.matches(&frame)
@@ -42,8 +86,8 @@ impl Postcondition {
                 .iter()
                 .filter(|p| p.knoop == self.node && p.ingang && p.soort == Soort::Audio)
                 .count()
-                == self.ports.len()
-            && self.ports.iter().all(|(id, name)| {
+                == ports.len()
+            && ports.iter().all(|(id, name)| {
                 graph.poorten.iter().any(|p| {
                     p.id == *id
                         && p.knoop == self.node
@@ -56,9 +100,7 @@ impl Postcondition {
                 || graph
                     .kabels
                     .iter()
-                    .filter(|l| {
-                        l.in_knoop == self.node && self.ports.iter().any(|p| p.0 == l.in_poort)
-                    })
+                    .filter(|l| l.in_knoop == self.node && ports.iter().any(|p| p.0 == l.in_poort))
                     .map(|l| (l.uit_poort, l.in_poort))
                     .collect::<BTreeSet<_>>()
                     == self.pairs)
@@ -74,6 +116,11 @@ impl Work {
                     && r.expected_recording == self.membership
                     && r.in_progress == 0
                     && !r.cancellation_requested
+                    && (!self.append
+                        || (matches!(
+                            r.progress,
+                            MigrationProgress::Completed(MigrationOutcome::Observed)
+                        ) && self.observed_inputs.is_some()))
                     && matches!(
                         r.progress,
                         MigrationProgress::Completed(
@@ -128,20 +175,22 @@ impl BusOwner {
             .buses
             .definitions()
             .map_err(|e| Self::error(&format!("{e:?}")))?;
-        let key = match &action {
+        let definition = match &action {
+            ui::Action::AddStereo => None,
             ui::Action::Split { bus } | ui::Action::Join { bus } | ui::Action::Remove { bus } => {
-                bus
+                Some(
+                    definitions
+                        .iter()
+                        .find(|b| &b.key == bus)
+                        .ok_or_else(|| Self::error("Captured bus no longer exists."))?,
+                )
             }
             _ => {
                 return Err(Self::error(
-                    "Only idle split, join and remove are supported by migration.",
+                    "Only idle Add, split, join and remove are supported by migration.",
                 ))
             }
         };
-        let definition = definitions
-            .iter()
-            .find(|b| &b.key == key)
-            .ok_or_else(|| Self::error("Captured bus no longer exists."))?;
         let node = config
             .local
             .as_ref()
@@ -162,7 +211,26 @@ impl BusOwner {
             .kabels
             .retain(|l| l.in_knoop == node && scoped.poorten.iter().any(|p| p.id == l.in_poort));
         let (layout, buses, pairs) = match &action {
+            ui::Action::AddStereo => {
+                let next = before
+                    .buses
+                    .add()
+                    .map_err(|e| Self::error(&format!("{e:?}")))?;
+                if proposed.as_ref() != Some(&next) {
+                    return Err(Self::error("Proposal does not match captured core Add."));
+                }
+                (
+                    LayoutAction::AddStereo,
+                    next,
+                    scoped
+                        .kabels
+                        .iter()
+                        .map(|l| (l.uit_poort, l.in_poort))
+                        .collect(),
+                )
+            }
             ui::Action::Split { bus } | ui::Action::Join { bus } => {
+                let definition = definition.unwrap();
                 let coupling = if matches!(action, ui::Action::Split { .. }) {
                     pecan_core::domain::buses::Coupling::Split
                 } else {
@@ -195,6 +263,7 @@ impl BusOwner {
                 )
             }
             ui::Action::Remove { bus } => {
+                let definition = definition.unwrap();
                 if proposed.is_some() || definitions.len() == 1 {
                     return Err(Self::error(
                         "Remove needs the owner core plan and cannot remove the last bus.",
@@ -234,7 +303,8 @@ impl BusOwner {
             _ => unreachable!(),
         };
         let channels: usize = buses.widths.iter().sum();
-        let ports: Vec<_> = (1..=channels)
+        let captured_channels = channels.min(before.buses.widths.iter().sum());
+        let ports: Vec<_> = (1..=captured_channels)
             .map(|i| {
                 let name = format!("rec_{i}");
                 let found: Vec<_> = scoped.poorten.iter().filter(|p| p.naam == name).collect();
@@ -323,6 +393,8 @@ impl BusOwner {
                 receipt: None,
                 arming: None,
                 migration: Some(Work {
+                    append: matches!(action, ui::Action::AddStereo),
+                    observed_inputs: None,
                     source: graph.stamp,
                     membership,
                     proposed: expected,
@@ -406,6 +478,15 @@ impl BusOwner {
         if m.released {
             return;
         }
+        if m.append
+            && m.observed_inputs.is_none()
+            && matches!(
+                report.progress,
+                MigrationProgress::Completed(MigrationOutcome::Observed)
+            )
+        {
+            m.observed_inputs = report.observed_inputs.clone();
+        }
         let decided = report.is_decided() && report.in_progress == 0;
         let current = inspected.filter(|c| {
             c.revision.owner == work.expected.owner
@@ -445,6 +526,19 @@ impl BusOwner {
                         })
                 });
                 let observed = outcome == MigrationOutcome::Observed;
+                let proof = if m.append {
+                    observed
+                        && m.observed_inputs.as_ref().is_some_and(|inputs| {
+                            Some(inputs.graph().stamp) == report.ports_observed
+                                && m.proof.matches(
+                                    &self.session,
+                                    true,
+                                    Some((inputs, m.proposed.buses.widths.iter().sum())),
+                                )
+                        })
+                } else {
+                    m.proof.matches(&self.session, observed, None)
+                };
                 let exact = current.is_some_and(|c| {
                     c == &report.configuration && c.configuration.as_ref() == Some(&m.proposed)
                 });
@@ -459,10 +553,7 @@ impl BusOwner {
                 } else if !covers {
                     work.terminal = false;
                     ui::Progress::AwaitingObservation
-                } else if !exact
-                    || !m.proof.matches(&self.session, observed)
-                    || (observed && report.ports_observed.is_none())
-                {
+                } else if !exact || !proof || (observed && report.ports_observed.is_none()) {
                     ui::Progress::Unconfirmed("Original migration completed, but current authenticated layout/identity no longer matches its result; inspect before retry. The original report is retained.".into())
                 } else {
                     match outcome {

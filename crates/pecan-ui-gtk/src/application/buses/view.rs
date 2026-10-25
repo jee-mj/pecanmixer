@@ -167,7 +167,7 @@ impl BusOwner {
         {
             capabilities.routed_layout = ui::Support::Available;
             capabilities.shrink_layout = ui::Support::Available;
-            // routed_add deliberately retains its separate pending gate.
+            capabilities.routed_add = ui::Support::Available;
         }
         let routes = self.has_routes(&context);
         let operation = publication.operation.as_ref().map(|(r, p)| ui::Operation {

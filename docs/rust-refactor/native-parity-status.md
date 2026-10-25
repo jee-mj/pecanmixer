@@ -129,6 +129,12 @@ not enable the separate `routed_add` capability. Routed Add owner adoption and
 partial repair remain separate review gates; active structural edits remain
 unavailable pending the user's product decision.
 
+A separate [routed Add owner candidate](./native-routed-add-owner-candidate.md)
+adopts that retained backend witness through the existing migration lease and
+accepted-presentation barrier. It is not in PR2 before independent review. This
+candidate alone supplies no hardware/audio acceptance or active structural-edit
+policy, and partial repair remains separate.
+
 The reviewed [Folder owner adoption](./native-folder-owner.md) mounts
 the corrected helper with actual latest-start receipt authority and explicit
 worker-based preparation/launch/reaping. Independent correction review clears
