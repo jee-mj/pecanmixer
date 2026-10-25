@@ -1,10 +1,14 @@
-# Rec level owner candidate
+# Reviewed Rec level owner
 
 This candidate starts at `990a1844`, after the reviewed original-witness gain
 API and arming fixture correction. It binds the existing Rec row callbacks to
 `BusOwner`, using the same application `Session`, backend, polling loop and
-workspace clock. It is a separate candidate for independent review; inclusion
-of the earlier helper/backend libraries on PR2 did not enable these callbacks.
+workspace clock. Its original source was a separate review candidate; inclusion of the earlier
+helper/backend libraries did not enable these callbacks. Independently cleared
+`594e46eb` is now integrated on top of fixture checkpoint `4c25232`. Runtime
+source matches the reviewed corrected owner exactly; the later gain-report
+fixture correction is preserved. Historical check receipts below retain their
+original candidate scope.
 
 ## Authority and admission
 
@@ -113,22 +117,22 @@ legacy library tests and compilation of its five examples pass. Source/privacy,
 whitespace and unchanged manifests/versions/lockfile checks pass. No Node-tool
 attempt was recorded in the validation inventories.
 
-The final aggregate check passes 86 validator controls and 76 core tests, but
-fails at an unchanged backend WAV fixture after 218/219 backend cases:
+The original candidate's final aggregate passed 86 validator controls and 76
+core tests, but failed at an unchanged backend WAV fixture after 218/219 cases:
 `active_gain_mute_and_muted_db_edits_change_wav_samples_without_restarting`
 unwraps an unavailable `recording.try_report()` at `recording_gain_tests.rs:335`.
-No backend/core source differs from `990a1844`. An earlier combined run passed
+That owner branch's backend/core source matched `990a1844`. An earlier combined run passed
 all 219 backend cases and all then-current 438 GTK cases before the final narrow
 owner diagnostic regression was added; that is not a green final aggregate.
 The final GTK/build/fixture checks above were run independently after the
-aggregate stopped. The backend fixture failure is retained for the backend
-owner rather than hidden, weakened or repaired in this UI candidate.
+aggregate stopped. The backend fixture failure was retained for its separate correction rather
+than hidden, weakened or repaired in the UI candidate.
 
 An initial aggregate invocation also stopped at tool discovery because its
 wrapper omitted the existing `xvfb-run` directory from PATH. Correcting the
 invocation used the already available tool; no installation was needed. No
-current environment blocker remains. Independent owner review and the backend
-fixture failure remain integration gates. The published PR2 base has its own
+environment blocker remained. Independent owner review and the backend fixture
+were separate gates at that checkpoint; both have since cleared below. The published PR2 base has its own
 successful exact-head hosted run; candidate hosted results are separate.
 
 ## Superseded unsent-target correction
@@ -156,5 +160,32 @@ feature GTK tests and the rebuilt native executable pass; formatting and scope
 checks pass. The full default suite, backend, legacy and CLI checks were not
 repeated for this six-line ordering delta; their original receipts remain above.
 The backend readability fixture has a separately reviewed follow-up outside this
-owner branch, to preserve during eventual integration. This corrected owner still
-requires independent re-review and is not included in the PR2 fixture checkpoint.
+owner branch, to preserve during eventual integration. That correction was held for independent re-review rather than included in the
+fixture checkpoint. The independent gate is now cleared, as recorded below.
+
+## Independent clearance and reviewed integration
+
+Corrected owner `594e46eb` independently clears 21 focused cases and six recovery
+probes; [exact candidate run 40160930801](https://github.com/jee-mj/pecanmixer/actions/runs/40160930801)
+succeeds. Review confirms uncertainty before Refresh, archived original outcome
+afterward, known/unknown-metadata recovery, replacement, reentry and fresh input.
+Literal old probes retained an obsolete post-Refresh operation-exists expectation;
+phase-specific checks replace that expectation. This is not an all-literal-old-
+assertions-pass claim.
+
+Integration applies the two cleared owner commits onto `4c25232` without runtime
+conflicts, retaining the separately reviewed gain-report readability fixture.
+Native Rec gain/mute is now wired for idle and known native recording through the
+reviewed authority/admission path. Independent review is source/synthetic
+clearance; physical input, audio correctness, sample alignment and performance
+acceptance remain unperformed. Combined integration check receipts follow.
+
+Fresh combined integration checks pass 86 validator controls, 76 core, 219
+backend, 442 feature GTK and 397 default GTK tests, including all 21 owner cases.
+Native build/formatting, Cargo/ELF audits, three headless fixtures and three GTK
+smokes pass. All ten retained legacy library tests and compilation of all five
+legacy examples pass. Workspace packages were rebuilt for host and explicit
+target to avoid cross-candidate reuse. The Node-tool attempt inventory is empty.
+Privacy/scope, whitespace and unchanged versions/manifests/lockfile checks pass.
+No final failed check or dependency/environment blocker remains. These are
+synthetic/source checks; exact published-head CI is recorded in the PR body.
