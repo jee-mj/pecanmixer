@@ -390,8 +390,10 @@ impl BusOwner {
             })?;
         let buses = &current.buses;
         if matches!(action, ui::Action::Remove { .. })
-            || (matches!(action, ui::Action::Split { .. } | ui::Action::Join { .. })
-                && self.has_routes(origin))
+            || (matches!(
+                action,
+                ui::Action::AddStereo | ui::Action::Split { .. } | ui::Action::Join { .. }
+            ) && self.has_routes(origin))
         {
             self.idle()?;
             return self.submit_migration(origin, action, proposed);
