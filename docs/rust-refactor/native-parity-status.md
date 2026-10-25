@@ -38,8 +38,8 @@ remains separate.
 | Meter ballistics/peak hold, per-channel rendering (`src/meters.ts`, `src/Meter.tsx`) | Entrypoint uses Session-adopted definitions for same-graph split/add/join/remove reprojection; retained wrappers, registry bindings, graph-before-peaks and visibility gating remain | Capture freshness/availability protocol and live/animation acceptance remain |
 | Hide/show strips/rows and reconnect names (`src/App.tsx`, `Mixer`) | Reviewed display panel/filter/save bridge; full graph/origin/history retained | Transient IDs must not become durable identity; reconnect/desktop acceptance |
 | Row height and destination split preferences (`useRijGewichten`, `Greep`, `Deling`) | Reviewed adjacent-pair/split resize/reset input and request-aware save triggers | Physical input acceptance |
-| Saved buses, hidden keys, clock preference and layout (`leesBussen`, `leesKlok`, `leesVerborgen`) | Versioned contract/storage plus display bridge and accepted Rec layout/dB/mute/arming writeback through the existing coalesced worker/final drain; latest intent survives backend failure and older saves, while saved MIDI/clock/display values are preserved; independently reviewed matching-capacity idle startup/reconnect restore uses original authority and post-report presentation barriers | General growth/shrink/routed restore, prior user-operation reconciliation, explicit reload/recovery policy, import and clock effects remain gated; no user profile access performed |
-| Tray open/close/quit, autostart/single instance (`src-tauri/src/tray.rs`, `autostart.rs`, `lib.rs`) | Legacy preserved; reviewed lifetime/tray/finalization shell source | Autostart/session management, complete process arbitration and actual desktop acceptance |
+| Saved buses, hidden keys, clock preference and layout (`leesBussen`, `leesKlok`, `leesVerborgen`) | Versioned contract/storage plus display bridge and accepted Rec layout/dB/mute/arming writeback through the existing coalesced worker/final drain; latest intent survives backend failure and older saves, while saved MIDI/clock/display values are preserved; independently reviewed matching-capacity idle startup/reconnect restore uses original authority and post-report presentation barriers | General growth/shrink/routed restore, pending/uncertain prior-work recovery, explicit reload/recovery policy, import and clock effects remain gated; no user profile access performed |
+| Tray open/close/quit, autostart/single instance (`src-tauri/src/tray.rs`, `autostart.rs`, `lib.rs`) | Reviewed shell and explicit-context desktop worker/tray/CLI controls; one retained worker/drain and immutable result-bound control tokens; ordinary launch only inspects, while explicit enable/disable/refresh preserve legacy entries | Generated login arguments do not retain desktop-management context; complete session/process arbitration, native packaging identity and actual desktop/login acceptance remain |
 | Graceful recorder shutdown/error/timeout handling | Reviewed backend/legacy completion and native hold/tagged-handle/off-UI settings drain | Live recording/quit acceptance; no fsync/crash-durability claim |
 | Accessible controls, keyboard navigation, responsive layout (`src/*.tsx`, `src/styles.css`) | Synthetic native names/focus/layout checks; control candidate | End-to-end keyboard/AT-SPI/Orca, physical Wayland/X11, scale/theme/distro acceptance |
 | JS/Node/Tauri/WebKit removal and distribution | Deferred deliberately | All functional/acceptance gates, measured performance, packaging/license closure before cutover |
@@ -180,9 +180,10 @@ clears original foreign-route probes while preserving the owned routed-layout
 gate. Its source is adopted without runtime reconciliation onto `f9fc8e7c`.
 
 The [reviewed desktop helper library](./native-desktop-library-integration.md)
-now preserves explicit native settings/recording launch arguments and a distinct
-native autostart identity without touching legacy entries. It is library-only;
-worker/tray/startup adoption and real desktop/login acceptance remain separate.
+preserves explicit native settings/recording launch arguments and a distinct
+native autostart identity without touching legacy entries. The separately
+reviewed worker/tray adoption below now uses it; real desktop/login acceptance
+remains unperformed.
 
 The independently reviewed [reconnect-after-completed-edits owner](./native-rec-reconnect-edits-candidate.md)
 addresses the retained successful user-operation gate on `d0d8f23f`. It requires
@@ -193,10 +194,16 @@ gated. Corrected `91afa807` is integrated with the unchanged pure desktop helper
 Recording observed by the owner latches its existing epoch skip even if nested
 polling publishes joined state before returning; a later epoch can recover.
 
-A separate, unreviewed [explicit desktop worker/tray candidate](./native-desktop-adoption-candidate.md)
+The independently reviewed [explicit desktop worker/tray source](./native-desktop-adoption-candidate.md)
 uses one existing settings worker/drain, separate memory preference capability and
 explicit CLI root/native-artifact context. Ordinary launch never enables an entry.
 It retains actual results and original control tokens; legacy takeover and profile
 discovery are excluded. Generated login arguments do not yet retain management
-context, so full autostart/session parity remains unfinished. The candidate is not
-in PR2 before independent review and combined adoption checks.
+context, so full autostart/session parity remains unfinished. Correction `bc438072`
+preserves a newer queued presentation source against retired callbacks while
+retaining same-source ordering, bounded storage and reserved Quit. Independent
+re-review clears its unchanged action/file assertions and three additional probes.
+The [integration record](./native-desktop-owner-integration.md) distinguishes those
+reviewed libraries and mounted explicit-context controls from remaining desktop
+acceptance and session work. No actual user profile or login entry is operated by
+the synthetic checks.

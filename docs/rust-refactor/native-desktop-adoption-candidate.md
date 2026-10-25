@@ -2,9 +2,10 @@
 
 This candidate starts at reviewed library-only PR2 head `068f90e1`. It adds one
 explicit desktop capability to the existing serialized settings worker, native
-shell/tray controls and paired CLI context. It needs independent review before
-PR2 adoption. No actual user profile, autostart entry, process or login session is
-operated by the implementation tests.
+shell/tray controls and paired CLI context. Corrected `bc438072` independently
+clears re-review; the [combined integration record](./native-desktop-owner-integration.md)
+tracks its adoption with the existing reconnect source. No actual user profile,
+autostart entry, process or login session is operated by the implementation tests.
 
 ## Explicit context and remaining session boundary
 
@@ -123,7 +124,11 @@ removed. Fresh corrected checks pass 41 desktop/helper cases in each feature
 mode, 18 tray checks, four worker checks and 11 preference checks, plus native
 build, formatting and whitespace checks. The tray/desktop filters overlap; these
 are not disjoint totals. Full native/core/backend/legacy suites were not repeated
-for this narrow correction. No dependency blocker or final local failure remains;
-the corrected candidate still needs independent re-review and exact-head hosted
-results. No actual user profile, login session, program launch or audio acceptance
-is exercised.
+for this narrow correction. No dependency blocker or final local failure remains.
+Independent re-review passes 41 desktop checks, 14 default tray checks, four worker
+checks, 11 preference checks and three additional callback/conflict/quit probes.
+Its harness acknowledges ignored stale posts as false; action and file assertions
+are unchanged. Exact candidate hosted run `40171438619` succeeds with 86 validator
+controls, 76 core, 230 backend and 524 feature GTK tests plus native build, fixture
+CLI and dependency checks. No actual user profile, login session, program launch
+or audio acceptance is exercised.
