@@ -350,6 +350,12 @@ fn verwerk<W: Write + Seek>(
 ) -> Result<Option<MidiBestand>, String> {
     process_tracks(wav, berichten, None)
 }
+/// The Rec filter applies its current channel gain before either writer path.
+#[inline]
+pub(crate) fn gained_sample(sample: f32, gain: f32) -> f32 {
+    sample * gain
+}
+
 fn process_tracks<W: Write + Seek>(
     mut wav: Vec<Option<hound::WavWriter<W>>>,
     berichten: impl IntoIterator<Item = Bericht>,
@@ -939,11 +945,12 @@ unsafe extern "C" fn bus_process(data: *mut c_void, positie: *mut spa::sys::spa_
         }
         for j in 0..n {
             // SAFETY: binnen de n samples die PipeWire gaf.
-            let x = if p.is_null() {
+            let raw = if p.is_null() {
                 0.0
             } else {
                 unsafe { *p.add(j) }
-            } * g;
+            };
+            let x = gained_sample(raw, g);
             piek = piek.max(x.abs());
             if collecting {
                 kanaal.push(x);

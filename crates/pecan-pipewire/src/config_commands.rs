@@ -1,6 +1,8 @@
 //! Local recorder configuration bookkeeping on the existing command boundary.
 use super::*;
 use crate::bus_config::*;
+#[path = "gain_commands.rs"]
+mod gains;
 
 impl Commands {
     pub(crate) fn config_snapshot(&self) -> Option<ConfigSnapshot> {
@@ -50,6 +52,9 @@ impl Commands {
     }
 
     pub(crate) fn apply_config(&self, work: Prepared, target: &mut impl ConfigTarget) {
+        if work.gain_binding.is_some() {
+            return self.apply_gains(work, target);
+        }
         let old = {
             let state = self.0.lock().unwrap();
             if let Err(reason) = state.config_admission(work.intent.expected) {

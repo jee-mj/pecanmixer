@@ -151,6 +151,16 @@ impl Graaf {
         self.opdrachten.enqueue_config(intent)
     }
 
+    /// Level-only local configuration, including during native recording.
+    /// Layout, arming and transport must be unchanged. Completion is actual
+    /// local gain readback, never graph observation or audio-arrival evidence.
+    pub fn configure_bus_gains(
+        &self,
+        intent: crate::bus_config::IdleConfigIntent,
+    ) -> Result<crate::bus_config::ConfigReceipt, crate::bus_config::ConfigError> {
+        self.opdrachten.enqueue_gains(intent)
+    }
+
     pub fn config_snapshot(&self) -> Option<crate::bus_config::ConfigSnapshot> {
         self.opdrachten.config_snapshot()
     }
@@ -1239,6 +1249,9 @@ impl crate::bus_config::ConfigTarget for IdleConfigTarget<'_> {
     }
     fn config_locked(&self) -> bool {
         !self.opnemer.borrow().is_empty() || self.opdrachten.recording_owned()
+    }
+    fn gains_locked(&self) -> bool {
+        !self.opnemer.borrow().is_empty()
     }
     fn routed(&self) -> bool {
         let Some(id) = self.bus.and_then(Bus::knoop_id) else {

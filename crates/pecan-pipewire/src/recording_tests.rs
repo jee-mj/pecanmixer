@@ -3,6 +3,8 @@
 mod arming;
 #[path = "recording_elapsed_tests.rs"]
 mod elapsed;
+#[path = "recording_gain_tests.rs"]
+mod gains;
 #[path = "recording_multitake_tests.rs"]
 mod multiple;
 use super::*;

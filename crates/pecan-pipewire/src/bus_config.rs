@@ -141,6 +141,9 @@ pub(crate) struct Prepared {
     pub channels: usize,
     pub gains: Vec<f32>,
     pub options: Opties,
+    /// Some only for the level-only entrypoint; captured at admission, never
+    /// rebound to a replacement filter or port set during execution.
+    pub gain_binding: Option<GainBinding>,
     receipt: ConfigReceipt,
     completed: bool,
 }
@@ -209,6 +212,7 @@ impl Prepared {
                 channels: kanalen,
                 gains: gain,
                 options,
+                gain_binding: None,
                 receipt: receipt.clone(),
                 completed: false,
             },
@@ -307,11 +311,25 @@ pub(crate) trait ConfigTarget {
     fn config_locked(&self) -> bool {
         self.recording()
     }
+    /// Native level-only updates can coexist with owned takes. Legacy capture
+    /// remains a separate authority; opt in explicitly at the native target.
+    fn gains_locked(&self) -> bool {
+        self.config_locked()
+    }
     fn routed(&self) -> bool;
     fn resize(&mut self, channels: usize) -> ChannelResizeResult;
     fn gains(&mut self, gains: &[f32]);
     fn options(&mut self, options: Opties);
     fn options_match(&self, options: &Opties) -> bool;
+}
+
+#[derive(PartialEq, Eq)]
+pub(crate) struct GainBinding {
+    pub epoch: u64,
+    pub node: u32,
+    pub generation: u64,
+    pub serial: Option<u64>,
+    pub inputs: Vec<(u32, u64)>,
 }
 
 /// Share this allocator loop with the actual filter and fault-injected tests.
