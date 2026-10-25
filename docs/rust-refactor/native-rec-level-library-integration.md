@@ -94,3 +94,26 @@ source/privacy, whitespace and unchanged versions/lockfile checks pass. Exact
 published-head hosted results remain separately recorded in the PR description.
 The new authority API is integrated, but no native level callback is enabled.
 Shared one-flight owner adoption remains a separate reviewed candidate.
+
+## Gain-fixture report readability follow-up
+
+A later owner-candidate aggregate reproduced a separate immediate report unwrap
+at `recording_gain_tests.rs:335` after 218/219 backend cases. The runtime-identical
+published checkpoint and other runs passed. Independently reviewed fixture-only
+`87613e3d` replaces that unwrap with the existing two-second first-readable
+helper and an always-true predicate. It neither pumps lifecycle work nor filters
+for a successful phase. The original StartedLocally, track/take/directory
+identity, ordered WAV samples and finalization assertions remain unchanged.
+Independent review passes 219 backend tests and 50 exact fixture repetitions;
+unexpected-stop and ingress-failure controls both reach and fail the unchanged
+StartedLocally assertion. The integration preserves the reviewed fixture bytes
+and changes no production behavior, owner callback, dependency or version.
+
+The combined native aggregate passes 86 validator controls, 76 core, 219 backend
+and 421 all-feature GTK tests, formatting/build, Cargo/ELF checks, three headless
+fixtures and three GTK smokes. Its Node-tool attempt inventory is empty.
+Previously passed 376 default GTK, ten legacy library and five example
+compilation checks belong to the unchanged runtime checkpoint; they were not
+rerun for this fixture-only delta. The separate Rec owner candidate is still
+outside this integration and requires its own independent gate. Exact published
+head and hosted results are recorded in the PR description.
