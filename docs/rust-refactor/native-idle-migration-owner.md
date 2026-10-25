@@ -1,7 +1,8 @@
-# Idle migration owner candidate
+# Reviewed idle migration owner integration
 
-This separate candidate starts at reviewed PR2 `a5875178` and awaits independent
-review before publication to PR2. It mounts the existing staged backend migration
+This source starts at reviewed PR2 `a5875178`. Independent re-review clears
+corrected owner `5c131247`; final integration preserves its Rust source exactly.
+It mounts the existing staged backend migration
 through the current BusOwner/Session admission path. No backend sequencer,
 recording policy, transport controller, dependency or startup path is added.
 
@@ -118,3 +119,27 @@ stale shared-cache backend binary from a separate candidate; that earlier cached
 run is not used as migration evidence. Legacy suites were not repeated for this
 UI-only correction. No final failed source-matched check or environment blocker
 remains. Hosted validation and independent re-review remain separate gates.
+
+## Independent correction clearance
+
+Independent re-review clears `5c131247`: 69 owner tests in each GTK feature mode
+and three additional recovery groups pass. Six of seven preserved original
+probes pass. The remaining probe expects the former busy lease during disconnect;
+it does not match the corrected policy. The reviewer separately verified release
+only after accepted uncertainty publication, blocked disconnected edits, no replay
+and resolution of the old permanent observation wait. This is not a claim that
+all original probes pass. [Corrected-source hosted run 40153644377](https://github.com/jee-mj/pecanmixer/actions/runs/40153644377)
+also passes. The Folder candidate remains separate and is excluded here.
+
+## Integration validation
+
+The integration is a fast-forward from PR2 `a5875178` through the corrected
+reviewed source, with documentation-only follow-up. Native/core/backend/runtime
+source, manifests and lockfile match `5c131247` exactly. Fresh host and explicit
+target workspace rebuilds pass the combined native aggregate: 86 validator
+controls, 74 core, 196 backend and 390 GTK tests, formatting/build/dependency
+audits, three headless fixtures and three GTK smokes. Default GTK passes 347
+tests. Zero Node-tool attempts are recorded. Legacy suites were not repeated for
+this GTK-only source integration; backend/legacy code is unchanged. No final local
+failed check or environment blocker remains. Final PR-head hosted results are
+recorded separately in the PR description, without hardware/desktop acceptance.
