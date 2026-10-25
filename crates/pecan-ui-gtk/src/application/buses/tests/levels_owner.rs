@@ -791,3 +791,104 @@ fn levels_owner_reentrant_rejection_cannot_downgrade_an_established_cancelled_or
     assert!(matches!(progress(&owner), ui::Progress::Unconfirmed(_)));
     assert!(fake.gains.borrow().is_empty());
 }
+
+fn superseding_readback_with_unsent_target(unknown: bool) {
+    let (owner, fake, _) = setup_levels();
+    let request = begin(&owner);
+    update(&owner, &request, -6.);
+    end(&owner, &request, -18.);
+    let historical = complete(&fake, 0, LocalConfigOutcome::Applied, true);
+    owner.poll();
+    {
+        let mut actual = fake.config.borrow_mut();
+        actual.revision.revision += 1;
+        if unknown {
+            actual.configuration = None;
+        } else {
+            let config = actual.configuration.as_mut().unwrap();
+            config.buses = config.buses.with_db("rec-1-2", -12.).unwrap();
+            let pecan_core::graph::Opdracht::ZetBus { gain, .. } =
+                config.buses.backend_config().unwrap()
+            else {
+                panic!()
+            };
+            actual.local.as_mut().unwrap().gains = gain;
+        }
+    }
+    polls(&owner, 3);
+    assert!(
+        !owner.session.busy(),
+        "superseded completion must not hold an impossible final flush"
+    );
+    assert!(matches!(progress(&owner), ui::Progress::Unconfirmed(_)));
+    assert_eq!(
+        fake.gains.borrow().len(),
+        1,
+        "never replay an unsent target against superseding state"
+    );
+    assert_eq!(owner.configuration_report(), Some(historical.clone()));
+    assert_eq!(owner.session.history_lengths(), (0, 0));
+    owner.refresh();
+    owner.poll();
+    assert!(owner.data.borrow().operation.is_none());
+    assert_eq!(owner.data.borrow().level_reports.back(), Some(&historical));
+    if unknown {
+        assert_ne!(owner.level_support(), ui::Support::Available);
+        assert!(button(owner.widget(), "Initialize native bus defaults").is_sensitive());
+    } else {
+        assert_eq!(owner.level_support(), ui::Support::Available);
+        assert!(set(&owner, Change::Db(-9.)).is_ok());
+        assert_eq!(
+            fake.gains.borrow().len(),
+            2,
+            "only a new interaction may use current state"
+        );
+    }
+}
+
+#[gtk::test]
+fn levels_owner_superseded_known_readback_releases_unsent_final_target_as_uncertainty() {
+    superseding_readback_with_unsent_target(false);
+}
+
+#[gtk::test]
+fn levels_owner_invalidated_metadata_releases_unsent_final_target_as_uncertainty() {
+    superseding_readback_with_unsent_target(true);
+}
+
+#[gtk::test]
+fn levels_owner_older_readback_keeps_unsent_final_target_until_matching_inspection() {
+    let (owner, fake, _) = setup_levels();
+    let original = owner.session.witnessed_graph().unwrap();
+    let request = begin(&owner);
+    update(&owner, &request, -6.);
+    end(&owner, &request, -18.);
+    let done = complete(&fake, 0, LocalConfigOutcome::Applied, false);
+    polls(&owner, 4);
+    assert!(owner.session.busy());
+    assert_eq!(fake.gains.borrow().len(), 1);
+    assert_eq!(progress(&owner), ui::Progress::Applying);
+    let ConfigProgress::Completed(done) = done.progress else {
+        panic!()
+    };
+    *fake.config.borrow_mut() = done.snapshot;
+    owner.poll();
+    assert_eq!(fake.gains.borrow().len(), 2);
+    assert_eq!(
+        fake.gains.borrow()[1]
+            .1
+            .configuration
+            .buses
+            .state("rec-1-2")
+            .db,
+        -18.
+    );
+    assert!(Arc::ptr_eq(
+        &fake.gains.borrow()[1].0.graph().value,
+        &original.graph().value
+    ));
+    complete(&fake, 1, LocalConfigOutcome::Applied, true);
+    polls(&owner, 2);
+    assert!(!owner.session.busy());
+    assert_eq!(progress(&owner), ui::Progress::AppliedLocally);
+}
