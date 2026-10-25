@@ -31,6 +31,8 @@ struct FakeIo {
     prepare_gate: Mutex<Option<mpsc::Receiver<()>>>,
     launch_gate: Mutex<Option<mpsc::Receiver<()>>>,
     failure: Mutex<Option<String>>,
+    substitute: Mutex<Option<FolderPaths>>,
+    teardown: Mutex<Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>>,
 }
 impl Io for FakeIo {
     fn prepare(&self, paths: FolderPaths) -> Result<FolderPlan, String> {
@@ -43,6 +45,10 @@ impl Io for FakeIo {
             gate.recv_timeout(Duration::from_secs(3))
                 .map_err(|e| e.to_string())?;
         }
+        if let Some((entered, release)) = self.teardown.lock().unwrap().take() {
+            CLEANUP.with(|slot| *slot.borrow_mut() = Some(Cleanup { entered, release }));
+        }
+        let paths = self.substitute.lock().unwrap().clone().unwrap_or(paths);
         paths.prepare().map_err(|e| e.to_string())
     }
     fn launch(&self, plan: &FolderPlan) -> Result<(), String> {
@@ -188,10 +194,13 @@ fn root_or_latest_change_cancels_preparation_before_any_launch_and_late_result_s
         }
         owner.poll();
         folders.poll(Duration::from_secs(1));
-        assert!(labels(folders.widget())
-            .iter()
-            .any(|s| s.contains("cancelled before launch")));
+        assert!(!button(folders.widget(), "Folder").is_sensitive());
         release.send(()).unwrap();
+        drive(&owner, &folders, || {
+            labels(folders.widget())
+                .iter()
+                .any(|s| s.contains("cancelled before launch"))
+        });
         for n in 0..20 {
             owner.poll();
             folders.poll(Duration::from_millis(1100 + n));
@@ -323,4 +332,115 @@ fn folder_path_substitution_is_rejected_and_latest_evidence_survives_stop_discon
         io.launched.lock().unwrap()[0].target(),
         path.canonicalize().unwrap()
     );
+}
+
+#[gtk::test]
+fn reviewed_cancelled_preparation_retains_capacity_across_repeated_root_changes() {
+    let temp = Temp::new();
+    let (owner, _, _, _) = active(&temp);
+    let io = Arc::new(FakeIo::default());
+    let (release, gate) = mpsc::channel();
+    *io.prepare_gate.lock().unwrap() = Some(gate);
+    let folders = Folders::new(owner.clone(), Some(io.clone()));
+    button(folders.widget(), "Folder").emit_clicked();
+    drive(&owner, &folders, || {
+        io.prepared.load(Ordering::Acquire) == 1
+    });
+    for n in 0..5 {
+        owner
+            .set_recording_root(Some(temp.0.join(format!("Changed root {n}"))))
+            .unwrap();
+        owner.poll();
+        folders.poll(Duration::from_millis(100 + n));
+        assert!(
+            !button(folders.widget(), "Folder").is_sensitive(),
+            "cancelled worker still owns execution capacity"
+        );
+        button(folders.widget(), "Folder").emit_clicked();
+    }
+    assert_eq!(io.prepared.load(Ordering::Acquire), 1);
+    assert!(io.launched.lock().unwrap().is_empty());
+    release.send(()).unwrap();
+    drive(&owner, &folders, || {
+        button(folders.widget(), "Folder").is_sensitive()
+    });
+    assert!(labels(folders.widget())
+        .iter()
+        .any(|s| s.contains("cancelled before launch")));
+    assert!(io.launched.lock().unwrap().is_empty());
+    button(folders.widget(), "Folder").emit_clicked();
+    drive(&owner, &folders, || {
+        labels(folders.widget())
+            .iter()
+            .any(|s| s.contains("Folder request submitted"))
+    });
+    assert_eq!(io.prepared.load(Ordering::Acquire), 2);
+    assert_eq!(io.launched.lock().unwrap().len(), 1);
+}
+#[gtk::test]
+fn reviewed_substituted_prepared_paths_never_reach_launch_admission() {
+    let temp = Temp::new();
+    let (owner, _, _, _) = active(&temp);
+    let io = Arc::new(FakeIo::default());
+    *io.substitute.lock().unwrap() =
+        Some(FolderPaths::new(temp.0.join("Other synthetic root"), None).unwrap());
+    let folders = Folders::new(owner.clone(), Some(io.clone()));
+    button(folders.widget(), "Folder").emit_clicked();
+    drive(&owner, &folders, || {
+        !io.launched.lock().unwrap().is_empty() || button(folders.widget(), "Folder").is_sensitive()
+    });
+    assert!(
+        io.launched.lock().unwrap().is_empty(),
+        "uncorrelated prepared plan reached the launcher"
+    );
+    assert!(labels(folders.widget())
+        .iter()
+        .any(|s| s.contains("does not match")));
+}
+
+struct Cleanup {
+    entered: mpsc::Sender<()>,
+    release: mpsc::Receiver<()>,
+}
+impl Drop for Cleanup {
+    fn drop(&mut self) {
+        let _ = self.entered.send(());
+        let _ = self.release.recv_timeout(Duration::from_secs(3));
+    }
+}
+thread_local! {static CLEANUP:RefCell<Option<Cleanup>>=const {RefCell::new(None)};}
+#[gtk::test]
+fn reviewed_cancelled_worker_slot_waits_for_teardown_without_joining_on_ui() {
+    let temp = Temp::new();
+    let (owner, _, _, _) = active(&temp);
+    let io = Arc::new(FakeIo::default());
+    let (entered, waiting) = mpsc::channel();
+    let (release, gate) = mpsc::channel();
+    *io.teardown.lock().unwrap() = Some((entered, gate));
+    let folders = Folders::new(owner.clone(), Some(io.clone()));
+    button(folders.widget(), "Folder").emit_clicked();
+    waiting.recv_timeout(Duration::from_secs(3)).unwrap();
+    owner
+        .set_recording_root(Some(temp.0.join("Root changed during worker teardown")))
+        .unwrap();
+    let started = Instant::now();
+    for n in 0..3 {
+        owner.poll();
+        folders.poll(Duration::from_millis(n));
+    }
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "UI polling joined the blocked worker"
+    );
+    assert!(
+        !button(folders.widget(), "Folder").is_sensitive(),
+        "function return is not joined execution completion"
+    );
+    button(folders.widget(), "Folder").emit_clicked();
+    assert_eq!(io.prepared.load(Ordering::Acquire), 1);
+    release.send(()).unwrap();
+    drive(&owner, &folders, || {
+        button(folders.widget(), "Folder").is_sensitive()
+    });
+    assert!(io.launched.lock().unwrap().is_empty());
 }

@@ -88,3 +88,42 @@ published context and captured paths. The regression passes in the final gate.
 No final failed check or environment blocker remains; independent review and
 hosted candidate results remain separate gates. The helper's reviewed Rust source
 is unchanged; only its adoption-status notes are updated.
+
+## Worker-capacity and prepared-plan review correction
+
+Independent review blocked `f7fb8199` on two injected-contract failures. Cancelling
+preparation cleared its pending slot before the worker finished, so repeated root
+changes could admit more outstanding workers. A substituted prepared plan could
+also reach the injected launcher before the presentation rejected its paths.
+NativeIo currently prepares matching plans; no deployed wrong-folder launch is
+claimed. Both review cases are reproduced before correction.
+
+Cancellation now revokes launch while retaining the original request token and
+execution slot until preparation finishes. A small private background join
+supervisor delivers results only after the I/O worker has joined, including
+thread-local teardown. UI polling never joins; only one I/O worker is admitted
+per pending job. The same joined-result handoff is used for launcher workers.
+No pool, new runtime, timer or general cancellation framework is introduced.
+The existing cancellation test now waits for actual worker completion before
+expecting the action to become available again.
+
+Before launch admission, `plan.requested()` must equal the original captured
+paths. Mismatch is an explicit failure and never reaches the launcher. Current
+authority revalidation and the original token remain required; no retargeting,
+retry or substituted-path completion is allowed.
+
+Three new synthetic regressions cover repeated root changes behind one gated
+worker with fresh recovery afterward, substituted prepared plans, and responsive
+UI polling while a cancelled worker's thread-local teardown is gated. All 67
+focused owner tests pass. Review and final source-matched aggregate evidence are
+separate from these focused checks. No actual launcher or user profile is used.
+
+Corrected-source checks pass: 67 focused owner tests, 353 default GTK tests, and
+native aggregate with 86 validator controls, 74 core, 197 backend and 396 GTK
+feature tests, formatting/build/audits, three headless fixtures and three GTK
+smokes. The explicit-target native workspace packages were rebuilt to keep this
+candidate's evidence source-matched; zero Node-tool attempts were recorded.
+Backend/legacy execution source is unchanged from `f7fb8199`; legacy suites were
+not separately repeated for this UI-only correction. No final failed local check
+or environment blocker remains. Hosted checks and independent re-review remain
+separate pending gates before PR2 inclusion.
