@@ -41,6 +41,7 @@ enum Phase {
 struct Job {
     request: FolderRequest<FolderOrigin>,
     phase: Phase,
+    cancelled: bool,
 }
 pub(super) struct Folders {
     buses: Rc<BusOwner>,
@@ -105,18 +106,13 @@ impl Folders {
             .clone()
             .ok_or("Folder I/O is disabled in fixture mode.")?;
         let paths = request.paths.clone();
-        let (sender, receiver) = mpsc::sync_channel(1);
-        // The worker receives explicit paths only, never GTK/owner state. Its
-        // result is not launch admission. Joining is never done on the UI thread.
-        std::thread::Builder::new()
-            .name("pecan-folder-prepare".into())
-            .spawn(move || {
-                let _ = sender.send(io.prepare(paths));
-            })
-            .map_err(|e| e.to_string())?;
+        // Completion is delivered only after the I/O worker has joined on a
+        // background thread, including any thread-local teardown.
+        let receiver = joined_worker("pecan-folder-prepare", move || io.prepare(paths))?;
         *self.pending.borrow_mut() = Some(Job {
             request,
             phase: Phase::Preparing(receiver),
+            cancelled: false,
         });
         Ok(())
     }
@@ -147,23 +143,20 @@ impl Folders {
         let job = self.pending.borrow_mut().take();
         if let Some(mut job) = job {
             let completion = match &mut job.phase {
-                Phase::Preparing(receiver) => match self
-                    .buses
-                    .authorize_folder(&job.request.origin, &job.request.paths)
-                {
-                    Err(_) => Some(Completion::Cancelled),
-                    Ok(_) => match receiver.try_recv() {
-                        Ok(Ok(plan)) => {
-                            job.phase = Phase::Ready(plan);
-                            None
-                        }
+                Phase::Preparing(receiver) => {
+                    job.cancelled |= self.buses.authorize_folder(&job.request.origin, &job.request.paths).is_err();
+                    match receiver.try_recv() {
+                        // Cancellation revokes launch, not worker ownership. The
+                        // slot and original token stay pending until it finishes.
+                        Ok(_) if job.cancelled => Some(Completion::Cancelled),
+                        Ok(Ok(plan)) => { job.phase = Phase::Ready(plan); None }
                         Ok(Err(error)) => Some(Completion::Failed(error)),
                         Err(TryRecvError::Empty) => None,
-                        Err(TryRecvError::Disconnected) => Some(Completion::Failed(
-                            "Folder preparation ended without a result.".into(),
-                        )),
-                    },
-                },
+                        Err(TryRecvError::Disconnected) if job.cancelled => Some(Completion::Cancelled),
+                        Err(TryRecvError::Disconnected) => Some(Completion::Failed("Folder preparation ended without a result.".into())),
+                    }
+                }
+                Phase::Ready(plan) if plan.requested() != &job.request.paths => Some(Completion::Failed("Prepared folder plan does not match captured request paths; no launch admitted.".into())),
                 Phase::Ready(plan) => match self
                     .buses
                     .authorize_folder(&job.request.origin, &job.request.paths)
@@ -175,13 +168,8 @@ impl Folders {
                         let io = self.io.clone().unwrap();
                         let worker_plan = plan.clone();
                         let original = plan.clone();
-                        let (sender, receiver) = mpsc::sync_channel(1);
-                        match std::thread::Builder::new()
-                            .name("pecan-folder-launch".into())
-                            .spawn(move || {
-                                let _ = sender.send(io.launch(&worker_plan));
-                            }) {
-                            Ok(_) => {
+                        match joined_worker("pecan-folder-launch", move || io.launch(&worker_plan)) {
+                            Ok(receiver) => {
                                 job.phase = Phase::Launching(original, receiver);
                                 None
                             }
@@ -209,4 +197,29 @@ impl Folders {
         self.controls.tick(now);
         self.polling.set(false);
     }
+}
+
+// One bounded job owns one I/O worker. Its supervisor does only spawning,
+// joining and result delivery; no injected I/O or GUI code runs there.
+fn joined_worker<T: Send + 'static>(
+    name: &'static str,
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<Receiver<Result<T, String>>, String> {
+    let (sender, receiver) = mpsc::sync_channel(1);
+    std::thread::Builder::new()
+        .name(format!("{name}-join"))
+        .spawn(move || {
+            let result = std::thread::Builder::new()
+                .name(name.into())
+                .spawn(work)
+                .map_err(|e| e.to_string())
+                .and_then(|worker| {
+                    worker
+                        .join()
+                        .unwrap_or_else(|_| Err("Folder worker panicked.".into()))
+                });
+            let _ = sender.send(result);
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(receiver)
 }
