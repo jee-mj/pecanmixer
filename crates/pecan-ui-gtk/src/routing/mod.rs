@@ -132,7 +132,9 @@ impl<O: Clone> Capture<O> {
             rec: model.selected_rec().map(|s| s.key.clone()),
             closing: s.closing,
             configuration_gate: s.operation.as_ref().and_then(|op| match op.progress {
-                buses::Progress::Queued | buses::Progress::Applying => Some(Error::Pending),
+                buses::Progress::Queued
+                | buses::Progress::Applying
+                | buses::Progress::AwaitingObservation => Some(Error::Pending),
                 buses::Progress::PartiallyApplied(_) | buses::Progress::Unconfirmed(_) => {
                     Some(Error::ReconciliationRequired)
                 }

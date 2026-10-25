@@ -108,3 +108,9 @@ parent/child outcomes separately. Independent re-review clears `10fb50f5`,
 including child-polling reentry, busy-child retention and original-request
 validation before lease release. Idle migration adoption and active-recording
 structural policy remain separate gates.
+
+The [idle migration owner candidate](./native-idle-migration-owner.md) separately
+adopts the reviewed backend for idle routed split/join/remove, retaining actual
+receipts/readbacks and graph-before-release evidence. It awaits independent
+review; the public matrix above is not upgraded by this candidate record. Routed
+Add and active-recording structural policy remain separate gates.

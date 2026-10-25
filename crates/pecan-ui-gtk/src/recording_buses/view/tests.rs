@@ -730,6 +730,7 @@ fn retention_reentrant_queued_and_applying_reports_do_not_complete_the_handoff()
 #[gtk::test]
 fn retention_only_exact_terminal_results_resolve_and_reconciliation_still_gates_fresh_retry() {
     for terminal in [
+        Progress::Observed,
         Progress::AppliedLocally,
         Progress::NoOpLocally,
         Progress::Rejected("Synthetic rejection".into()),

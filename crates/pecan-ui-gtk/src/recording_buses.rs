@@ -30,6 +30,7 @@ pub enum Support {
 pub struct Capabilities {
     pub idle_configuration: Support,
     pub routed_layout: Support,
+    pub routed_add: Support,
     pub shrink_layout: Support,
     pub active_layout: Support,
     pub active_arming: Support,
@@ -39,6 +40,7 @@ impl Default for Capabilities {
         Self {
             idle_configuration: Support::Pending(Dependency::IdleConfigurationAdapter),
             routed_layout: Support::Pending(Dependency::RoutedLayoutMigration),
+            routed_add: Support::Pending(Dependency::RoutedLayoutMigration),
             shrink_layout: Support::Pending(Dependency::ChannelShrinkMigration),
             active_layout: Support::Pending(Dependency::ActiveLayoutMigration),
             active_arming: Support::Pending(Dependency::DynamicArming),
@@ -82,6 +84,8 @@ pub struct Track<T> {
 pub enum Progress {
     Queued,
     Applying,
+    AwaitingObservation,
+    Observed,
     AppliedLocally,
     NoOpLocally,
     Rejected(String),
@@ -93,6 +97,12 @@ impl Progress {
         match self {
             Self::Queued => "Configuration queued; not applied".into(),
             Self::Applying => "Applying local configuration; result pending".into(),
+            Self::AwaitingObservation => {
+                "Waiting for authenticated migration graph/configuration publication".into()
+            }
+            Self::Observed => {
+                "Bus migration observed in the displayed graph and configuration".into()
+            }
             Self::AppliedLocally => "Configuration applied locally".into(),
             Self::NoOpLocally => "Local configuration already matched".into(),
             Self::Rejected(error) => format!("Configuration rejected: {error}"),
@@ -347,7 +357,9 @@ impl<O: Clone, R, T: Clone> Model<O, R, T> {
         }
         if let Some(operation) = &s.operation {
             match operation.progress {
-                Progress::Queued | Progress::Applying => return Ok(PendingOperation),
+                Progress::Queued | Progress::Applying | Progress::AwaitingObservation => {
+                    return Ok(PendingOperation)
+                }
                 Progress::PartiallyApplied(_) | Progress::Unconfirmed(_) => {
                     return Ok(Off(Unavailable::ReconciliationRequired))
                 }
@@ -405,7 +417,11 @@ impl<O: Clone, R, T: Clone> Model<O, R, T> {
             }
         }
         if !matches!(action, Action::Arm { .. }) && s.has_bus_routes {
-            return Ok(support(&s.capabilities.routed_layout));
+            return Ok(support(if matches!(action, Action::AddStereo) {
+                &s.capabilities.routed_add
+            } else {
+                &s.capabilities.routed_layout
+            }));
         }
         Ok(Available)
     }

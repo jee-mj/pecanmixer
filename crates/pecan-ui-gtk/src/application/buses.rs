@@ -1,6 +1,7 @@
 //! One owner for bus/configuration handoffs and retained recording receipts.
 //! Local readback is not graph observation; writer exit is not joined completion.
 mod arming;
+mod migration;
 mod routing;
 mod service;
 mod view;
@@ -46,6 +47,7 @@ impl PartialEq for Request {
 }
 impl Eq for Request {}
 struct ConfigWork {
+    migration: Option<migration::Work>,
     arming: Option<arming::Work>,
     request: Request,
     ticket: u64,
@@ -95,6 +97,7 @@ struct Data {
     error: Option<String>,
     retired: VecDeque<Rc<dyn TakePoll>>,
     past_failures: Vec<String>,
+    migrations: VecDeque<pecan_pipewire::bus_migration::MigrationReport>,
 }
 pub struct BusOwner {
     pub(super) session: Session,
@@ -168,6 +171,7 @@ impl BusOwner {
                 error: None,
                 retired: VecDeque::new(),
                 past_failures: vec![],
+                migrations: VecDeque::new(),
             }),
             polling: Cell::new(false),
             root,
@@ -332,6 +336,13 @@ impl BusOwner {
                 Self::error("Logical bus metadata is unknown; explicitly initialize it first.")
             })?;
         let buses = &current.buses;
+        if matches!(action, ui::Action::Remove { .. })
+            || (matches!(action, ui::Action::Split { .. } | ui::Action::Join { .. })
+                && self.has_routes(origin))
+        {
+            self.idle()?;
+            return self.submit_migration(origin, action, proposed);
+        }
         let expected = match action {
             ui::Action::AddStereo => buses.add(),
             ui::Action::Split { ref bus } | ui::Action::Join { ref bus } => {
@@ -411,8 +422,10 @@ impl BusOwner {
         let (ticket, lease) = self.session.reserve_external().map_err(Error::Owner)?;
         let request = Request(Rc::new(()));
         Self::remember_arming(&mut self.data.borrow_mut());
+        Self::remember_migration(&mut self.data.borrow_mut());
         self.data.borrow_mut().operation = Some(ConfigWork {
             arming: None,
+            migration: None,
             request: request.clone(),
             ticket,
             expected,
@@ -630,7 +643,11 @@ impl BusOwner {
     pub fn refresh(&self) {
         {
             let mut d = self.data.borrow_mut();
-            if let Some(work) = d.operation.as_mut().filter(|w| w.terminal) {
+            if let Some(work) = d
+                .operation
+                .as_mut()
+                .filter(|w| w.terminal && w.migration.as_ref().is_none_or(|m| m.released))
+            {
                 // A request to inspect is not evidence that inspection worked.
                 // Keep the receipt and its barrier across busy/stale reads.
                 work.reconcile_requested = true;
@@ -695,6 +712,7 @@ impl BusOwner {
             }
         }
         self.poll_arming();
+        self.poll_migration(inspected.as_ref());
         let receipts: Vec<_> = {
             let mut d = self.data.borrow_mut();
             let mut receipts: Vec<_> = d
@@ -773,6 +791,9 @@ impl BusOwner {
             d.stopped_takes.retain(|id| takes.contains(id));
         }
         self.publish();
+        if self.finish_migration_publication() {
+            self.publish();
+        }
     }
     fn reconcile(&self, requested: Option<&Request>, inspected: Option<&ConfigSnapshot>) {
         let (Some(requested), Some(inspected)) = (requested, inspected) else {
@@ -797,6 +818,7 @@ impl BusOwner {
             });
         if ready {
             Self::remember_arming(&mut d);
+            Self::remember_migration(&mut d);
             d.operation = None;
             d.error = None;
         }
@@ -892,6 +914,7 @@ impl BusOwner {
         }
         let mut errors = self.data.borrow().past_failures.clone();
         self.arming_finalization_errors(joined_failed, &mut errors)?;
+        self.migration_finalization_errors(joined_failed, &mut errors)?;
         if self.data.borrow().protocol_invalid {
             errors.push(
                 "Recording/configuration identity was invalid; completion remains unconfirmed."

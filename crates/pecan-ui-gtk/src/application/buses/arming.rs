@@ -104,12 +104,14 @@ impl BusOwner {
         {
             let mut d = self.data.borrow_mut();
             Self::remember_arming(&mut d);
+            Self::remember_migration(&mut d);
             d.operation = Some(ConfigWork {
                 request: request.clone(),
                 ticket,
                 expected: config.revision,
                 lease: lease.clone(),
                 receipt: None,
+                migration: None,
                 arming: Some(Work {
                     source: graph.stamp,
                     membership,

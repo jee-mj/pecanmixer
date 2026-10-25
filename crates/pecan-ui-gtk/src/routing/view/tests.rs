@@ -41,6 +41,8 @@ fn both_surfaces_use_one_bus_model_and_selection_does_not_release_configuration_
     let mut s = snapshot(&g);
     s.capabilities.idle_configuration = buses::Support::Available;
     s.capabilities.routed_layout = buses::Support::Available;
+    // This isolated fixture supplies an Add-capable adapter; the native owner does not.
+    s.capabilities.routed_add = buses::Support::Available;
     bus.observe(s).unwrap();
     let external = Rc::new(Cell::new(0));
     let events = external.clone();
@@ -169,6 +171,8 @@ fn reentrant_bus_handoff_without_request_id_already_blocks_routing_capture() {
     let mut s = snapshot(&g);
     s.capabilities.idle_configuration = buses::Support::Available;
     s.capabilities.routed_layout = buses::Support::Available;
+    // This isolated fixture supplies an Add-capable adapter; the native owner does not.
+    s.capabilities.routed_add = buses::Support::Available;
     bus.observe(s).unwrap();
     let seen = Rc::new(Cell::new(false));
     let during = seen.clone();

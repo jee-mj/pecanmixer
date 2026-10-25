@@ -41,8 +41,9 @@ fn terminal_for<R: Eq>(operation: Option<&Operation<R>>, request: &R) -> bool {
     operation.is_some_and(|op| {
         &op.request == request
             && match op.progress {
-                Progress::Queued | Progress::Applying => false,
-                Progress::AppliedLocally
+                Progress::Queued | Progress::Applying | Progress::AwaitingObservation => false,
+                Progress::Observed
+                | Progress::AppliedLocally
                 | Progress::NoOpLocally
                 | Progress::Rejected(_)
                 | Progress::PartiallyApplied(_)

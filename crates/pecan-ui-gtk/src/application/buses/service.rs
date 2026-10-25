@@ -14,6 +14,7 @@ use pecan_pipewire::{
 pub enum Error {
     Configuration(ConfigError),
     Recording(RecordingError),
+    Migration(pecan_pipewire::bus_migration::MigrationError),
     Owner(String),
 }
 impl std::fmt::Display for Error {
@@ -94,6 +95,9 @@ pub struct ArmingChild {
 pub trait ArmPoll {
     fn report(&self) -> Option<ArmingStatus>;
 }
+pub trait MigrationPoll {
+    fn report(&self) -> Option<pecan_pipewire::bus_migration::MigrationReport>;
+}
 pub trait ConfigPoll {
     fn report(&self) -> Option<ConfigReport>;
 }
@@ -119,6 +123,17 @@ pub enum Stop {
     Take(TakeKey),
 }
 pub trait Service {
+    fn supports_migration(&self) -> bool {
+        false
+    }
+    fn migrate_idle(
+        &self,
+        _intent: pecan_pipewire::bus_migration::LayoutIntent,
+    ) -> Result<Rc<dyn MigrationPoll>, Error> {
+        Err(Error::Owner(
+            "Idle migration is unavailable on this endpoint.".into(),
+        ))
+    }
     fn supports_arming(&self) -> bool {
         false
     }
@@ -234,8 +249,26 @@ impl ArmPoll for NativeArming {
         })
     }
 }
+struct NativeMigration(pecan_pipewire::bus_migration::MigrationReceipt);
+impl MigrationPoll for NativeMigration {
+    fn report(&self) -> Option<pecan_pipewire::bus_migration::MigrationReport> {
+        self.0.try_report()
+    }
+}
 pub(crate) struct Native(pub Rc<pecan_pipewire::graaf::Graaf>);
 impl Service for Native {
+    fn supports_migration(&self) -> bool {
+        true
+    }
+    fn migrate_idle(
+        &self,
+        intent: pecan_pipewire::bus_migration::LayoutIntent,
+    ) -> Result<Rc<dyn MigrationPoll>, Error> {
+        self.0
+            .migrate_idle_bus(intent)
+            .map(|r| Rc::new(NativeMigration(r)) as Rc<dyn MigrationPoll>)
+            .map_err(Error::Migration)
+    }
     fn supports_arming(&self) -> bool {
         true
     }

@@ -275,12 +275,22 @@ fn routes_require_reviewed_migration_even_while_idle() {
     s.capabilities.routed_layout = Support::Available;
     model.observe(s).unwrap();
     assert!(model.request(&model.bind().unwrap(), split()).is_ok());
+    assert_eq!(
+        model.availability(&Action::AddStereo).unwrap(),
+        Availability::PendingCapability(Dependency::RoutedLayoutMigration)
+    );
+    assert!(Progress::Observed.message().contains("observed"));
+    assert!(!Progress::AppliedLocally.message().contains("observed"));
 }
 #[test]
 fn queued_applying_partial_and_unconfirmed_status_never_fake_applied_configuration() {
     let mut model = model();
     let initial = model.snapshot().unwrap().configuration.clone();
-    for progress in [Progress::Queued, Progress::Applying] {
+    for progress in [
+        Progress::Queued,
+        Progress::Applying,
+        Progress::AwaitingObservation,
+    ] {
         let mut s = frame();
         s.operation = Some(Operation {
             request: 7,

@@ -528,6 +528,7 @@ fn bus_configuration_pending_and_partial_status_gate_routing_without_owning_sele
     for (progress, expected) in [
         (buses::Progress::Queued, Error::Pending),
         (buses::Progress::Applying, Error::Pending),
+        (buses::Progress::AwaitingObservation, Error::Pending),
         (
             buses::Progress::PartiallyApplied("synthetic partial".into()),
             Error::ReconciliationRequired,

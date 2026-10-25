@@ -140,6 +140,16 @@ impl BusOwner {
                 ui::Support::Available
             };
         }
+        if publication.activity == ui::Activity::Idle
+            && self
+                .service
+                .as_ref()
+                .is_some_and(|s| s.supports_migration())
+        {
+            capabilities.routed_layout = ui::Support::Available;
+            capabilities.shrink_layout = ui::Support::Available;
+            // routed_add deliberately retains its separate pending gate.
+        }
         let routes = self.has_routes(&context);
         let operation = publication.operation.as_ref().map(|(r, p)| ui::Operation {
             request: r.clone(),

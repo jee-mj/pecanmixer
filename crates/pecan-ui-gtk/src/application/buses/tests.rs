@@ -1,6 +1,7 @@
 //! Controlled UI-side projections only. No native constructor, capture, writer
 //! file, real tray or user directory is used.
 mod arming;
+mod migration;
 mod reconciliation;
 mod routing_owner;
 use super::*;
@@ -50,6 +51,12 @@ struct Fake {
             Rc<arming::Arm>,
         )>,
     >,
+    migrations: RefCell<
+        Vec<(
+            pecan_pipewire::bus_migration::LayoutIntent,
+            Rc<migration::Migration>,
+        )>,
+    >,
     starts: RefCell<Vec<(RecordingStart, Option<RecordingRevision>, Option<String>)>>,
     takes: RefCell<Vec<Rc<Take>>>,
     stops: RefCell<Vec<Stop>>,
@@ -84,6 +91,7 @@ impl Fake {
             no_op: Cell::new(false),
             configs: RefCell::default(),
             arms: RefCell::default(),
+            migrations: RefCell::default(),
             starts: RefCell::default(),
             takes: RefCell::default(),
             stops: RefCell::default(),
@@ -190,6 +198,21 @@ impl Fake {
     }
 }
 impl Service for Fake {
+    fn supports_migration(&self) -> bool {
+        true
+    }
+    fn migrate_idle(
+        &self,
+        intent: pecan_pipewire::bus_migration::LayoutIntent,
+    ) -> Result<Rc<dyn MigrationPoll>, Error> {
+        let receipt = Rc::new(migration::Migration::new(self, &intent));
+        self.migrations.borrow_mut().push((intent, receipt.clone()));
+        let hook = self.hook.borrow_mut().take();
+        if let Some(hook) = hook {
+            hook();
+        }
+        Ok(receipt)
+    }
     fn supports_arming(&self) -> bool {
         true
     }
