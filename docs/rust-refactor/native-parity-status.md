@@ -119,6 +119,16 @@ readbacks and graph-before-release evidence. Independent re-review clears
 terminal barriers. Routed Add and active-recording structural policy remain
 separate gates.
 
+The independently reviewed [idle AddStereo backend](./native-idle-add-stereo.md)
+now appends two authenticated suffix inputs through the existing migration
+protocol while preserving original route endpoints. Its retained
+`MigrationReport::observed_inputs` supplies final node/input generations directly;
+the owner must combine that with its original prefix/source proof, actual fresh
+configuration and accepted terminal presentation. Backend inclusion alone does
+not enable the separate `routed_add` capability. Routed Add owner adoption and
+partial repair remain separate review gates; active structural edits remain
+unavailable pending the user's product decision.
+
 The reviewed [Folder owner adoption](./native-folder-owner.md) mounts
 the corrected helper with actual latest-start receipt authority and explicit
 worker-based preparation/launch/reaping. Independent correction review clears

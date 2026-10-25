@@ -114,3 +114,30 @@ ten legacy library and 16 headless GTK migration checks. All-feature GTK test
 compilation, scoped Rust formatting and whitespace checks pass. The GTK checks
 still assert that routed Add has no owner capability. Full native CI and
 independent review remain separate receipts; no live UI adoption is claimed.
+
+## Reviewed backend integration
+
+Independent review clears exact candidate `550bd09964f7c0b856d0a1b213d87b64874fb8e5`
+with 40 migration checks, five additional synthetic probe groups and 11 owner/widget
+checks. Those verify both authenticated suffix inputs before success, original
+endpoint-pair preservation without routing calls, truthful partial/replacement
+failure and no late upgrade of frozen outcomes. Exact candidate
+[CI40173662173](https://github.com/jee-mj/pecanmixer/actions/runs/40173662173) passes.
+
+The backend applies without conflicts onto login-context PR2 `e3a348aa`.
+Backend source and its existing owner-test constructor match the reviewed commit
+byte for byte. Login-context, reconnect and all other owner runtime source remain
+unchanged; only integration coverage notes are added. No dependency, version,
+new worker/sequencer or live capability enablement is included. A separate owner
+candidate must retain the supplied completion witness directly and pass its own
+independent review before routed Add is enabled.
+
+Fresh combined checks pass 86 validator controls, 76 core, 240 backend, 546
+all-feature GTK and 492 default GTK tests, plus ten legacy library tests and all
+five legacy examples compiled (none executed). Native build, formatting,
+Cargo/ELF audits, three headless fixtures and three controlled smokes pass. Host
+and explicit-target workspace packages are cleaned and rebuilt first; zero
+Node-tool attempts are recorded. Source/privacy/whitespace and unchanged
+dependencies/versions pass. No final local failure or dependency/environment
+blocker remains. Exact combined-head hosted results are verified separately after
+publication, without treating candidate success as a substitute.
