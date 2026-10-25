@@ -10,6 +10,13 @@ use pecan_core::{
 };
 use std::time::Instant;
 
+// Both admissions share the same Work, FIFO, lease fences and observation path.
+// Saved configuration is a complete proposal, not a sequence of synthetic edits.
+enum Request {
+    Edit(LayoutIntent),
+    Saved(SavedLayoutIntent),
+}
+
 impl Commands {
     pub(crate) fn enqueue_migration(
         &self,
@@ -22,6 +29,38 @@ impl Commands {
         intent: LayoutIntent,
         now: Instant,
     ) -> Result<MigrationReceipt, MigrationError> {
+        self.enqueue_layout_at(Request::Edit(intent), now)
+    }
+    pub(crate) fn enqueue_saved_layout(
+        &self,
+        intent: SavedLayoutIntent,
+    ) -> Result<MigrationReceipt, MigrationError> {
+        self.enqueue_layout_at(Request::Saved(intent), Instant::now())
+    }
+    fn enqueue_layout_at(
+        &self,
+        request: Request,
+        now: Instant,
+    ) -> Result<MigrationReceipt, MigrationError> {
+        let (ticket, source, expected_config, expected_recording) = match &request {
+            Request::Edit(i) => (
+                i.ticket,
+                i.origin.stamp,
+                i.expected_config,
+                i.expected_recording,
+            ),
+            Request::Saved(i) => (
+                i.ticket,
+                i.origin.graph().stamp,
+                i.expected_config,
+                i.expected_recording,
+            ),
+        };
+        let saved_layout = matches!(&request, Request::Saved(_));
+        if let Request::Saved(i) = &request {
+            bus_config::validate_configuration(&i.configuration)
+                .map_err(MigrationError::Configuration)?;
+        }
         let mut state = self.0.try_lock().map_err(|_| MigrationError::Busy)?;
         if state.stopped {
             return Err(MigrationError::Stopped);
@@ -41,10 +80,10 @@ impl Commands {
                 bus_config::ConfigError::RevisionExhausted,
             ));
         }
-        if intent.expected_config != state.config.snapshot.revision {
+        if expected_config != state.config.snapshot.revision {
             return Err(MigrationError::StaleConfig);
         }
-        if intent.expected_recording
+        if expected_recording
             != (crate::recording::RecordingRevision {
                 owner: state.config.snapshot.revision.owner,
                 revision: state.recording.revision,
@@ -55,26 +94,37 @@ impl Commands {
         if state.pending.len() >= NORMAL_CAPACITY {
             return Err(MigrationError::QueueFull);
         }
-        let origin = state
-            .origins
-            .iter()
-            .find(|o| {
-                o.graph.stamp == intent.origin.stamp
-                    && Arc::ptr_eq(&o.graph.value, &intent.origin.value)
+        let saved_origin = if let Request::Saved(i) = &request {
+            // Compare all captured prefix/source dependencies to this mirror
+            // below, under the same admission lock and private authority.
+            // No current ID is accepted unless its original binding matches.
+            Some(super::native::Origin {
+                graph: i.origin.graph().clone(),
+                objects: state.published_objects.clone(),
             })
-            .ok_or(MigrationError::OriginUnavailable)?;
+        } else {
+            None
+        };
+        let origin = if let Some(origin) = saved_origin.as_ref() {
+            origin
+        } else {
+            let Request::Edit(i) = &request else {
+                unreachable!()
+            };
+            state
+                .origins
+                .iter()
+                .find(|o| o.graph.stamp == source && Arc::ptr_eq(&o.graph.value, &i.origin.value))
+                .ok_or(MigrationError::OriginUnavailable)?
+        };
         if origin.graph.stamp.epoch != state.graph.stamp.epoch {
             return Err(MigrationError::Disconnected);
         }
-        let before =
-            state
-                .config
-                .snapshot
-                .configuration
-                .as_ref()
-                .ok_or(MigrationError::Configuration(
-                    bus_config::ConfigError::Unavailable,
-                ))?;
+        let before = state.config.snapshot.configuration.as_ref();
+        let action = match &request {
+            Request::Edit(i) => Some(&i.action),
+            Request::Saved(_) => None,
+        };
         let local = state
             .config
             .snapshot
@@ -93,15 +143,24 @@ impl Commands {
             .objects
             .get(&node)
             .ok_or(MigrationError::InvalidObject)?;
-        let definitions = before
-            .buses
-            .definitions()
-            .map_err(|_| MigrationError::InvalidInput)?;
-        let definition = match &intent.action {
-            LayoutAction::AddStereo => None,
-            LayoutAction::Split { bus }
-            | LayoutAction::Join { bus }
-            | LayoutAction::Remove { bus } => {
+        let definitions = if action.is_some() {
+            before
+                .ok_or(MigrationError::Configuration(
+                    bus_config::ConfigError::Unavailable,
+                ))?
+                .buses
+                .definitions()
+                .map_err(|_| MigrationError::InvalidInput)?
+        } else {
+            Vec::new()
+        };
+        let definition = match action {
+            None | Some(LayoutAction::AddStereo) => None,
+            Some(
+                LayoutAction::Split { bus }
+                | LayoutAction::Join { bus }
+                | LayoutAction::Remove { bus },
+            ) => {
                 if bus.len() > 256 {
                     return Err(MigrationError::InvalidInput);
                 }
@@ -113,9 +172,19 @@ impl Commands {
                 )
             }
         };
-        let count: usize = definitions.iter().map(|d| d.channels.len()).sum();
-        if count != local.channels {
+        let count = local.channels;
+        if !(1..=64).contains(&count)
+            || action.is_some()
+                && definitions.iter().map(|d| d.channels.len()).sum::<usize>() != count
+        {
             return Err(MigrationError::InvalidObject);
+        }
+        if let Request::Saved(i) = &request {
+            if i.configuration.buses.widths.iter().sum::<usize>() < count {
+                return Err(MigrationError::Configuration(
+                    bus_config::ConfigError::LayoutMigrationRequired,
+                ));
+            }
         }
         let mut ports = Vec::new();
         for i in 0..count {
@@ -134,6 +203,9 @@ impl Commands {
                 return Err(MigrationError::InvalidObject);
             }
             let p = matching[0];
+            if ports.iter().any(|old: &Port| old.id == p.id) {
+                return Err(MigrationError::InvalidObject);
+            }
             ports.push(Port {
                 id: p.id,
                 node,
@@ -168,31 +240,45 @@ impl Commands {
         if incoming.len() > MAX_MIGRATION_LINKS {
             return Err(MigrationError::TooManyRoutes);
         }
-        let mut proposed = before.clone();
+        let mut proposed = match &request {
+            Request::Edit(_) => before.unwrap().clone(),
+            Request::Saved(i) => i.configuration.clone(),
+        };
         let mut desired = BTreeSet::new();
         let mut affected = BTreeSet::new();
-        match intent.action {
-            LayoutAction::AddStereo => {
+        match action {
+            None => {
+                affected.extend(ports.iter().map(|p| p.id));
+                desired.extend(incoming.iter().map(|l| (l.uit_poort, l.in_poort)));
+            }
+            Some(LayoutAction::AddStereo) => {
                 proposed.buses = before
+                    .unwrap()
                     .buses
                     .add()
                     .map_err(|_| MigrationError::InvalidInput)?;
                 affected.extend(ports.iter().map(|p| p.id));
                 desired.extend(incoming.iter().map(|l| (l.uit_poort, l.in_poort)));
             }
-            LayoutAction::Split { .. } if definition.unwrap().coupling == Some(Coupling::Split) => {
+            Some(LayoutAction::Split { .. })
+                if definition.unwrap().coupling == Some(Coupling::Split) =>
+            {
                 proposed.buses = before
+                    .unwrap()
                     .buses
                     .change_coupling(definition.unwrap().index)
                     .map_err(|_| MigrationError::InvalidInput)?
             }
-            LayoutAction::Join { .. } if definition.unwrap().coupling == Some(Coupling::Join) => {
+            Some(LayoutAction::Join { .. })
+                if definition.unwrap().coupling == Some(Coupling::Join) =>
+            {
                 proposed.buses = before
+                    .unwrap()
                     .buses
                     .change_coupling(definition.unwrap().index)
                     .map_err(|_| MigrationError::InvalidInput)?
             }
-            LayoutAction::Remove { .. } => {
+            Some(LayoutAction::Remove { .. }) => {
                 let definition = definition.unwrap();
                 // The pure policy only sees the exact validated owner. It cannot select a
                 // foreign same-name Rec instance earlier in the full snapshot.
@@ -211,11 +297,12 @@ impl Commands {
                     ..Default::default()
                 };
                 let edit = before
+                    .unwrap()
                     .buses
                     .remove(definition.index, &scoped)
                     .map_err(|_| MigrationError::InvalidInput)?;
                 proposed.buses = edit.config;
-                if proposed.buses != before.buses {
+                if proposed.buses != before.unwrap().buses {
                     affected.extend(ports.iter().skip(definition.channels[0]).map(|p| p.id));
                 }
                 for command in edit.commands {
@@ -276,6 +363,24 @@ impl Commands {
                 ),
             );
         }
+        if let Request::Saved(i) = &request {
+            let ids = std::iter::once(node)
+                .chain(ports.iter().map(|p| p.id))
+                .chain(source_ports.iter().map(|p| p.id))
+                .chain(source_nodes.keys().copied());
+            let original = i
+                .origin
+                .bind_objects(ids)
+                .ok_or(MigrationError::InvalidObject)?;
+            let current = pecan_core::history_identity::HistoryGraph::from_registry(
+                state.graph.clone(),
+                state.history_authority.clone(),
+                state.published_objects.clone(),
+            );
+            if !original.matches(&current) {
+                return Err(MigrationError::InvalidObject);
+            }
+        }
         if state.pending.iter().any(|q| {
             q.config.is_some()
                 || q.start.is_some()
@@ -297,10 +402,10 @@ impl Commands {
         let (channels, gains, options) =
             bus_config::validate_configuration(&proposed).map_err(MigrationError::Configuration)?;
         let receipt = MigrationReceipt(Arc::new(std::sync::Mutex::new(MigrationReport {
-            ticket: intent.ticket,
-            source: intent.origin.stamp,
-            expected_config: intent.expected_config,
-            expected_recording: intent.expected_recording,
+            ticket,
+            source,
+            expected_config,
+            expected_recording,
             progress: MigrationProgress::Queued,
             configuration: state.config.snapshot.clone(),
             proposed: proposed.clone(),
@@ -319,12 +424,13 @@ impl Commands {
         })));
         let work = Work {
             receipt: receipt.clone(),
-            source: intent.origin.stamp,
+            source,
             node,
             serial: owned.serial,
             node_generation,
             ports,
             appended: Vec::new(),
+            saved_layout,
             source_ports,
             source_nodes,
             affected,
@@ -338,7 +444,7 @@ impl Commands {
             options,
             channels,
             expected_identity: state.config.identity.clone(),
-            expected_recording: intent.expected_recording,
+            expected_recording: expected_recording,
             phase: MigrationProgress::Queued,
             claimed: false,
             queued: true,
@@ -684,9 +790,7 @@ impl Commands {
             return;
         };
         let expected_options = snapshot.transport;
-        let options_match = expected_options
-            .as_ref()
-            .is_some_and(|o| target.options_match(o));
+        let options_match = expected_options.as_ref().map(|o| target.options_match(o));
         let claimed = {
             let mut state = self.0.lock().unwrap();
             let Some(mut w) = state.migration.take() else {
@@ -711,6 +815,9 @@ impl Commands {
                 return;
             }
             let before = state.config.snapshot.clone();
+            // A saved proposal deliberately initializes unknown options. Known
+            // options still need exact preflight, including after callbacks.
+            let options_match = options_match.unwrap_or(w.saved_layout);
             if actual != before.local || before.transport != expected_options || !options_match {
                 w.receipt.0.lock().unwrap().local_readback = actual.clone();
                 state.config.refresh(actual, active, false);
