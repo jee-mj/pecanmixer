@@ -1,10 +1,8 @@
 //! One routing surface over BusOwner selection and Session receipts/history.
+use super::coordinator::RequestReport;
 use super::{buses::RoutingKey, BusOrigin, BusOwner, Request, Session};
 use crate::routing::{Event, RequestToken, RoutingControls};
-use pecan_core::{
-    domain::history::Input,
-    native_command::{NativeProgress, NativeReport},
-};
+use pecan_core::{domain::history::Input, native_command::NativeProgress};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -13,7 +11,7 @@ use std::{
 struct Tracked {
     token: RequestToken,
     request: Request,
-    last: Option<NativeReport>,
+    last: Option<RequestReport>,
 }
 pub(super) struct Routes {
     session: Session,
@@ -191,9 +189,12 @@ impl Routes {
             .as_ref()
             .map(|p| (p.token.clone(), p.request.clone(), p.last.clone()));
         if let Some((token, request, last)) = pending {
-            let report = request.native_report();
+            let report = request.report();
             if last.as_ref() != Some(&report) {
-                let accepted = self.controls.report(&token, report.clone());
+                let accepted = match &report {
+                    RequestReport::Native(r) => self.controls.report(&token, r.clone()),
+                    RequestReport::Sequence(r) => self.controls.report_sequence(&token, r.clone()),
+                };
                 if !accepted {
                     self.controls.unavailable("Native routing report did not satisfy its captured identity/barrier; receipt retained.");
                 }
@@ -209,15 +210,27 @@ impl Routes {
             if needs_recovery(&report) {
                 self.bind_recovery(&token, &request);
             }
-            let in_progress = match &report.progress {
-                NativeProgress::ExecutedLocally(c)
-                | NativeProgress::Observed { counts: c, .. }
-                | NativeProgress::ObservedNoOp { counts: c, .. }
-                | NativeProgress::Rejected { counts: c, .. }
-                | NativeProgress::Unconfirmed { counts: c, .. } => c.in_progress,
-                NativeProgress::Queued => 0,
+            let (terminal, in_progress) = match &report {
+                RequestReport::Sequence(r) => (
+                    !matches!(
+                        r.progress,
+                        pecan_core::history_backend::SequenceProgress::Running
+                    ),
+                    0,
+                ),
+                RequestReport::Native(report) => (
+                    report.progress.is_terminal(),
+                    match &report.progress {
+                        NativeProgress::ExecutedLocally(c)
+                        | NativeProgress::Observed { counts: c, .. }
+                        | NativeProgress::ObservedNoOp { counts: c, .. }
+                        | NativeProgress::Rejected { counts: c, .. }
+                        | NativeProgress::Unconfirmed { counts: c, .. } => c.in_progress,
+                        NativeProgress::Queued => 0,
+                    },
+                ),
             };
-            if report.progress.is_terminal()
+            if terminal
                 && !needs_recovery(&report)
                 && in_progress == 0
                 && !self.session.request_pending(&request)
@@ -241,15 +254,37 @@ impl Routes {
         self.refresh_capture(true);
     }
     #[cfg(test)]
-    pub fn retained_report(&self) -> Option<NativeReport> {
+    pub fn retained_report(&self) -> Option<pecan_core::native_command::NativeReport> {
         self.pending
             .borrow()
             .as_ref()
             .or(self.completed.borrow().as_ref())
-            .map(|p| p.request.native_report())
+            .and_then(|p| p.request.native_report())
+    }
+    #[cfg(test)]
+    pub fn retained_sequence(&self) -> Option<pecan_core::history_backend::SequenceReport> {
+        let pending = self.pending.borrow();
+        let completed = self.completed.borrow();
+        match pending
+            .as_ref()
+            .or(completed.as_ref())
+            .map(|p| p.request.report())
+        {
+            Some(RequestReport::Sequence(r)) => Some(r),
+            _ => None,
+        }
     }
 }
-fn needs_recovery(report: &NativeReport) -> bool {
+fn needs_recovery(evidence: &RequestReport) -> bool {
+    let report = match evidence {
+        RequestReport::Native(r) => r,
+        RequestReport::Sequence(r) => {
+            return matches!(
+                r.progress,
+                pecan_core::history_backend::SequenceProgress::Failed { .. }
+            )
+        }
+    };
     match &report.progress {
         NativeProgress::Unconfirmed { .. } => true,
         NativeProgress::Rejected { counts, .. } => counts.submitted > 0 || counts.in_progress > 0,

@@ -1,10 +1,8 @@
 # Native routing selection and reset boundary
 
-This candidate adds an isolated controller and GTK surface. It does not change
-the application owner, main/startup, backend, core policy, history controller,
-package metadata or settings. No production caller is installed. The callback
-is absent by default; attaching a fixture callback does not establish audio
-execution or a completed history step.
+This controller and GTK surface delegate to the application-owned routing bridge
+and shared Session history. The callback is absent by default; attaching a fixture
+callback does not establish audio execution or a completed history step.
 
 ## Legacy behavior and source oracle
 
@@ -80,7 +78,10 @@ from a user machine, audio server, capture or runtime log.
    stamp, planned command count and first reported native ticket must match.
    Queued/local execution retains pending state across graph updates, selection,
    disconnect, reconnect and unrelated/mismatched reports. Admission/local
-   submission is never displayed as observed completion.
+   submission is never displayed as observed completion. A large reset instead
+   uses `report_sequence`: explicitly typed owner evidence retaining the real
+   child reports, never a synthesized parent `NativeReport`. A child's report
+   cannot satisfy the parent request's command count or complete its history.
 7. An observed result needs a same-epoch observation stamp and zero in-progress
    calls. Controls still wait for an accepted displayed graph at/after that stamp.
    Rejected work with submitted/in-progress effects, Unconfirmed results, and
@@ -118,15 +119,25 @@ crate-only visibility changes: window releases, focus loss and retirement preven
 held Space/Return/pointer input from activating replacement controls. Tab remains
 navigation, Escape cancels a draft, and stale detached callbacks are inert.
 
-This slice supports one existing native batch, at most 32 planned commands.
-Larger resets are fully counted and explicitly rejected before handoff, never
-truncated. Full legacy parity for those resets requires a reviewed bounded,
-multi-batch owner workflow with one history intent and truthful partial outcomes.
-Do not raise the limit or label admission success as reset completion.
+The native intent limit remains 32 commands. The large-reset candidate adds a
+Session-owned sequential workflow for Back to auto and its captured inverse:
+at most 16,384 planned actions, 512 retained real child receipts, one child in
+flight and 30 seconds total. It preserves unlink/target/restore ordering, one
+inverse and one final history acknowledgment. Each next child needs the original
+semantic/generation guard, a current authenticated native frame and the earlier
+effects still present. Original endpoint pairs resolve recreated link IDs.
+Ordinary non-reset actions retain their existing single-intent limit.
 
-Production mounting, existing mixer-strip placement/display preferences, shared
-owner status forwarding, larger-reset execution and cross-surface integration
-remain application integration follow-up work. Rec routing here does not start/stop recording,
+Only observed real child receipts, local execution closure and the witnessed
+combined captured postcondition can complete the parent. This does not establish
+WirePlumber policy convergence or an atomic transaction. Failure, disconnection,
+replacement, timeout or finalization stops future children; existing explicit
+recovery waits for actual closure and fresh graph/config inspection. No rollback,
+automatic retry or failed-prefix Undo is created. See
+[the candidate contract](../../../../docs/rust-refactor/native-large-route-reset-candidate.md)
+for focused synthetic evidence and review status.
+
+Rec routing here does not start/stop recording,
 arm buses, migrate layouts or change settings. Active-recording structural policy
 and lifecycle effects remain separate gates. No JS deletion, merge, release,
 version bump, real desktop/AT-SPI acceptance, hardware/audio test or performance

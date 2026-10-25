@@ -184,6 +184,17 @@ impl<O: Clone + 'static> RoutingControls<O> {
         }
         accepted
     }
+    pub fn report_sequence(
+        &self,
+        token: &RequestToken,
+        report: pecan_core::history_backend::SequenceReport,
+    ) -> bool {
+        let accepted = self.0.model.borrow_mut().report_sequence(token, report);
+        if accepted {
+            self.0.render();
+        }
+        accepted
+    }
     /// The owner lost publication authority (busy reads are not new defaults).
     /// Retain display/pending handles but prevent all new actions until observe.
     pub fn unavailable(&self, message: &str) {

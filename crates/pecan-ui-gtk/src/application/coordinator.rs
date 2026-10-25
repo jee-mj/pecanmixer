@@ -1,3 +1,4 @@
+mod reset;
 #[path = "volume.rs"]
 pub(super) mod volume;
 use super::{Endpoint, Graph};
@@ -6,7 +7,7 @@ use pecan_core::{
     backend::{Notice, Stamp},
     domain::history::{self, Action, Input},
     graph::Opdracht,
-    history_backend::{bind_history_plan, HistoryResults},
+    history_backend::{bind_history_plan, HistoryResults, SequenceProgress, SequenceReport},
     inbox::{InboxBatch, LatestInbox},
     native_command::{NativeExecution, NativeProgress, NativeReceipt, NativeReport},
 };
@@ -57,18 +58,74 @@ impl Status {
 #[derive(Clone)]
 enum Delivery {
     Native(NativeProgress),
+    Sequence(SequenceProgress),
     Invalidated(String),
 }
 /// UI-local correlation for a request submitted by this session. Pointer
 /// identity isolates old controller callbacks even if numeric tickets repeat in
-/// a replacement session. The backend receipt remains the only success source.
+/// a replacement session. Native receipts and their witnessed postconditions
+/// supply completion; local dispatch/admission alone never succeeds.
 #[derive(Clone)]
-pub struct Request(Rc<RefCell<Delivery>>, NativeReceipt, Weak<Inner>);
+pub struct Request(Rc<RefCell<Delivery>>, Receipt, Weak<Inner>);
+#[derive(Clone)]
+enum Receipt {
+    Native(NativeReceipt),
+    Sequence(Rc<RefCell<reset::Sequence>>),
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum RequestReport {
+    Native(NativeReport),
+    Sequence(SequenceReport),
+}
+impl RequestReport {
+    fn ticket(&self) -> u64 {
+        match self {
+            Self::Native(r) => r.ticket,
+            Self::Sequence(r) => r.ticket,
+        }
+    }
+    fn source(&self) -> Stamp {
+        match self {
+            Self::Native(r) => r.source,
+            Self::Sequence(r) => r.source,
+        }
+    }
+    fn command_count(&self) -> usize {
+        match self {
+            Self::Native(r) => r.command_count,
+            Self::Sequence(r) => r.command_count,
+        }
+    }
+    fn failed(&self) -> bool {
+        match self {
+            Self::Native(r) => matches!(
+                r.progress,
+                NativeProgress::Rejected { .. } | NativeProgress::Unconfirmed { .. }
+            ),
+            Self::Sequence(r) => matches!(r.progress, SequenceProgress::Failed { .. }),
+        }
+    }
+}
 impl Request {
     /// Actual backend evidence, retained independently of presentation/history
     /// invalidation. Terminal status alone does not establish quiescence.
-    pub(crate) fn native_report(&self) -> NativeReport {
-        self.1.report()
+    pub(crate) fn native_report(&self) -> Option<NativeReport> {
+        match &self.1 {
+            Receipt::Native(r) => Some(r.report()),
+            Receipt::Sequence(_) => None,
+        }
+    }
+    pub(crate) fn report(&self) -> RequestReport {
+        match &self.1 {
+            Receipt::Native(r) => RequestReport::Native(r.report()),
+            Receipt::Sequence(r) => RequestReport::Sequence(r.borrow().report()),
+        }
+    }
+    fn execution(&self) -> NativeExecution {
+        match &self.1 {
+            Receipt::Native(r) => r.execution(),
+            Receipt::Sequence(r) => r.borrow().execution(),
+        }
     }
     pub(crate) fn same_request(&self, other: &Self) -> bool {
         Rc::ptr_eq(&self.0, &other.0)
@@ -96,6 +153,7 @@ struct State {
     history: history::Controller,
     results: HistoryResults,
     pending: Option<Pending>,
+    sequence: Option<Request>,
     uncertain: Option<Uncertain>,
     status: Status,
     notices: Vec<Notice>,
@@ -127,6 +185,7 @@ impl Session {
                 history,
                 results: HistoryResults::default(),
                 pending: None,
+                sequence: None,
                 uncertain: None,
                 status: Status::Disconnected,
                 notices: vec![],
@@ -187,6 +246,7 @@ impl Session {
     pub fn busy(&self) -> bool {
         let state = self.0.state.borrow();
         state.pending.is_some()
+            || state.sequence.is_some()
             || state.uncertain.is_some()
             || state.volume.busy()
             || state.external.is_some()
@@ -194,6 +254,7 @@ impl Session {
     pub fn has_receipt(&self) -> bool {
         let state = self.0.state.borrow();
         state.pending.is_some()
+            || state.sequence.is_some()
             || state.uncertain.is_some()
             || state.volume.has_receipt()
             || state.external.is_some()
@@ -213,6 +274,10 @@ impl Session {
             .as_ref()
             .is_some_and(|p| Rc::ptr_eq(&p.request.0, &request.0))
             || state
+                .sequence
+                .as_ref()
+                .is_some_and(|p| p.same_request(request))
+            || state
                 .uncertain
                 .as_ref()
                 .is_some_and(|p| Rc::ptr_eq(&p.request.0, &request.0))
@@ -222,13 +287,13 @@ impl Session {
         if !request.2.upgrade().is_some_and(|s| Rc::ptr_eq(&s, &self.0)) {
             return Err("Recovery belongs to another application session.".into());
         }
-        if request.1.execution() != NativeExecution::Closed {
+        if request.execution() != NativeExecution::Closed {
             return Err("Local execution is still pending; retain the original receipt.".into());
         }
         self.0
             .state
             .borrow()
-            .recovery_ready(request, graph, &request.native_report())
+            .recovery_ready(request, graph, &request.report())
     }
     /// Called only after BusOwner inspected current authenticated configuration.
     /// Reopen local admission, never upgrade the report or record prefix undo.
@@ -248,7 +313,7 @@ impl Session {
         if frame.graph().stamp != graph.stamp || !Arc::ptr_eq(&frame.graph().value, &graph.value) {
             return Err("Recovery inspection returned a different native frame.".into());
         }
-        let report = request.native_report();
+        let report = request.report();
         let mut state = self.0.state.borrow_mut();
         state.recovery_ready(request, graph, &report)?;
         state
@@ -284,6 +349,7 @@ impl Session {
             return Ok(());
         }
         if state.pending.is_some()
+            || state.sequence.is_some()
             || state.uncertain.is_some()
             || state.volume.busy()
             || state.external.is_some()
@@ -311,6 +377,7 @@ impl Session {
         !s.admission_closed
             && s.witnessed
             && s.pending.is_none()
+            && s.sequence.is_none()
             && s.uncertain.is_none()
             && s.external.is_none()
             && !s.volume.busy()
@@ -355,7 +422,12 @@ impl Session {
         if s.admission_closed {
             return Err("Application finalization has started; new commands are disabled.".into());
         }
-        if s.pending.is_some() || s.uncertain.is_some() || s.volume.busy() || s.external.is_some() {
+        if s.pending.is_some()
+            || s.sequence.is_some()
+            || s.uncertain.is_some()
+            || s.volume.busy()
+            || s.external.is_some()
+        {
             return Err("Another change or volume gesture is pending.".into());
         }
         if !s.witnessed {
@@ -384,6 +456,32 @@ impl Session {
             return Ok(None);
         };
         let ticket = plan.ticket;
+        if plan.commands.len() > pecan_core::native_command::MAX_NATIVE_COMMANDS {
+            let frame = s
+                .frame
+                .clone()
+                .ok_or("Current native witness unavailable.")?;
+            let sequence = match reset::Sequence::new(&s.history, &frame, plan) {
+                Ok(sequence) => sequence,
+                Err(error) => {
+                    let _ = s.history.reduce(Input::CommandResult {
+                        ticket,
+                        result: Err(error.clone()),
+                    });
+                    return Err(error);
+                }
+            };
+            let request = Request(
+                Rc::new(RefCell::new(Delivery::Sequence(SequenceProgress::Running))),
+                Receipt::Sequence(Rc::new(RefCell::new(sequence))),
+                Rc::downgrade(&self.0),
+            );
+            s.sequence = Some(request.clone());
+            s.status = Status::Queued;
+            drop(s);
+            self.drive_reset();
+            return Ok(Some(request));
+        }
         let intent = match bind_history_plan(origin.clone(), plan) {
             Ok(intent) => intent,
             Err(error) => {
@@ -413,7 +511,7 @@ impl Session {
                     s.uncertain = Some(Uncertain {
                         request: Request(
                             Rc::new(RefCell::new(Delivery::Invalidated(message.clone()))),
-                            receipt,
+                            Receipt::Native(receipt),
                             Rc::downgrade(&self.0),
                         ),
                         ticket,
@@ -424,7 +522,7 @@ impl Session {
                 }
                 let request = Request(
                     Rc::new(RefCell::new(Delivery::Native(NativeProgress::Queued))),
-                    receipt.clone(),
+                    Receipt::Native(receipt.clone()),
                     Rc::downgrade(&self.0),
                 );
                 s.pending = Some(Pending {
@@ -494,6 +592,8 @@ impl Session {
                 s.status = Status::IdentityUnavailable;
             }
         }
+        drop(s);
+        self.drive_reset();
         batch
     }
     pub fn notices(&self) -> Vec<Notice> {
@@ -505,6 +605,7 @@ impl Session {
         let mut state = self.0.state.borrow_mut();
         if state.admission_closed
             || state.pending.is_some()
+            || state.sequence.is_some()
             || state.uncertain.is_some()
             || state.volume.busy()
             || state.external.is_some()
@@ -549,10 +650,11 @@ impl State {
         &self,
         request: &Request,
         graph: &Graph,
-        report: &NativeReport,
+        report: &RequestReport,
     ) -> Result<(), String> {
         if self.admission_closed
             || self.pending.is_some()
+            || self.sequence.is_some()
             || self.history.busy()
             || self.volume.busy()
             || self.external.is_some()
@@ -561,10 +663,7 @@ impl State {
                 "Release current history/gesture/configuration ownership before recovery.".into(),
             );
         }
-        if !matches!(
-            report.progress,
-            NativeProgress::Unconfirmed { .. } | NativeProgress::Rejected { .. }
-        ) {
+        if !report.failed() {
             return Err("Recovery requires the original terminal failure outcome.".into());
         }
         if !self.witnessed
@@ -574,7 +673,7 @@ impl State {
                 .as_ref()
                 .is_some_and(|g| g.stamp == graph.stamp && Arc::ptr_eq(&g.value, &graph.value))
             || (graph.stamp.epoch, graph.stamp.revision)
-                < (report.source.epoch, report.source.revision)
+                < (report.source().epoch, report.source().revision)
         {
             return Err(
                 "Recovery requires the current authenticated connected native graph.".into(),
@@ -582,9 +681,9 @@ impl State {
         }
         if self.uncertain.as_ref().is_some_and(|held| {
             !held.request.same_request(request)
-                || held.ticket != report.ticket
-                || held.source != report.source
-                || held.commands != report.command_count
+                || held.ticket != report.ticket()
+                || held.source != report.source()
+                || held.commands != report.command_count()
         }) {
             return Err("Another or mismatched receipt still owns the uncertainty hold.".into());
         }
@@ -594,7 +693,9 @@ impl State {
         let Some(held) = self.uncertain.as_ref() else {
             return;
         };
-        let report = held.request.native_report();
+        let Some(report) = held.request.native_report() else {
+            return;
+        };
         if report.ticket == held.ticket
             && report.source == held.source
             && report.command_count == held.commands
@@ -677,7 +778,7 @@ impl State {
                 result: Err(reason.into()),
             });
             *p.request.0.borrow_mut() = Delivery::Invalidated(reason.into());
-            let report = p.request.native_report();
+            let report = p.request.native_report().expect("native pending receipt");
             if report.ticket != p.ticket
                 || report.source != p.source
                 || report.command_count != p.commands
@@ -767,6 +868,13 @@ impl Controller<SessionAdapter> {
         };
         let delivery = request.0.borrow().clone();
         match delivery {
+            Delivery::Sequence(SequenceProgress::Running) => false,
+            Delivery::Sequence(SequenceProgress::Observed { stamp, .. }) => {
+                self.observed_result(&request, stamp)
+            }
+            Delivery::Sequence(SequenceProgress::Failed { message }) => {
+                self.unconfirmed(&request, message)
+            }
             Delivery::Native(NativeProgress::Queued) => false,
             Delivery::Native(NativeProgress::ExecutedLocally(_)) => self.executed_locally(&request),
             Delivery::Native(

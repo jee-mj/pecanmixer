@@ -29,7 +29,7 @@ fn changed_recovery(redo: bool) {
     let (_owner, session, driver, graph, _) = with_history(redo);
     let prior = session.history_lengths();
     let (request, _) = failed(&session, &driver, &graph, true, true);
-    let frozen = request.native_report();
+    let frozen = request.native_report().unwrap();
     assert_eq!(
         session.history_lengths(),
         prior,
@@ -52,7 +52,11 @@ fn changed_recovery(redo: bool) {
         driver.take_requests().is_empty(),
         "Reconciliation is read-only"
     );
-    assert_eq!(request.native_report(), frozen, "Failure is not upgraded");
+    assert_eq!(
+        request.native_report(),
+        Some(frozen.clone()),
+        "Failure is not upgraded"
+    );
     assert!(matches!(session.status(), Status::Unconfirmed(_)));
     assert!(!session.busy());
     session.undo(&graph).unwrap().unwrap();
@@ -88,7 +92,7 @@ fn explicit_recovery_history_unchanged_append_and_metadata_preserve_undo_redo_an
     for buses in [layout(), layout().add().unwrap(), metadata] {
         let (_owner, session, driver, graph, ids) = with_history(true);
         let (request, _) = failed(&session, &driver, &graph, true, true);
-        let frozen = request.native_report();
+        let frozen = request.native_report().unwrap();
         session.recover_request(&request, &graph, &buses).unwrap();
         assert_eq!(session.history_lengths(), (1, 1));
         assert_eq!(
@@ -96,7 +100,7 @@ fn explicit_recovery_history_unchanged_append_and_metadata_preserve_undo_redo_an
             (Some("Mute".into()), Some("Synthetic Rec route".into()))
         );
         assert!(driver.take_requests().is_empty());
-        assert_eq!(request.native_report(), frozen);
+        assert_eq!(request.native_report(), Some(frozen.clone()));
         session.redo(&graph).unwrap().unwrap();
         let admitted = driver.take_requests();
         assert_eq!(admitted.len(), 1);
@@ -131,7 +135,7 @@ fn explicit_recovery_history_unchanged_append_and_metadata_preserve_undo_redo_an
         observed(&admitted[0], next.stamp, false);
         session.poll();
         assert_eq!(session.history_lengths(), (2, 0));
-        assert_eq!(request.native_report(), frozen);
+        assert_eq!(request.native_report(), Some(frozen.clone()));
     }
 }
 

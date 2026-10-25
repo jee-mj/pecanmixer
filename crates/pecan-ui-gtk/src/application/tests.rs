@@ -11,6 +11,7 @@ use pecan_core::{
 use std::collections::BTreeMap;
 
 mod history_layout;
+pub(super) mod large_reset;
 fn graph() -> Momentopname {
     let mut graph: Momentopname =
         serde_json::from_str(include_str!("../../../../fixtures/graph/audio-basic.json")).unwrap();

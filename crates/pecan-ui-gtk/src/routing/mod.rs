@@ -528,7 +528,9 @@ impl<O: Clone> Model<O> {
         let commands = history::plan(&action, &b.capture.graph.value, config)
             .map_err(|e| Error::Domain(format!("{e:?}")))?
             .len();
-        if commands > MAX_NATIVE_COMMANDS {
+        if commands > pecan_core::history_backend::MAX_HISTORY_SEQUENCE_COMMANDS
+            || commands > MAX_NATIVE_COMMANDS && !matches!(action, Action::BackToAuto)
+        {
             return Err(Error::PlanTooLarge);
         }
         let request = RequestToken(Rc::new(()));
@@ -620,6 +622,64 @@ impl<O: Clone> Model<O> {
         }
         if report.progress.is_terminal() {
             self.pending = None;
+        }
+        true
+    }
+    /// Parent reset evidence is deliberately not presented as a NativeReport.
+    /// A real child's observation cannot complete this UI/history operation.
+    pub fn report_sequence(
+        &mut self,
+        token: &RequestToken,
+        report: pecan_core::history_backend::SequenceReport,
+    ) -> bool {
+        use pecan_core::history_backend::{SequenceProgress, MAX_HISTORY_SEQUENCE_COMMANDS};
+        let Some(p) = self.pending.as_mut().filter(|p| &p.token == token) else {
+            return false;
+        };
+        if report.source != p.source
+            || report.command_count != p.commands
+            || report.command_count > MAX_HISTORY_SEQUENCE_COMMANDS
+            || report.completed_commands > report.command_count
+            || report.children.len() > MAX_HISTORY_SEQUENCE_COMMANDS / MAX_NATIVE_COMMANDS
+            || p.ticket.is_some_and(|t| t != report.ticket)
+        {
+            return false;
+        }
+        if let SequenceProgress::Observed { stamp, .. } = report.progress {
+            if stamp.epoch != p.source.epoch || stamp.revision <= p.source.revision
+                || report.completed_commands != report.command_count
+                || report.children.iter().any(|child| !matches!(child.progress,
+                    NativeProgress::Observed { stamp: s, counts } | NativeProgress::ObservedNoOp { stamp: s, counts }
+                    if s.epoch == stamp.epoch && s <= stamp && s.revision > child.source.revision && counts.in_progress == 0)) {
+                return false;
+            }
+        }
+        p.ticket = Some(report.ticket);
+        p.reported = true;
+        self.notice = Some(match &report.progress {
+            SequenceProgress::Running => format!(
+                "Reset pending: {}/{} planned actions observed; {} native batches retained",
+                report.completed_commands,
+                report.command_count,
+                report.children.len()
+            ),
+            SequenceProgress::Observed { .. } => {
+                "Combined reset postcondition observed; one history step".into()
+            }
+            SequenceProgress::Failed { message } => {
+                format!("Reset stopped; reconcile partial effects before retry: {message}")
+            }
+        });
+        match report.progress {
+            SequenceProgress::Running => {}
+            SequenceProgress::Observed { stamp, .. } => {
+                self.barrier = Some(stamp);
+                self.pending = None;
+            }
+            SequenceProgress::Failed { .. } => {
+                self.reconcile = true;
+                self.pending = None;
+            }
         }
         true
     }

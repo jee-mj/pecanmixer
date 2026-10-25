@@ -429,7 +429,7 @@ fn admission_failure_fresh_retry_and_partial_unconfirmed_reconciliation_are_dist
 }
 
 #[test]
-fn input_and_plan_bounds_do_not_truncate_reset_or_mutate_the_graph() {
+fn input_bounds_hold_and_large_reset_prepares_one_parent_without_mutating_graph() {
     let g = graph();
     let bus = owner(&g);
     assert!(matches!(
@@ -463,10 +463,10 @@ fn input_and_plan_bounds_do_not_truncate_reset_or_mutate_the_graph() {
     assert!(m.counts().links > MAX_NATIVE_COMMANDS);
     assert!(matches!(
         m.confirm_reset(&confirmation),
-        Err(Error::PlanTooLarge)
+        Ok(Event::History(_))
     ));
-    assert!(m.pending().is_none());
-    assert!(m.confirmation().is_some());
+    assert!(m.pending().is_some());
+    assert!(m.confirmation().is_none());
     assert_eq!(g.value.kabels.len(), 47);
 }
 

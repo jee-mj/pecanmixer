@@ -466,6 +466,7 @@ impl Session {
             && s.external.is_none()
             && s.witnessed
             && s.pending.is_none()
+            && s.sequence.is_none()
             && Volumes::identity(&s, key).is_ok()
             && s.volume
                 .group
@@ -476,6 +477,7 @@ impl Session {
         let mut s = self.0.state.borrow_mut();
         if s.admission_closed
             || s.pending.is_some()
+            || s.sequence.is_some()
             || s.uncertain.is_some()
             || s.volume.busy()
             || s.external.is_some()

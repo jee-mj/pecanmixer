@@ -10,6 +10,29 @@ use crate::graph::Momentopname;
 use crate::native_command::{AdmissionError, NativeIntent, NativeProgress, NativeReport};
 use std::sync::Arc;
 
+/// Matches the native routing capture's bounded graph budget. This does not
+/// raise the per-native-intent limit or make an ordered sequence atomic.
+pub const MAX_HISTORY_SEQUENCE_COMMANDS: usize = 16_384;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SequenceProgress {
+    Running,
+    Observed { stamp: Stamp, no_op: bool },
+    Failed { message: String },
+}
+/// Owner evidence for one history operation, explicitly distinct from a
+/// NativeReport. Children are real unmodified backend reports; completion is
+/// supplied only after their barriers and the whole intent's postcondition.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SequenceReport {
+    pub ticket: u64,
+    pub source: Stamp,
+    pub command_count: usize,
+    pub completed_commands: usize,
+    pub progress: SequenceProgress,
+    pub children: Vec<NativeReport>,
+}
+
 pub fn bind_history_plan(
     origin: Stamped<Arc<Momentopname>>,
     plan: CommandPlan,
@@ -35,6 +58,14 @@ pub struct HistoryResults {
 }
 
 impl HistoryResults {
+    pub fn sequence_terminal(&mut self, report: &SequenceReport) -> Option<Input> {
+        let result = match &report.progress {
+            SequenceProgress::Running => return None,
+            SequenceProgress::Observed { stamp, .. } => Ok(*stamp),
+            SequenceProgress::Failed { message } => Err(message.clone()),
+        };
+        self.once(report.ticket, report.source, result)
+    }
     pub fn admission_rejected(
         &mut self,
         ticket: u64,

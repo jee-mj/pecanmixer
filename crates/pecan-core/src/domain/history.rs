@@ -345,6 +345,26 @@ impl Controller {
     pub fn busy(&self) -> bool {
         self.pending.is_some()
     }
+    /// A reset and its captured inverse remain one pending step while the
+    /// owner executes bounded chunks. Never recapture its semantic authority.
+    pub fn pending_reset_matches(&self, ticket: u64, frame: &HistoryGraph) -> bool {
+        self.pending.as_ref().is_some_and(|pending| {
+            pending.ticket == ticket
+                && matches!(pending.step.forward, Action::BackToAuto)
+                && self.identity.as_ref().is_some_and(|accepted| {
+                    accepted.same_owner(frame)
+                        && accepted.graph().stamp == frame.graph().stamp
+                        && Arc::ptr_eq(&accepted.graph().value, &frame.graph().value)
+                })
+                && pending.step.identity.as_ref().is_some_and(|guard| {
+                    guard.valid(
+                        frame,
+                        [&pending.step.forward, &pending.step.inverse],
+                        &self.buses,
+                    )
+                })
+        })
+    }
     pub fn graph(&self) -> Option<&Stamped<Arc<Momentopname>>> {
         self.graph.as_ref()
     }
