@@ -51,8 +51,8 @@ consumer or rebuild the folder controls for every timing publication.
 Call `tick(now)` from the existing owning clock (approximately 100 ms matches
 legacy display cadence). Tick updates only the time label, performs no status
 scan/structural rebuild, and leaves hidden views untouched. Timing updates also
-retain the widgets. Snapshot offers keep
-one bounded projection/weak idle wake, with equal-time delivery order preserved.
+retain the widgets. Snapshot offers keep one bounded projection/weak idle wake,
+with equal-time delivery order preserved.
 There are at most 80 takes, 64 tracks per take and 4096 encoded bytes per retained
 path. Receipt ownership/finalization stays with BusOwner, not this projection.
 
@@ -62,6 +62,10 @@ ticket. An Err means no launch was admitted. After admission retain the token
 until the real result, including busy/error states across UI publications.
 `complete(Submitted(plan))` describes launch admission, not a visible desktop
 window; mismatched/late results cannot replace another pending request.
+Structural rendering, unavailable state and handler rebinding revoke every old
+button callback, including idle buttons retained outside the widget tree. Each
+button captures its own handler. Timing-only updates preserve its valid binding;
+pending requests keep their original token across handler replacement.
 
 Only explicit `FolderPaths` go off the UI thread. `prepare()` creates that root,
 canonicalizes, and falls back on missing, escaping or non-directory take paths.
@@ -72,17 +76,20 @@ new root/latest take. No Folder launch or profile write is exercised here.
 
 ## Checks and limits
 
-Six focused synthetic cases cover legacy formatting boundaries, oldest-active
+Eight focused synthetic cases cover legacy formatting boundaries, oldest-active
 versus latest-folder selection, missing timing, explicit-root canonical fallback,
 symlink escape, preparation errors, pending/result correlation, stale callbacks,
 reentrant delivery, coalesced publications, hidden resume and tick storms without
-button rebuilds, including fresh timing updates and stale-time rejection.
+button rebuilds, including fresh timing updates and stale-time rejection. Both
+retired-button regressions (unavailable bypass and rebound-handler adoption)
+failed against `84717ec4` before the correction. Recovery and completion cannot
+revive a retired callback, and fresh controls still admit the captured request.
 Filesystem writes are confined to unique test directories under
 `/tmp`; labels/IDs/paths are authored generic fixtures. The widget tests use
 isolated Xvfb/private D-Bus and do not launch a file manager or recording worker.
 
 Cloud checks on 2026-10-25 (Rust 1.99.1, GTK 4.18.6): focused default-feature
-tests 6/6; complete all-feature GTK suite 376/376, including its existing isolated
+tests 8/8; complete all-feature GTK suite 378/378, including its existing isolated
 XTest/private-bus cases; native `cargo build -p pecan-ui-gtk --locked`, package
 formatting and whitespace checks passed. Core/backend/legacy sources are unchanged
 and their test suites were not rerun for this UI/helper-only candidate.

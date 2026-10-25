@@ -135,3 +135,107 @@ fn reentrant_folder_completion_does_not_fabricate_recording_or_clobber_results()
     view.observe(s).unwrap();
     assert!(!view.0.folder.borrow().as_ref().unwrap().is_sensitive());
 }
+
+#[gtk::test]
+fn retained_folder_callback_cannot_bypass_unavailable_or_later_recovery() {
+    let temp = Temp::new();
+    let view = TransportControls::new();
+    view.observe(snapshot(&temp.0, Duration::ZERO)).unwrap();
+    let requests = Rc::new(RefCell::new(Vec::new()));
+    let seen = requests.clone();
+    view.bind_folder(move |request| {
+        seen.borrow_mut().push(request);
+        Ok(())
+    });
+    let retired = view.0.folder.borrow().as_ref().unwrap().clone();
+    view.unavailable("synthetic owner inspection unavailable");
+    retired.emit_clicked();
+    assert!(
+        requests.borrow().is_empty(),
+        "retired callback bypassed unavailable"
+    );
+    assert!(view.pending().is_none());
+
+    view.observe(snapshot(&temp.0, Duration::from_secs(1)))
+        .unwrap();
+    retired.emit_clicked();
+    assert!(
+        requests.borrow().is_empty(),
+        "recovery revived an old callback"
+    );
+    let fresh = view.0.folder.borrow().as_ref().unwrap().clone();
+    let timing = snapshot(&temp.0, Duration::from_secs(2));
+    view.update_elapsed(timing.activity, &timing.takes, timing.observed_at)
+        .unwrap();
+    view.tick(Duration::from_secs(3));
+    assert_eq!(view.0.folder.borrow().as_ref(), Some(&fresh));
+    fresh.emit_clicked();
+    assert_eq!(
+        requests.borrow().len(),
+        1,
+        "timing updates retired a valid callback"
+    );
+    let request = requests.borrow_mut().pop().unwrap();
+    assert!(view.complete(&request.token, Completion::Cancelled));
+    fresh.emit_clicked();
+    assert!(
+        requests.borrow().is_empty(),
+        "completion revived a retired callback"
+    );
+}
+
+#[gtk::test]
+fn retained_folder_callback_cannot_adopt_rebound_handler_or_discard_pending() {
+    let temp = Temp::new();
+    let view = TransportControls::new();
+    view.observe(snapshot(&temp.0, Duration::ZERO)).unwrap();
+    let original = Rc::new(Cell::new(0));
+    let seen = original.clone();
+    view.bind_folder(move |_| {
+        seen.set(seen.get() + 1);
+        Ok(())
+    });
+    let retired = view.0.folder.borrow().as_ref().unwrap().clone();
+    let requests = Rc::new(RefCell::new(Vec::new()));
+    let seen = requests.clone();
+    view.bind_folder(move |request| {
+        seen.borrow_mut().push(request);
+        Ok(())
+    });
+    retired.emit_clicked();
+    assert_eq!(original.get(), 0);
+    assert!(
+        requests.borrow().is_empty(),
+        "retired callback adopted a new handler"
+    );
+    assert!(view.pending().is_none());
+
+    let fresh = view.0.folder.borrow().as_ref().unwrap().clone();
+    fresh.emit_clicked();
+    let request = requests.borrow_mut().pop().unwrap();
+    assert_eq!(view.pending(), Some(request.token.clone()));
+    let third = Rc::new(Cell::new(0));
+    let seen = third.clone();
+    view.bind_folder(move |_| {
+        seen.set(seen.get() + 1);
+        Ok(())
+    });
+    assert_eq!(view.pending(), Some(request.token.clone()));
+    let pending_button = view.0.folder.borrow().as_ref().unwrap().clone();
+    pending_button.emit_clicked();
+    assert_eq!(third.get(), 0);
+    assert!(view.complete(&request.token, Completion::Cancelled));
+    retired.emit_clicked();
+    fresh.emit_clicked();
+    pending_button.emit_clicked();
+    assert_eq!(
+        third.get(),
+        0,
+        "retired callback revived after pending completion"
+    );
+    let fresh = view.0.folder.borrow().as_ref().unwrap().clone();
+    fresh.emit_clicked();
+    assert_eq!(third.get(), 1);
+    let token = view.pending().unwrap();
+    assert!(view.complete(&token, Completion::Cancelled));
+}
