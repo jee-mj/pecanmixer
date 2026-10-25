@@ -11,6 +11,8 @@ use std::{
     ffi::{c_char, c_int, c_uint, c_ulong, c_void},
     time::{Duration, Instant},
 };
+#[path = "history_shortcut_xtest.rs"]
+mod shortcuts;
 #[link(name = "libX11.so.6", kind = "dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     fn XOpenDisplay(name: *const c_char) -> *mut c_void;
@@ -110,11 +112,20 @@ impl Input {
         }
         settle(35);
     }
+    fn focus(&self) {
+        unsafe {
+            XSetInputFocus(self.d, self.w, 2, 0);
+            XSync(self.d, 0);
+        }
+        settle(35);
+    }
 }
 impl Drop for Input {
     fn drop(&mut self) {
         unsafe {
-            for key in [SPACE, ESCAPE, RETURN, TAB] {
+            for key in [
+                SPACE, ESCAPE, RETURN, TAB, 0x7a, 0x79, 0xffe1, 0xffe3, 0xffeb,
+            ] {
                 let code = XKeysymToKeycode(self.d, key);
                 XTestFakeKeyEvent(self.d, code.into(), 0, 0);
             }
