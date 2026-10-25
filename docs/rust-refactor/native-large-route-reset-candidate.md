@@ -59,6 +59,15 @@ ownership and fresh authenticated graph/config inspection. It does not convert
 the failed prefix into history, retry, roll back or claim audio convergence.
 Stop/quit authority is unchanged.
 
+Reconnect can clear logical bus metadata, while metadata initialization itself
+requires an idle Session. The recovery correction releases an old-epoch
+execution hold only after all actual child execution has closed and a newer
+connected, authenticated epoch is accepted. It preserves same-epoch holds and
+never releases while a child is open. This permits the existing explicit
+metadata initialization path; the routing view still retains the failed parent
+and requires its separate explicit reconciliation afterward. No routing action
+is replayed or acknowledged by initializing metadata.
+
 The routing UI retains its parent request throughout child progress, including
 while recording. It displays observed planned actions and retained child count,
 not admission as completion. The final outcome uses the same routing graph
@@ -68,7 +77,7 @@ barrier and explicit recovery surface as ordinary requests.
 
 All graphs, names, identities and reports are authored generic fixtures. The
 tests neither start PipeWire nor access a user's files, hardware or recording.
-Fourteen focused checks cover:
+Sixteen focused checks cover:
 
 - More than two children, exact forward ordering, one-step Undo/Redo, original
   full inverse pair set and unchanged Rec links.
@@ -80,6 +89,10 @@ Fourteen focused checks cover:
   disconnect and quit, with real reports retained and no future batches.
 - Mounted routing confirmation during synthetic recording, parent pending
   state, one history entry and explicit no-prefix-Undo recovery.
+- Closed failed children across reconnect with unknown two-channel metadata,
+  explicit initialization then explicit routing recovery, and an open-call
+  control that blocks initialization until actual closure. Both new cases fail
+  on `a7b9eb6b` at initialization admission and pass with the recovery correction.
 
 Focused command (serial, isolated synthetic Xvfb/D-Bus for GTK cases):
 
@@ -87,14 +100,20 @@ Focused command (serial, isolated synthetic Xvfb/D-Bus for GTK cases):
 cargo test -p pecan-ui-gtk --locked large_reset -- --test-threads=1
 ```
 
-Local combined validation passed: 86 validator controls, 79 core tests, 253
-backend tests, 595 all-feature GTK/input/D-Bus checks, native build, three
+The original `a7b9eb6b` combined validation passed: 86 validator controls, 79 core
+tests, 253 backend tests, 595 all-feature GTK/input/D-Bus checks, native build, three
 headless fixture paths, three GTK smoke paths and Cargo/ELF dependency closure
 audits. A separate default-feature GTK run passed 541 checks; legacy headless
 unit checks passed 10. All five existing audio examples compile; they are not
 run. The guarded native script recorded zero JavaScript-tooling attempts.
-These aggregate checks include the 14 focused checks above; they do not add
+Those aggregate checks include the original 14 focused checks; they do not add
 independent review or hardware evidence.
+
+The recovery correction passes all 16 focused checks, 597 all-feature GTK/input/
+D-Bus checks, 543 default-feature GTK checks, native build and formatting/diff
+checks. Core/backend, legacy, example and dependency-audit checks above were not
+repeated for this UI-only correction; their source and dependency files are
+unchanged. Independent re-review is still required.
 
 Physical desktop, audio hardware, policy-manager behavior under actual load,
 recording continuity and performance remain untested. The user decision for

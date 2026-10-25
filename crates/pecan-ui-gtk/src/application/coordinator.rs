@@ -693,13 +693,27 @@ impl State {
         let Some(held) = self.uncertain.as_ref() else {
             return;
         };
-        let Some(report) = held.request.native_report() else {
-            return;
+        let report = held.request.report();
+        let release = match &report {
+            RequestReport::Native(r) => terminal_quiescent(r),
+            RequestReport::Sequence(r) => {
+                // Reconnect loses logical configuration metadata. After all
+                // old calls close, do not require that metadata to release the
+                // old execution hold: initialization itself needs an idle
+                // Session. Routing retains the failed parent and still needs
+                // explicit fresh graph/config reconciliation, not replay.
+                matches!(r.progress, SequenceProgress::Failed { .. })
+                    && self.witnessed
+                    && self.graph.as_ref().is_some_and(|graph| {
+                        graph.value.verbonden && graph.stamp.epoch > held.source.epoch
+                    })
+                    && held.request.execution() == NativeExecution::Closed
+            }
         };
-        if report.ticket == held.ticket
-            && report.source == held.source
-            && report.command_count == held.commands
-            && terminal_quiescent(&report)
+        if report.ticket() == held.ticket
+            && report.source() == held.source
+            && report.command_count() == held.commands
+            && release
         {
             self.uncertain = None;
             self.history_context = Rc::new(());
