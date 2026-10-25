@@ -21,8 +21,14 @@ pub struct TrayEvidence {
     pub availability: TrayAvailability,
     pub observed_at: Duration,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AutostartAction {
+    pub source: u64,
+    pub enabled: bool,
+}
 #[derive(Debug)]
 pub struct ActionBatch {
+    pub autostart: Option<AutostartAction>,
     pub visibility: VisibilityAction,
     pub quit: bool,
     pub acknowledge_failure: Option<RequestId>,
@@ -57,6 +63,7 @@ impl ActionBatch {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ConsumerStopped;
 pub struct ActionMailbox {
+    autostart: AtomicU64,
     visibility: AtomicU8,
     quit: AtomicBool,
     failure_ack: AtomicU64,
@@ -98,6 +105,7 @@ impl ActionMailbox {
         let (wake, receiver) = async_channel::bounded(1);
         (
             Arc::new(Self {
+                autostart: AtomicU64::new(0),
                 visibility: AtomicU8::new(0),
                 quit: AtomicBool::new(false),
                 failure_ack: AtomicU64::new(0),
@@ -156,8 +164,24 @@ impl ActionMailbox {
         self.failure_ack.store(id.get(), Ordering::SeqCst);
         self.notify()
     }
+    /// One bounded owner action, not file I/O or successful enable evidence.
+    pub fn autostart(&self, source: u64, enabled: bool) -> bool {
+        if source > GENERATION_MAX {
+            return false;
+        }
+        self.autostart.store(
+            (source << 2) | if enabled { 1 } else { 2 },
+            Ordering::SeqCst,
+        );
+        self.notify().is_ok()
+    }
     pub fn drain(&self) -> ActionBatch {
+        let desktop = self.autostart.swap(0, Ordering::SeqCst);
         ActionBatch {
+            autostart: (desktop & 3 != 0).then_some(AutostartAction {
+                source: desktop >> 2,
+                enabled: desktop & 3 == 1,
+            }),
             tray: self
                 .tray_dirty
                 .swap(false, Ordering::SeqCst)

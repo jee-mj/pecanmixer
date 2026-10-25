@@ -183,3 +183,11 @@ The [reviewed desktop helper library](./native-desktop-library-integration.md)
 now preserves explicit native settings/recording launch arguments and a distinct
 native autostart identity without touching legacy entries. It is library-only;
 worker/tray/startup adoption and real desktop/login acceptance remain separate.
+
+A separate, unreviewed [explicit desktop worker/tray candidate](./native-desktop-adoption-candidate.md)
+uses one existing settings worker/drain, separate memory preference capability and
+explicit CLI root/native-artifact context. Ordinary launch never enables an entry.
+It retains actual results and original control tokens; legacy takeover and profile
+discovery are excluded. Generated login arguments do not yet retain management
+context, so full autostart/session parity remains unfinished. The candidate is not
+in PR2 before independent review and combined adoption checks.

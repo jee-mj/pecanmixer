@@ -267,3 +267,98 @@ fn functional_handoff_waits_for_receipt_and_graph_then_history_and_patch_share_s
     assert_eq!(d.take_requests().len(), 1);
     finish(&entry, &d);
 }
+
+#[test]
+fn desktop_context_is_explicit_paired_and_rejected_by_fixture_modes() {
+    fn parse(args: &[&str]) -> Result<Option<Options>, String> {
+        Options::parse(args.iter().map(OsString::from))
+    }
+    assert!(parse(&[])
+        .unwrap()
+        .unwrap()
+        .desktop_context()
+        .unwrap()
+        .is_none());
+    assert!(parse(&["--native-executable", "/synthetic/native"]).is_err());
+    assert!(parse(&["--autostart-config-root", "/synthetic/config"]).is_err());
+    let opts = parse(&[
+        "--memory-defaults",
+        "--autostart-config-root",
+        "/synthetic/config",
+        "--native-executable",
+        "/synthetic/native",
+    ])
+    .unwrap()
+    .unwrap();
+    assert!(opts.settings.is_none());
+    assert!(opts.desktop_context().unwrap().is_some());
+    assert!(parse(&[
+        "--fixture",
+        "synthetic.json",
+        "--headless",
+        "--autostart-config-root",
+        "/synthetic/config",
+        "--native-executable",
+        "/synthetic/native"
+    ])
+    .is_err());
+    assert!(parse(&[
+        "--autostart-config-root",
+        "relative",
+        "--native-executable",
+        "/synthetic/native"
+    ])
+    .is_err());
+    assert!(parse(&[
+        "--autostart-config-root",
+        "/synthetic/config",
+        "--native-executable",
+        "/synthetic/literal%native"
+    ])
+    .is_err());
+}
+
+#[gtk::test]
+fn desktop_explicit_context_reactivation_reuses_worker_and_never_enables_on_launch() {
+    let root = std::env::temp_dir().join(format!(
+        "pecan-desktop-startup-synthetic-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::SeqCst)
+    ));
+    std::fs::create_dir(&root).unwrap();
+    let options = Options {
+        autostart_config_root: Some(root.clone()),
+        native_executable: Some("/synthetic/native".into()),
+        hidden: true,
+        tray: true,
+        ..Default::default()
+    };
+    let worker =
+        SettingsWorker::start_with_desktop(None, options.desktop_context().unwrap().unwrap())
+            .unwrap();
+    let (entry, driver, calls) = setup(options, Some(worker));
+    let shell = entry.shell().unwrap();
+    pump_until(|| {
+        shell.tick();
+        shell.settings_summary().desktop.is_some() && shell.window().is_visible()
+    });
+    let original = shell.settings_summary().desktop.unwrap().0;
+    assert!(shell.preferences().editing_allowed());
+    assert!(
+        shell.window().is_visible(),
+        "no real fixture tray can hide the reopening path"
+    );
+    for _ in 0..3 {
+        entry.app.activate();
+        shell.tick();
+    }
+    assert_eq!(calls.get(), 1);
+    assert_eq!(entry.app.windows().len(), 1);
+    assert_eq!(shell.settings_summary().desktop.unwrap().0, original);
+    assert!(!root
+        .join("autostart")
+        .join(crate::desktop_launch::DESKTOP_FILENAME)
+        .exists());
+    finish(&entry, &driver);
+    std::fs::remove_dir_all(root).unwrap();
+}

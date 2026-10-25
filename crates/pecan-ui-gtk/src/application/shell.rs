@@ -72,6 +72,8 @@ impl Completion for OwnedCompletion {
 /// retained window; it never starts another backend. Fixture construction uses
 /// the same shell with a separately injected synthetic endpoint.
 pub struct ApplicationShell {
+    desktop: RefCell<super::desktop::DesktopState>,
+    desktop_panel: super::desktop::DesktopPanel,
     app: gtk::Application,
     owner: Rc<ApplicationOwner>,
     session: Session,
@@ -187,11 +189,22 @@ impl ApplicationShell {
         tools.append(&retry);
         tools.append(&error_box);
         let preference_panel = DisplayPanel::new();
-        let preferences = super::preferences::PreferencesState::new(settings.is_some());
+        let preferences = super::preferences::PreferencesState::new(
+            settings
+                .as_ref()
+                .is_some_and(SettingsWorker::supports_preferences),
+        );
+        let desktop = super::desktop::DesktopState::new(
+            settings
+                .as_ref()
+                .is_some_and(SettingsWorker::supports_desktop),
+        );
+        let desktop_panel = super::desktop::DesktopPanel::new();
         let root = gtk::Box::new(gtk::Orientation::Vertical, 8);
         root.append(&status);
         root.append(&tools);
         root.append(preference_panel.widget());
+        root.append(desktop_panel.widget());
         root.append(workspace.widget());
         let window = gtk::ApplicationWindow::builder()
             .application(app)
@@ -202,6 +215,8 @@ impl ApplicationShell {
             .build();
         window.set_widget_name("pecan-native-primary");
         let shell = Rc::new(Self {
+            desktop: RefCell::new(desktop),
+            desktop_panel,
             app: app.clone(),
             owner,
             session,
@@ -347,6 +362,14 @@ impl ApplicationShell {
     }
     pub fn request_quit(&self) {
         self.event(Event::Quit)
+    }
+    fn desktop_action(&self, source: u64, action: super::desktop::Action) -> Result<(), String> {
+        if !self.policy.borrow().mutations_allowed() {
+            return Err("Finalization prevents new desktop operations.".into());
+        }
+        let mut worker = self.settings.borrow_mut();
+        let worker = worker.as_mut().ok_or("No desktop worker is attached.")?;
+        self.desktop.borrow_mut().request(source, action, worker)
     }
     pub fn submit_settings(&self, operation: SettingsOperation) -> Result<u64, SubmissionError> {
         if !self.policy.borrow().mutations_allowed() {
@@ -545,11 +568,20 @@ impl ApplicationShell {
             return;
         }
         while self.wake.try_recv().is_ok() {}
-        let effects = self
-            .mailbox
-            .drain()
-            .apply(&mut self.policy.borrow_mut(), self.now());
+        let batch = self.mailbox.drain();
+        let desktop_action = batch.autostart;
+        let effects = batch.apply(&mut self.policy.borrow_mut(), self.now());
         self.effects(effects);
+        if let Some(action) = desktop_action {
+            let _ = self.desktop_action(
+                action.source,
+                if action.enabled {
+                    super::desktop::Action::Enable
+                } else {
+                    super::desktop::Action::Disable
+                },
+            );
+        }
         let effects = self.policy.borrow_mut().apply(Event::Tick, self.now());
         self.effects(effects);
         if self.exit_code().is_some() {
@@ -560,11 +592,13 @@ impl ApplicationShell {
             for _ in 0..32 {
                 match worker.try_event() {
                     Ok(event) => {
+                        self.desktop.borrow_mut().event(&event);
                         self.preferences.borrow_mut().event(&event);
                         self.summary.borrow_mut().event(event);
                     }
                     Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                         self.preferences.borrow_mut().stopped();
+                        self.desktop.borrow_mut().stopped();
                         break;
                     }
                     Err(std::sync::mpsc::TryRecvError::Empty) => break,
@@ -576,6 +610,7 @@ impl ApplicationShell {
             self.workspace.bus_owner().restore_preferences(&preferences);
             if let Some(worker) = self.settings.borrow_mut().as_mut() {
                 self.preferences.borrow_mut().pump(worker);
+                self.desktop.borrow_mut().pump(worker);
             }
         }
         let finished = self
@@ -585,6 +620,10 @@ impl ApplicationShell {
             .and_then(|(id, drain)| drain.poll(self.now()).map(|summary| (*id, summary)));
         if let Some((request, completion)) = finished {
             let result = completion.summary.result();
+            if let Some((request, report)) = &completion.summary.desktop {
+                self.desktop.borrow_mut().result(*request, report);
+            }
+            self.desktop.borrow_mut().stopped();
             *self.summary.borrow_mut() = completion.summary;
             *self.preferences.borrow_mut() = completion.preferences;
             self.drain.borrow_mut().take();
@@ -601,6 +640,18 @@ impl ApplicationShell {
             return;
         }
         self.render_preferences();
+        let weak = self.owner.shell.borrow().clone();
+        let desktop = self.desktop.borrow().clone();
+        self.desktop_panel.render(
+            &desktop,
+            self.policy.borrow().mutations_allowed(),
+            Rc::new(move |source, action| {
+                if let Some(shell) = weak.upgrade() {
+                    let _ = shell.desktop_action(source, action);
+                    shell.render();
+                }
+            }),
+        );
         let phase = self.phase();
         let message=match &phase{
             QuitPhase::Idle=>"Native candidate · recording requires explicit configuration/directory; active bus migration remains unavailable".to_owned(),
@@ -648,6 +699,10 @@ impl ApplicationShell {
             connected: graph.as_ref().is_some_and(|g| g.value.verbonden),
             rate: graph.as_ref().and_then(|g| g.value.rate),
             quit: self.phase(),
+            autostart: self
+                .desktop
+                .borrow()
+                .menu(self.policy.borrow().mutations_allowed()),
         };
         if self.tray_snapshot.borrow().as_ref() != Some(&snapshot) {
             *self.tray_retry.borrow_mut() = Some(snapshot.clone());

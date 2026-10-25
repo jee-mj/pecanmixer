@@ -2,8 +2,9 @@
 //! there is no profile discovery, implicit migration or second backend consumer.
 use crate::{
     application::{ApplicationOwner, ApplicationShell, ShellOptions},
+    desktop_launch::{LaunchCommand, RefreshMode},
     settings_storage::SettingsFile,
-    settings_worker::SettingsWorker,
+    settings_worker::{DesktopContext, SettingsWorker},
 };
 use gtk::{gio, glib, prelude::*};
 use pecan_core::{graph::Momentopname, overview};
@@ -11,10 +12,12 @@ use std::{
     cell::RefCell, collections::BTreeMap, ffi::OsString, path::PathBuf, rc::Rc, time::Duration,
 };
 
-pub const HELP: &str = "pecan-ui-gtk [--settings /absolute/settings.json | --memory-defaults] [--recording-root /absolute/directory] [--tray] [--hidden] [--patchbay]\npecan-ui-gtk --fixture graph.json [--headless | --smoke] [--patchbay] [--hidden]\nDefault: one native PipeWire owner; display settings are memory-only unless an explicit path is supplied. Recording requires explicit native configuration and directory selection; active arming and structural migration remain unavailable. Fixture mode starts no PipeWire, real tray or settings I/O; fixture commands have synthetic receipts only. No profile discovery or automatic legacy import.";
+pub const HELP: &str = "pecan-ui-gtk [--settings /absolute/settings.json | --memory-defaults] [--recording-root /absolute/directory] [--tray] [--hidden] [--patchbay] [--autostart-config-root /absolute/config --native-executable /absolute/native-binary]\npecan-ui-gtk --fixture graph.json [--headless | --smoke] [--patchbay] [--hidden]\nDefault: one native PipeWire owner; display settings are memory-only unless an explicit path is supplied. Recording requires explicit native configuration and directory selection; active structural edits remain gated. Native login controls require the explicit paired context; launch only inspects and never enables an entry. The supplied executable is a trusted native-artifact assertion, not packaging verification. Fixture mode starts no PipeWire, real tray or settings/desktop I/O; fixture commands have synthetic receipts only. No profile discovery or automatic legacy import.";
 
 #[derive(Clone, Default, Debug)]
 pub struct Options {
+    pub autostart_config_root: Option<PathBuf>,
+    pub native_executable: Option<PathBuf>,
     pub fixture: Option<PathBuf>,
     pub settings: Option<PathBuf>,
     pub recording_root: Option<PathBuf>,
@@ -42,6 +45,16 @@ impl Options {
                             .ok_or("--settings requires an absolute file path")?
                             .into(),
                     );
+                }
+                Some("--autostart-config-root") if options.autostart_config_root.is_none() => {
+                    options.autostart_config_root = Some(
+                        args.next()
+                            .ok_or("--autostart-config-root requires an absolute root")?
+                            .into(),
+                    );
+                }
+                Some("--native-executable") if options.native_executable.is_none() => {
+                    options.native_executable = Some(args.next().ok_or("--native-executable requires an explicit trusted native executable")?.into());
                 }
                 Some("--recording-root") if options.recording_root.is_none() => {
                     options.recording_root = Some(
@@ -74,7 +87,11 @@ impl Options {
             return Err("--headless and --smoke require --fixture.".into());
         }
         if self.fixture.is_some()
-            && (self.settings.is_some() || self.tray || self.recording_root.is_some())
+            && (self.settings.is_some()
+                || self.tray
+                || self.recording_root.is_some()
+                || self.autostart_config_root.is_some()
+                || self.native_executable.is_some())
         {
             return Err(
                 "Fixture mode rejects settings paths, recording roots and real tray services."
@@ -91,7 +108,18 @@ impl Options {
         if let Some(path) = &self.settings {
             SettingsFile::new(path.clone()).map_err(|e| e.to_string())?;
         }
+        self.desktop_context()?;
         Ok(())
+    }
+    fn desktop_context(&self) -> Result<Option<DesktopContext>, String> {
+        match (&self.autostart_config_root, &self.native_executable) {
+            (None, None) => Ok(None),
+            (Some(root), Some(executable)) => {
+                let command = LaunchCommand::new(executable.clone()).and_then(|c| c.with_paths(self.settings.clone(), self.recording_root.clone())).map_err(|e| e.to_string())?;
+                DesktopContext::new(root.clone(), command, if cfg!(debug_assertions) { RefreshMode::Debug } else { RefreshMode::Release }).map(Some).map_err(|e| e.to_string())
+            }
+            _ => Err("Native login controls require both --autostart-config-root and --native-executable; no location is guessed.".into()),
+        }
     }
 }
 struct Resources {
@@ -225,6 +253,7 @@ pub fn run(options: Options) -> Result<glib::ExitCode, Box<dyn std::error::Error
         return Ok(glib::ExitCode::SUCCESS);
     }
     let path = options.settings.clone();
+    let desktop = options.desktop_context()?;
     let factory: Factory = if let Some(graph) = fixture {
         Box::new(move || {
             let owner = Rc::new(ApplicationOwner::fixture());
@@ -252,13 +281,19 @@ pub fn run(options: Options) -> Result<glib::ExitCode, Box<dyn std::error::Error
         })
     } else {
         Box::new(move || {
-            let settings = path
-                .map(|path| {
-                    SettingsFile::new(path)
-                        .map_err(|e| e.to_string())
-                        .and_then(|file| SettingsWorker::start(file).map_err(|e| e.to_string()))
-                })
-                .transpose()?;
+            let file = path
+                .map(SettingsFile::new)
+                .transpose()
+                .map_err(|e| e.to_string())?;
+            let settings = match desktop {
+                Some(context) => Some(
+                    SettingsWorker::start_with_desktop(file, context).map_err(|e| e.to_string())?,
+                ),
+                None => file
+                    .map(SettingsWorker::start)
+                    .transpose()
+                    .map_err(|e| e.to_string())?,
+            };
             Ok(Resources {
                 owner: Rc::new(ApplicationOwner::native()),
                 settings,

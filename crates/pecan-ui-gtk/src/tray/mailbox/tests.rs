@@ -110,3 +110,23 @@ fn concurrent_producers_keep_toggle_parity_and_reserved_quit() {
     assert!(batch.quit);
     assert_eq!(batch.visibility, VisibilityAction::None);
 }
+
+#[test]
+fn desktop_action_slot_is_bounded_correlated_and_cannot_starve_reserved_quit() {
+    let (mailbox, _wake) = ActionMailbox::new();
+    mailbox.quit().unwrap();
+    for source in 0..10000 {
+        assert!(mailbox.autostart(source, source % 2 == 0));
+    }
+    assert!(!mailbox.autostart(u64::MAX, true));
+    let batch = mailbox.drain();
+    assert!(batch.quit);
+    assert_eq!(
+        batch.autostart,
+        Some(AutostartAction {
+            source: 9999,
+            enabled: false
+        })
+    );
+    assert!(mailbox.drain().autostart.is_none());
+}
