@@ -256,3 +256,58 @@ fn result_watermark_rejects_old_sources_and_handles_wrapping_tickets() {
         "old-session receipt cannot return after reconnect"
     );
 }
+
+#[test]
+fn execution_closure_is_receipt_local_monotonic_and_separate_from_frozen_outcomes() {
+    let (receipt, producer) = native_receipt(1, origin().stamp, 1);
+    let (other, other_producer) = native_receipt(1, origin().stamp, 1);
+    let clone = receipt.clone();
+    assert_eq!(receipt.execution(), NativeExecution::Pending);
+    let call = producer.claim_execution().unwrap();
+    producer.set(NativeProgress::Unconfirmed {
+        reason: NativeFailure::Stopped,
+        counts: Counts {
+            attempted: 1,
+            in_progress: 1,
+            ..Default::default()
+        },
+    });
+    let frozen = receipt.report();
+    producer.seal_execution();
+    producer.seal_execution();
+    assert!(producer.claim_execution().is_none());
+    assert_eq!(clone.execution(), NativeExecution::Pending);
+    assert_eq!(other.execution(), NativeExecution::Pending);
+    drop(call);
+    assert_eq!(clone.execution(), NativeExecution::Closed);
+    producer.set(NativeProgress::Observed {
+        stamp: origin().stamp,
+        counts: Counts::default(),
+    });
+    assert_eq!(receipt.report(), frozen);
+    assert!(producer.claim_execution().is_none());
+    assert_eq!(other.execution(), NativeExecution::Pending);
+    other_producer.seal_execution();
+    assert_eq!(other.execution(), NativeExecution::Closed);
+}
+
+#[test]
+fn execution_leases_are_bounded_and_release_on_unwind() {
+    let (receipt, producer) = native_receipt(1, origin().stamp, MAX_NATIVE_COMMANDS);
+    let mut calls: Vec<_> = (0..MAX_NATIVE_COMMANDS)
+        .map(|_| producer.claim_execution().unwrap())
+        .collect();
+    assert!(producer.claim_execution().is_none());
+    drop(calls.pop());
+    let unwound = std::panic::catch_unwind(|| {
+        let _call = producer.claim_execution().unwrap();
+        producer.seal_execution();
+        panic!("synthetic executor unwind");
+    });
+    assert!(unwound.is_err());
+    assert_eq!(receipt.execution(), NativeExecution::Pending);
+    drop(calls);
+    assert_eq!(receipt.execution(), NativeExecution::Closed);
+    assert!(producer.claim_execution().is_none());
+    assert_eq!(receipt.report().progress, NativeProgress::Queued);
+}

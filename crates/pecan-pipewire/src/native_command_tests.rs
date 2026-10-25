@@ -512,6 +512,7 @@ fn cancelled_claim_can_finish_but_receipt_remains_explicitly_unconfirmed() {
         .drain_with(
             |_| {
                 commands.stop();
+                assert_eq!(receipt.execution(), NativeExecution::Pending);
                 true
             },
             |_| false,
@@ -522,6 +523,7 @@ fn cancelled_claim_can_finish_but_receipt_remains_explicitly_unconfirmed() {
         )
         .is_empty());
     assert_eq!(calls, 1);
+    assert_eq!(receipt.execution(), NativeExecution::Closed);
     assert!(matches!(
         receipt.report().progress,
         NativeProgress::Unconfirmed {
@@ -686,6 +688,9 @@ fn retained_receipts_do_not_retain_backend_work_or_evicted_graphs() {
     assert!(retained
         .iter()
         .all(|r| matches!(r.report().progress, NativeProgress::ObservedNoOp { .. })));
+    assert!(retained
+        .iter()
+        .all(|r| r.execution() == NativeExecution::Closed));
     assert!(
         released.upgrade().is_none(),
         "caller-owned receipts must not keep expired source graphs alive"
@@ -846,4 +851,222 @@ fn native_payload_bounds_reject_oversized_values_without_consuming_capacity() {
             ..
         }
     ));
+}
+
+#[test]
+fn execution_closes_before_observation_but_not_between_queued_calls() {
+    let live = graph();
+    let commands = setup(live.clone());
+    for _ in 0..PER_TICK - 1 {
+        commands
+            .legacy(Opdracht::StopBus("synthetic-unrelated".into()))
+            .unwrap();
+    }
+    let receipt = commands
+        .enqueue_native(request(&commands, vec![mute(10, true), mute(20, true)]))
+        .unwrap();
+    drain(&commands, &live, |_| LocalExecution::Submitted);
+    assert_eq!(receipt.execution(), NativeExecution::Pending);
+    assert!(matches!(
+        receipt.report().progress,
+        NativeProgress::ExecutedLocally(Counts { submitted: 1, .. })
+    ));
+    drain(&commands, &live, |_| {
+        assert_eq!(receipt.execution(), NativeExecution::Pending);
+        LocalExecution::Submitted
+    });
+    assert_eq!(receipt.execution(), NativeExecution::Closed);
+    assert!(matches!(
+        receipt.report().progress,
+        NativeProgress::ExecutedLocally(Counts { submitted: 2, .. })
+    ));
+    assert_eq!(commands.0.lock().unwrap().native.len(), 1);
+    let mut observed = live;
+    for node in &mut observed.knopen {
+        node.mute = Some(true);
+    }
+    commands.publish(observed);
+    assert!(matches!(
+        receipt.report().progress,
+        NativeProgress::Observed { .. }
+    ));
+    assert_eq!(receipt.execution(), NativeExecution::Closed);
+}
+
+#[test]
+fn held_call_closes_after_cancellation_without_rewriting_or_retaining_work() {
+    use std::sync::mpsc::sync_channel;
+    use std::time::Duration;
+    for cancellation in 0..3 {
+        let live = graph();
+        let commands = setup(live.clone());
+        let now = Instant::now();
+        let receipt = commands
+            .enqueue_native_at(
+                request(&commands, vec![mute(10, true), mute(20, true)]),
+                now,
+            )
+            .unwrap();
+        std::thread::scope(|scope| {
+            let (entered, ready) = sync_channel(1);
+            let (release, resume) = sync_channel(1);
+            let worker_commands = &commands;
+            let worker_live = &live;
+            let worker = scope.spawn(move || {
+                let mut calls = 0;
+                drain(worker_commands, worker_live, |_| {
+                    calls += 1;
+                    entered.send(()).unwrap();
+                    resume.recv_timeout(Duration::from_secs(5)).unwrap();
+                    LocalExecution::Submitted
+                });
+                calls
+            });
+            ready.recv_timeout(Duration::from_secs(5)).unwrap();
+            match cancellation {
+                0 => commands.stop(),
+                1 => {
+                    commands.publish(Momentopname::default());
+                }
+                _ => commands.expire_native(now + OBSERVATION_LIMIT),
+            }
+            let frozen = receipt.report();
+            assert!(matches!(
+                frozen.progress,
+                NativeProgress::Unconfirmed {
+                    counts: Counts { in_progress: 1, .. },
+                    ..
+                }
+            ));
+            {
+                let state = commands.0.lock().unwrap();
+                assert!(state.native.is_empty());
+                assert!(state.pending.is_empty());
+                // Polling never needs the dispatch or report mutex, even
+                // while the executor is gated and Work has been removed.
+                for _ in 0..10_000 {
+                    assert_eq!(receipt.execution(), NativeExecution::Pending);
+                }
+            }
+            if cancellation == 2 {
+                // Same caller ticket/source does not confuse closure identity.
+                let other = commands.enqueue_native(request(&commands, vec![])).unwrap();
+                assert_eq!(other.execution(), NativeExecution::Closed);
+                assert_eq!(receipt.execution(), NativeExecution::Pending);
+            }
+            release.send(()).unwrap();
+            assert_eq!(worker.join().unwrap(), 1);
+            assert_eq!(receipt.execution(), NativeExecution::Closed);
+            assert_eq!(receipt.report(), frozen);
+        });
+    }
+}
+
+#[test]
+fn callback_unwind_closes_claim_and_revokes_only_its_queued_tail() {
+    for phase in 0..4 {
+        let live = graph();
+        let commands = setup(live.clone());
+        let receipt = commands
+            .enqueue_native(request(&commands, vec![mute(10, true), mute(20, true)]))
+            .unwrap();
+        commands
+            .legacy(Opdracht::StopBus("synthetic-surviving-work".into()))
+            .unwrap();
+        let mut frozen = None;
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            commands.drain_with(
+                |_| {
+                    if phase == 1 {
+                        panic!("synthetic validation unwind");
+                    }
+                    true
+                },
+                |_| {
+                    if phase == 0 {
+                        panic!("synthetic no-op check unwind");
+                    }
+                    false
+                },
+                |_| {
+                    if phase == 3 {
+                        commands.stop();
+                        frozen = Some(receipt.report());
+                    }
+                    panic!("synthetic executor unwind");
+                },
+            )
+        }));
+        assert!(result.is_err());
+        assert_eq!(receipt.execution(), NativeExecution::Closed);
+        assert!(matches!(
+            receipt.report().progress,
+            NativeProgress::Unconfirmed {
+                counts: Counts { in_progress: 1, .. },
+                ..
+            }
+        ));
+        if let Some(frozen) = frozen {
+            assert_eq!(receipt.report(), frozen);
+        }
+        {
+            let state = commands.0.lock().unwrap();
+            assert!(state.native.is_empty());
+            assert_eq!(state.pending.len(), usize::from(phase != 3));
+        }
+        let mut surviving = Vec::new();
+        drain(&commands, &live, |command| {
+            surviving.push(command);
+            LocalExecution::Unreported
+        });
+        assert_eq!(surviving.len(), usize::from(phase != 3));
+    }
+}
+
+#[test]
+fn execution_closure_covers_empty_noop_rejection_expiry_and_backend_drop() {
+    let live = graph();
+    let commands = setup(live.clone());
+    let empty = commands.enqueue_native(request(&commands, vec![])).unwrap();
+    assert_eq!(empty.execution(), NativeExecution::Closed);
+    assert_eq!(empty.report().progress, NativeProgress::Queued);
+    let noop = commands
+        .enqueue_native(request(&commands, vec![mute(10, false)]))
+        .unwrap();
+    drain(&commands, &live, |_| panic!("no-op must not call executor"));
+    assert_eq!(noop.execution(), NativeExecution::Closed);
+    assert!(!noop.report().progress.is_terminal());
+    for local in [
+        LocalExecution::Rejected("synthetic unavailable".into()),
+        LocalExecution::Unreported,
+    ] {
+        let receipt = commands
+            .enqueue_native(request(&commands, vec![mute(10, true)]))
+            .unwrap();
+        let mut local = Some(local);
+        drain(&commands, &live, |_| local.take().unwrap());
+        assert_eq!(receipt.execution(), NativeExecution::Closed);
+        assert!(receipt.report().progress.is_terminal());
+    }
+    let invalid = commands
+        .enqueue_native(request(&commands, vec![mute(10, true)]))
+        .unwrap();
+    commands.object_removed(10);
+    drain(&commands, &live, |_| {
+        panic!("invalid generation must not execute")
+    });
+    assert_eq!(invalid.execution(), NativeExecution::Closed);
+    let old = Instant::now() - OBSERVATION_LIMIT;
+    let expired = commands
+        .enqueue_native_at(request(&commands, vec![mute(20, true)]), old)
+        .unwrap();
+    commands.expire_native(Instant::now());
+    assert_eq!(expired.execution(), NativeExecution::Closed);
+    let dropped = commands
+        .enqueue_native(request(&commands, vec![mute(20, true)]))
+        .unwrap();
+    assert_eq!(dropped.execution(), NativeExecution::Pending);
+    drop(commands);
+    assert_eq!(dropped.execution(), NativeExecution::Closed);
+    assert_eq!(dropped.report().progress, NativeProgress::Queued);
 }

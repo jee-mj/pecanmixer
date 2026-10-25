@@ -1,8 +1,8 @@
 //! Native request bookkeeping only. Shares the production worker/admission lock.
 use super::*;
 use pecan_core::native_command::{
-    native_receipt, AdmissionError, Counts, NativeFailure, NativeIntent, NativeProgress,
-    NativeReceipt, NativeReporter, MAX_NATIVE_COMMANDS, MAX_NATIVE_IN_FLIGHT,
+    native_receipt, AdmissionError, Counts, NativeExecutionLease, NativeFailure, NativeIntent,
+    NativeProgress, NativeReceipt, NativeReporter, MAX_NATIVE_COMMANDS, MAX_NATIVE_IN_FLIGHT,
     NATIVE_SOURCE_HISTORY,
 };
 use std::time::{Duration, Instant};
@@ -42,6 +42,56 @@ pub(super) struct Work {
     deadline: Instant,
     last_execution: Stamp,
     barrier: bool,
+}
+
+impl Drop for Work {
+    fn drop(&mut self) {
+        // Removal revokes future claims, including cancellation, expiry and
+        // backend destruction. A claimed call owns its independent lease.
+        self.reporter.seal_execution();
+    }
+}
+
+/// Lives outside the dispatch lock through every callback and result handler.
+/// Unwind cancels this batch's remaining queue before releasing the claim.
+pub(super) struct Call<'a> {
+    commands: &'a Commands,
+    tag: Tag,
+    finished: bool,
+    _lease: NativeExecutionLease,
+}
+
+impl<'a> Call<'a> {
+    pub(super) fn new(commands: &'a Commands, tag: Tag, lease: NativeExecutionLease) -> Self {
+        Self {
+            commands,
+            tag,
+            finished: false,
+            _lease: lease,
+        }
+    }
+
+    pub(super) fn finish(mut self, execution: LocalExecution, no_op: bool) {
+        self.commands.native_finished(self.tag, execution, no_op);
+        self.finished = true;
+    }
+
+    pub(super) fn reject(mut self, reason: NativeFailure) {
+        self.commands.native_known_rejection(self.tag, reason);
+        self.finished = true;
+    }
+}
+
+impl Drop for Call<'_> {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.commands.0.lock().unwrap().fail_native(
+                self.tag.id,
+                NativeFailure::LocalUnavailable("local execution exited without a result".into()),
+            );
+        }
+        // The field's lease drops after this body, even when Work was removed.
+    }
 }
 
 #[derive(Debug)]
@@ -202,6 +252,9 @@ impl Commands {
             });
         }
         let count = intent.commands.len();
+        if count == 0 {
+            reporter.seal_execution();
+        }
         state.native.push_back(Work {
             id,
             source: intent.origin.stamp,
@@ -277,6 +330,9 @@ impl Commands {
             }
         }
         work.last_execution = stamp;
+        if work.locally_done() {
+            work.reporter.seal_execution();
+        }
         work.reporter
             .set(NativeProgress::ExecutedLocally(work.counts()));
     }
@@ -304,18 +360,22 @@ impl State {
             work.fail(reason.clone());
         }
     }
-    pub(super) fn claim_native(&mut self, tag: Tag, now: Instant) -> bool {
+    pub(super) fn claim_native(&mut self, tag: Tag, now: Instant) -> Option<NativeExecutionLease> {
         let Some(work) = self.native.iter_mut().find(|w| w.id == tag.id) else {
-            return false;
+            return None;
         };
         if now >= work.deadline {
             self.fail_native(tag.id, NativeFailure::ObservationTimedOut);
-            return false;
+            return None;
         }
+        if !matches!(work.stages.get(tag.index), Some(Stage::Queued)) {
+            return None;
+        }
+        let lease = work.reporter.claim_execution()?;
         work.stages[tag.index] = Stage::Claimed;
         work.reporter
             .set(NativeProgress::ExecutedLocally(work.counts()));
-        true
+        Some(lease)
     }
     pub(super) fn observe_native(&mut self) {
         let mut terminal = Vec::new();

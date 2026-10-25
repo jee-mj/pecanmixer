@@ -233,7 +233,7 @@ impl Commands {
     ) -> Vec<DispatchError> {
         let mut rejected = Vec::new();
         for _ in 0..PER_TICK {
-            let queued = {
+            let (queued, native_call) = {
                 let mut state = self.0.lock().unwrap();
                 if state.stopped {
                     break;
@@ -292,12 +292,15 @@ impl Commands {
                 if queued.migration.is_none() && matches!(queued.command.command, Opdracht::Stop) {
                     state.cancel_migration(crate::bus_migration::MigrationError::Cancelled);
                 }
-                if let Some(tag) = queued.native {
-                    if !state.claim_native(tag, std::time::Instant::now()) {
+                let native_call = if let Some(tag) = queued.native {
+                    let Some(lease) = state.claim_native(tag, std::time::Instant::now()) else {
                         continue;
-                    }
-                }
-                queued
+                    };
+                    Some(native::Call::new(self, tag, lease))
+                } else {
+                    None
+                };
+                (queued, native_call)
             };
             if let Some(tag) = queued.migration {
                 use crate::bus_migration::{Claim, Kind};
@@ -332,20 +335,22 @@ impl Commands {
             let already_disconnected_link =
                 confirmed_no_op && matches!(&queued.command.command, Opdracht::Ontkoppel { .. });
             if !already_disconnected_link && !valid_objects(&queued.command.command) {
-                if let Some(tag) = queued.native {
-                    self.native_known_rejection(tag, NativeFailure::InvalidObject);
+                if let Some(call) = native_call {
+                    call.reject(NativeFailure::InvalidObject);
                 } else {
                     rejected.push(DispatchError::InvalidObject);
                 }
                 continue;
             }
             if confirmed_no_op {
-                self.native_finished(queued.native.unwrap(), LocalExecution::Unreported, true);
+                native_call
+                    .unwrap()
+                    .finish(LocalExecution::Unreported, true);
                 continue;
             }
             let execution = execute(queued.command.command);
-            if let Some(tag) = queued.native {
-                self.native_finished(tag, execution, false);
+            if let Some(call) = native_call {
+                call.finish(execution, false);
             }
         }
         rejected
