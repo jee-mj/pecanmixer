@@ -41,6 +41,9 @@ impl Snapshot {
     /// Parsed command from this captured native snapshot, not a fresh file read.
     /// Legacy/custom entries have no native command; callers must keep state().
     pub fn launch_command(&self) -> Option<LaunchCommand> {
+        if self.state != EntryState::Managed(EntryFormat::Native) {
+            return None;
+        }
         native_command(self.original.as_deref()?)
     }
 }
@@ -157,7 +160,17 @@ impl AutostartFile {
         let original = self.read()?;
         let state = match original.as_deref() {
             None => EntryState::Missing,
-            Some(bytes) => entry_format(bytes).map_or(EntryState::Conflict, EntryState::Managed),
+            Some(bytes) => {
+                let format = entry_format(bytes);
+                if native_command(bytes)
+                    .and_then(|c| c.management_root().map(Path::to_path_buf))
+                    .is_some_and(|root| root != self.config_root)
+                {
+                    EntryState::Conflict
+                } else {
+                    format.map_or(EntryState::Conflict, EntryState::Managed)
+                }
+            }
         };
         Ok(Snapshot {
             path: self.path.clone(),
@@ -206,6 +219,13 @@ impl AutostartFile {
                 previous.recording_root().map(Path::to_path_buf),
             )
             .map_err(FileError::Command)?;
+        let relocated = if let Some(root) = previous.management_root() {
+            relocated
+                .with_management_context(root.to_path_buf())
+                .map_err(FileError::Command)?
+        } else {
+            relocated
+        };
         self.enable(loaded, &relocated)
     }
     fn replace_with(
@@ -215,6 +235,12 @@ impl AutostartFile {
         mut checkpoint: impl FnMut(Phase) -> io::Result<()>,
     ) -> Result<Update, FileError> {
         self.check_managed(loaded)?;
+        if command
+            .management_root()
+            .is_some_and(|root| root != self.config_root)
+        {
+            return Err(FileError::Command(CommandError::ManagementContextMismatch));
+        }
         let next = command.autostart_entry().into_bytes();
         if loaded.original.as_deref() == Some(next.as_slice()) {
             return Ok(Update {
