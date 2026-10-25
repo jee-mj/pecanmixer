@@ -152,13 +152,16 @@ impl Graaf {
     }
 
     /// Level-only local configuration, including during native recording.
+    /// Capture this authenticated witness with the control's original graph;
+    /// never replace it with a newer origin when admitting a retained intent.
     /// Layout, arming and transport must be unchanged. Completion is actual
     /// local gain readback, never graph observation or audio-arrival evidence.
     pub fn configure_bus_gains(
         &self,
+        origin: &pecan_core::history_identity::HistoryGraph,
         intent: crate::bus_config::IdleConfigIntent,
     ) -> Result<crate::bus_config::ConfigReceipt, crate::bus_config::ConfigError> {
-        self.opdrachten.enqueue_gains(intent)
+        self.opdrachten.enqueue_gains(origin, intent)
     }
 
     pub fn config_snapshot(&self) -> Option<crate::bus_config::ConfigSnapshot> {

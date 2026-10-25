@@ -2,17 +2,19 @@
 use super::*;
 use crate::{opname, recording::RecordingReceipt};
 use pecan_core::graph::Soort;
+use pecan_core::history_identity::HistoryGraph;
 use std::sync::atomic::Ordering;
 
 impl Commands {
     pub(crate) fn enqueue_gains(
         &self,
+        origin: &HistoryGraph,
         intent: IdleConfigIntent,
     ) -> Result<ConfigReceipt, ConfigError> {
         let (mut work, receipt) = Prepared::new(intent)?;
         let mut state = self.0.try_lock().map_err(|_| ConfigError::Busy)?;
         state.gain_admission(&work)?;
-        work.gain_binding = Some(state.gain_binding()?);
+        work.gain_binding = Some(state.gain_origin_binding(origin)?);
         if state.pending.len() >= NORMAL_CAPACITY
             || state.pending.iter().filter(|q| q.config.is_some()).count() >= MAX_CONFIG_PENDING
         {
@@ -139,6 +141,52 @@ impl Commands {
 }
 
 impl State {
+    fn gain_origin_binding(&self, origin: &HistoryGraph) -> Result<GainBinding, ConfigError> {
+        let current = self.gain_binding()?;
+        let graph = &origin.graph().value;
+        // Registry generations alone do not describe the channel assignment:
+        // keep the original owned node serial and rec_N input mapping as well.
+        if !graph.knopen.iter().any(|n| {
+            n.id == current.node && n.serial == current.serial && n.naam == opname::BUS_NAAM
+        }) || graph
+            .poorten
+            .iter()
+            .filter(|p| p.knoop == current.node && p.ingang && p.soort == Soort::Audio)
+            .count()
+            != current.inputs.len()
+            || current.inputs.iter().enumerate().any(|(channel, (id, _))| {
+                !graph.poorten.iter().any(|p| {
+                    p.id == *id
+                        && p.knoop == current.node
+                        && p.ingang
+                        && p.soort == Soort::Audio
+                        && p.naam == format!("rec_{}", channel + 1)
+                })
+            })
+        {
+            return Err(ConfigError::StaleRevision);
+        }
+        let objects = std::iter::once((current.node, current.generation))
+            .chain(current.inputs.iter().copied())
+            .collect::<BTreeMap<_, _>>();
+        let original = origin
+            .bind_objects(objects.keys().copied())
+            .ok_or(ConfigError::StaleRevision)?;
+        // Mint this comparison frame inside the same admission lock. Its
+        // private backend authority prevents copied/foreign witnesses passing
+        // even when all numeric generations happen to coincide. The caller's
+        // retained witness need not remain in the bounded publication cache.
+        let frame = HistoryGraph::from_registry(
+            self.graph.clone(),
+            self.history_authority.clone(),
+            objects,
+        );
+        if !original.matches(&frame) {
+            return Err(ConfigError::StaleRevision);
+        }
+        Ok(current)
+    }
+
     fn gain_admission(&self, work: &Prepared) -> Result<(), ConfigError> {
         self.config_admission(work.intent.expected)?;
         if self.arming.is_some() {
