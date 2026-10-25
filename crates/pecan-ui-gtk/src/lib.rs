@@ -41,3 +41,6 @@ pub mod startup;
 
 /// Isolated routing selection/reset intents and widgets; no startup adoption.
 pub mod routing;
+
+/// Pure native desktop commands and explicit-path I/O; no runtime adoption.
+pub mod desktop_launch;
