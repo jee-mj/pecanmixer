@@ -5,6 +5,8 @@ use std::{
     cell::{Cell, RefCell},
     collections::{BTreeMap, BTreeSet},
 };
+#[path = "view/levels.rs"]
+mod level_controls;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Destination {
@@ -55,6 +57,7 @@ struct BusRow {
     frame: gtk::Frame,
     title: gtk::Label,
     detail: gtk::Label,
+    levels: gtk::Box,
     controls: gtk::Box,
     tracks: gtk::Box,
 }
@@ -90,6 +93,13 @@ struct State<O, R, T> {
     epoch: RefCell<Rc<()>>,
     presentation: RefCell<Option<Presentation>>,
     input: Rc<ActivationInput>,
+    level_callback: RefCell<Option<Rc<level_controls::Callback<O, R>>>>,
+    level_rows: RefCell<BTreeMap<String, Rc<level_controls::LevelRow<O, R, T>>>>,
+    level_work: RefCell<Option<level_controls::Work<O, R>>>,
+    level_starting: RefCell<Option<String>>,
+    level_clock: Cell<Duration>,
+    level_protocol: Cell<bool>,
+    level_reconcile: Cell<bool>,
     applying: Cell<bool>,
     handing_off: Cell<bool>,
     awaited: RefCell<Option<R>>,
@@ -104,7 +114,8 @@ struct State<O, R, T> {
     renders: Cell<u64>,
 }
 /// Isolated GTK surface. No default dispatcher, worker, timer, recording or
-/// simulated success exists. The owner supplies ordered snapshots and one callback.
+/// simulated success exists. The owner supplies ordered snapshots and typed
+/// callbacks; level input has its own optional adapter/capability.
 pub struct BusControls<O, R, T>(Rc<State<O, R, T>>);
 impl<O: Clone + 'static, R: Clone + Eq + 'static, T: Clone + Ord + 'static> BusControls<O, R, T> {
     pub fn new(budget: Budget) -> Self {
@@ -159,6 +170,13 @@ impl<O: Clone + 'static, R: Clone + Eq + 'static, T: Clone + Ord + 'static> BusC
             epoch: RefCell::new(Rc::new(())),
             presentation: RefCell::new(None),
             input: input.clone(),
+            level_callback: RefCell::default(),
+            level_rows: RefCell::default(),
+            level_work: RefCell::default(),
+            level_starting: RefCell::default(),
+            level_clock: Cell::new(Duration::ZERO),
+            level_protocol: Cell::new(false),
+            level_reconcile: Cell::new(false),
             applying: Cell::new(false),
             handing_off: Cell::new(false),
             awaited: RefCell::new(None),
@@ -233,6 +251,7 @@ impl<O: Clone + 'static, R: Clone + Eq + 'static, T: Clone + Ord + 'static> BusC
         if completed && result.is_ok() {
             self.0.awaited.borrow_mut().take();
         }
+        self.0.level_observed();
         self.0.refreshing.set(false);
         self.0.retire();
         self.0.render();
@@ -345,7 +364,10 @@ impl<O: Clone + 'static, R: Clone + Eq + 'static, T: Clone + Ord + 'static> Stat
         self.callback.borrow().clone()
     }
     fn awaiting(&self) -> bool {
-        self.handing_off.get() || self.awaited.borrow().is_some()
+        self.handing_off.get()
+            || self.awaited.borrow().is_some()
+            || self.level_reconcile.get()
+            || self.level_protocol.get()
     }
     fn config(self: &Rc<Self>, binding: &Binding<O>, action: Action, epoch: &Rc<()>) {
         if self.awaiting() {
@@ -477,6 +499,7 @@ impl<O: Clone + 'static, R: Clone + Eq + 'static, T: Clone + Ord + 'static> Stat
                 .or_insert_with(|| {
                     let title = label("");
                     let detail = label("");
+                    let levels = gtk::Box::new(gtk::Orientation::Vertical, 4);
                     let controls = gtk::Box::new(gtk::Orientation::Horizontal, 6);
                     let tracks = gtk::Box::new(gtk::Orientation::Vertical, 4);
                     let body = gtk::Box::new(gtk::Orientation::Vertical, 5);
@@ -484,6 +507,7 @@ impl<O: Clone + 'static, R: Clone + Eq + 'static, T: Clone + Ord + 'static> Stat
                         body.append(child);
                     }
                     body.append(&controls);
+                    body.append(&levels);
                     body.append(&tracks);
                     let frame = gtk::Frame::builder().child(&body).build();
                     self.list.append(&frame);
@@ -491,6 +515,7 @@ impl<O: Clone + 'static, R: Clone + Eq + 'static, T: Clone + Ord + 'static> Stat
                         frame,
                         title,
                         detail,
+                        levels,
                         controls,
                         tracks,
                     }
@@ -514,6 +539,7 @@ impl<O: Clone + 'static, R: Clone + Eq + 'static, T: Clone + Ord + 'static> Stat
             self.list.reorder_child_after(&w.frame, previous.as_ref());
             previous = Some(w.frame.clone().upcast());
         }
+        self.sync_levels(&rows, &widgets);
         let need = self.presentation.borrow().as_ref().is_none_or(|p| {
             !Rc::ptr_eq(&p.epoch, &self.epoch.borrow())
                 || !Rc::ptr_eq(&p.input_epoch, &self.input.epoch())
@@ -1029,6 +1055,10 @@ fn availability_message(a: &Availability, attached: bool, awaiting: bool) -> Str
             }
             Dependency::DynamicArming => "Arming changes during recording are awaiting integration",
             Dependency::RecordingReceipts => "Recording controls are awaiting integration",
+            Dependency::IdleLevels => "Idle bus level controls are awaiting integration",
+            Dependency::ActiveLevels => {
+                "Gain/mute during recording is awaiting a reviewed backend adapter"
+            }
         }
         .into(),
         Availability::Unavailable(reason) => match reason {

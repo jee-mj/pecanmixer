@@ -8,6 +8,7 @@ use pecan_core::domain::{
 use std::{rc::Rc, sync::Arc, time::Duration};
 
 pub(crate) mod input;
+pub mod levels;
 mod view;
 pub use view::{BusControls, Destination, Event, Handoff, ViewError};
 
@@ -19,6 +20,8 @@ pub enum Dependency {
     ActiveLayoutMigration,
     DynamicArming,
     RecordingReceipts,
+    IdleLevels,
+    ActiveLevels,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Support {
@@ -29,6 +32,8 @@ pub enum Support {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Capabilities {
     pub idle_configuration: Support,
+    /// Same-layout levels, independent of routing/structural capabilities.
+    pub idle_levels: Support,
     pub routed_layout: Support,
     pub routed_add: Support,
     pub shrink_layout: Support,
@@ -39,6 +44,7 @@ impl Default for Capabilities {
     fn default() -> Self {
         Self {
             idle_configuration: Support::Pending(Dependency::IdleConfigurationAdapter),
+            idle_levels: Support::Pending(Dependency::IdleLevels),
             routed_layout: Support::Pending(Dependency::RoutedLayoutMigration),
             routed_add: Support::Pending(Dependency::RoutedLayoutMigration),
             shrink_layout: Support::Pending(Dependency::ChannelShrinkMigration),

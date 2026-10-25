@@ -1,5 +1,8 @@
 //! Recording-bus configuration policy from bussen.ts. Persistence is separate.
-use super::{audio::is_bus, levels::db_to_linear};
+use super::{
+    audio::is_bus,
+    levels::{db_to_linear, MAX_DB, OFF_DB},
+};
 use crate::graph::{Momentopname, Opdracht};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -54,6 +57,7 @@ pub enum BusError {
     InvalidWidth,
     InvalidIndex,
     NonFiniteGain,
+    GainOutOfRange,
     ChannelOverflow,
 }
 
@@ -104,6 +108,30 @@ impl BusConfig {
     }
     pub fn state(&self, key: &str) -> BusState {
         self.states.get(key).cloned().unwrap_or_default()
+    }
+    /// Mixer.tsx bus.zet({ db }): preserve mute, arming and every other bus.
+    pub fn with_db(&self, key: &str, db: f64) -> Result<Self, BusError> {
+        if !db.is_finite() {
+            return Err(BusError::NonFiniteGain);
+        }
+        if !(OFF_DB..=MAX_DB).contains(&db) {
+            return Err(BusError::GainOutOfRange);
+        }
+        let mut next = self.with_mute(key, self.state(key).mute)?;
+        next.states.get_mut(key).unwrap().db = db;
+        Ok(next)
+    }
+    /// Mixer.tsx bus.zet({ mute }): this is not whole-node or partial mute.
+    /// In particular, silence does not erase the bus's stored dB value.
+    pub fn with_mute(&self, key: &str, mute: bool) -> Result<Self, BusError> {
+        if !self.definitions()?.iter().any(|d| d.key == key) {
+            return Err(BusError::InvalidIndex);
+        }
+        let mut next = self.clone();
+        let mut state = self.state(key);
+        state.mute = mute;
+        next.states.insert(key.into(), state);
+        Ok(next)
     }
     pub fn armed(&self) -> Result<Vec<BusDef>, BusError> {
         Ok(self
@@ -279,4 +307,86 @@ impl BusConfig {
 pub struct BusEdit {
     pub config: BusConfig,
     pub commands: Vec<Opdracht>,
+}
+
+#[cfg(test)]
+mod level_tests {
+    use super::*;
+    #[test]
+    fn js_bus_setters_preserve_stored_db_mute_arming_and_unselected_channels() {
+        let c = BusConfig {
+            widths: vec![1, 2, 1],
+            states: BTreeMap::from([
+                (
+                    "rec-1".into(),
+                    BusState {
+                        db: -3.,
+                        mute: false,
+                        armed: true,
+                    },
+                ),
+                (
+                    "rec-2-3".into(),
+                    BusState {
+                        db: -12.,
+                        mute: false,
+                        armed: true,
+                    },
+                ),
+                (
+                    "rec-4".into(),
+                    BusState {
+                        db: 6.,
+                        mute: false,
+                        armed: false,
+                    },
+                ),
+            ]),
+            midi: false,
+        };
+        let gain = |c: &BusConfig| match c.backend_config().unwrap() {
+            Opdracht::ZetBus { gain, .. } => gain,
+            _ => unreachable!(),
+        };
+        let original = gain(&c);
+        let muted = c.with_mute("rec-2-3", true).unwrap();
+        assert_eq!(muted.state("rec-2-3").db, -12.);
+        let moved = muted.with_db("rec-2-3", -18.).unwrap();
+        assert!(moved.state("rec-2-3").mute && moved.state("rec-2-3").armed);
+        assert_eq!(gain(&moved), vec![original[0], 0., 0., original[3]]);
+        let restored = moved.with_mute("rec-2-3", false).unwrap();
+        let restored_gain = gain(&restored);
+        assert_eq!(
+            restored_gain,
+            vec![
+                original[0],
+                db_to_linear(-18.),
+                db_to_linear(-18.),
+                original[3]
+            ]
+        );
+        assert_eq!(restored.states["rec-1"], c.states["rec-1"]);
+        assert_eq!(restored.states["rec-4"], c.states["rec-4"]);
+        assert_eq!(restored.widths, c.widths);
+        assert_eq!(restored.midi, c.midi);
+        let off = restored.with_db("rec-2-3", OFF_DB).unwrap();
+        assert!(!off.state("rec-2-3").mute);
+        assert_eq!(gain(&off), vec![original[0], 0., 0., original[3]]);
+    }
+    #[test]
+    fn level_setters_validate_keys_and_limits_without_mutating_the_source() {
+        let c = BusConfig::default();
+        for db in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(c.with_db("rec-1-2", db), Err(BusError::NonFiniteGain));
+        }
+        for db in [OFF_DB - 0.1, MAX_DB + 0.1] {
+            assert_eq!(c.with_db("rec-1-2", db), Err(BusError::GainOutOfRange));
+        }
+        for db in [OFF_DB, -60., -0.1, 0., MAX_DB] {
+            assert_eq!(c.with_db("rec-1-2", db).unwrap().state("rec-1-2").db, db);
+        }
+        assert_eq!(c.with_db("rec-9", 0.), Err(BusError::InvalidIndex));
+        assert_eq!(c.with_mute("rec-9", true), Err(BusError::InvalidIndex));
+        assert_eq!(c, BusConfig::default());
+    }
 }
