@@ -4,7 +4,10 @@ Reviewed `3b9f6133` starts at `6b1ccc1e` and adds only writeback of accepted use
 Rec layout, dB, mute and arming intent. It independently clears the writeback
 contract and is now integrated with separately reviewed standard GTK shortcuts. Entrypoint mode selection, backend/core APIs, keyboard files, schema version,
 dependencies and legacy application remain unchanged. Loading/reloading settings,
-reconnect and passive backend readback issue no automatic Rec restore or start.
+reconnect and passive backend readback issued no automatic Rec restore or start
+in that writeback-only checkpoint. The separate [reviewed bounded restore](./native-rec-restore-candidate.md)
+now covers matching-capacity idle startup/reconnect; general layouts and reload
+policy remain gated.
 
 ## Legacy boundary and merge
 
@@ -79,10 +82,11 @@ so Rec-only edits do not repeatedly reapply unrelated mixer layout. The settings
 panel/recovery document still sees current full-document revisions. No other
 view/history/shortcut changes are included.
 
-## Restore remains a separate gate
+## Original restore dependencies
 
-Writeback does not mean automatic restoration is ready. A later bounded restore
-needs all of the following, rather than blindly applying an effective default:
+Writeback alone did not supply restoration. The later bounded restore described
+above now adopts original full-config authority and matching-capacity metadata.
+The original dependency list, including broader unresolved cases, was:
 
 1. A retained original-generation full-configuration witness/API. The reviewed
    gain-only API has that proof; the generic full-config CAS is not a substitute.
@@ -146,6 +150,7 @@ controls, 76 core, 219 backend, 468 feature GTK and 414 default GTK tests, nativ
 build/formatting/dependency audits, three headless fixtures, three GTK smokes,
 ten legacy library tests and compilation of five legacy examples. No Node-tool
 attempt is recorded. Runtime writeback modules match `3b9f6133` exactly; automatic
-restore and the original-generation full-config API remain absent. Privacy/scope,
+restore and the original-generation full-config API were absent at that checkpoint.
+Both have subsequent separately reviewed bounded follow-ups. Privacy/scope,
 whitespace and unchanged versions/lockfile checks pass. Hosted exact-head evidence
 is recorded separately in the PR description.

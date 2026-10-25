@@ -113,8 +113,9 @@ legacy library tests and compilation of all five legacy examples pass. No Node
 tool attempts are recorded. Source/privacy and unchanged version/dependency checks
 pass. Exact-head hosted results are recorded separately in the PR.
 
-This publication provides backend authority only. Automatic startup/reconnect Rec
-restore remains a separate owner candidate, with full published inputs, local
+The initial `f9fc8e7c` publication provided backend authority only. The subsequent
+[reviewed bounded owner](./native-rec-restore-candidate.md) adopts matching-capacity
+idle startup/reconnect restore, with full published inputs, local
 versus observed completion, initialization/layout and idle/lifecycle gates. No
 CAS-only fallback, profile discovery, active-recording reload policy or automatic
 recording is supplied. Hardware/audio/physical desktop/performance remain unrun.

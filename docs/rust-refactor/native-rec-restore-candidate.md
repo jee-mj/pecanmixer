@@ -1,8 +1,8 @@
-# Bounded idle Rec restore candidate
+# Reviewed bounded idle Rec restore
 
 This owner candidate starts at reviewed public head `f9fc8e7c`. It consumes the
 independently reviewed full-config origin API `9e803bba`; the owner integration
-itself still needs independent review before PR2 adoption. The goal remains full
+is independently cleared at `3c318cee` and adopted in this follow-up. The goal remains full
 legacy functional parity. This is a deliberately bounded restore prerequisite,
 not general saved-layout migration or a recording/reload policy decision.
 
@@ -94,8 +94,6 @@ for independent review; hardware/audio/physical desktop/performance are unrun.
 
 ## Remaining dependencies
 
-- Independent owner review and combined PR2 integration; helper inclusion alone
-  does not enable this candidate in the published application.
 - General saved layouts need separately reviewed initialization/growth/shrink and
   routed migration planning through existing backend barriers. No new backend
   sequencer or routed Add is supplied here.
@@ -133,5 +131,30 @@ The restore filter passes 19 checks in both default and feature modes, and all 1
 preferences checks, native build, formatting, whitespace and scope/privacy checks
 pass. Core/backend, legacy source, dependencies, versions and other owner paths
 are unchanged. The full initial suites are not rerun for this narrow correction;
-exact corrected-candidate hosted results and independent re-review remain pending.
-No PR2 publication or hardware/audio acceptance is implied.
+At that correction publication, exact hosted and independent re-review were
+pending. The subsequent independent clearance and integration are recorded below;
+hardware/audio acceptance remains unperformed.
+
+## Independent clearance and combined adoption
+
+Independent review clears `3c318cee`: 19 restore checks including owned-route
+controls, all three unchanged probe groups (foreign-instance routes,
+partial/unconfirmed retention and reload fences) and 11 preferences checks pass.
+Both original known/unknown foreign-route failures reproduce on `c6301335` and
+pass after the correction. Exact candidate run 40166428673 succeeds with 86
+validator controls, 76 core, 230 backend and 483 feature GTK tests plus native
+build, fixtures and dependency checks.
+
+The two reviewed owner commits apply directly onto `f9fc8e7c`; runtime files
+match `3c318cee` exactly, with no reconciliation or general-restore expansion.
+Fresh combined checks pass 86 validator controls, 76 core, 230 backend, 483 feature
+GTK and 429 default GTK tests, native build/formatting, Cargo/ELF audits, three
+headless fixtures and three controlled smokes. All ten legacy library tests and
+compilation of all five legacy examples pass. The Node-tool inventory is empty.
+Privacy/scope, whitespace and unchanged versions/manifests/lockfile checks pass.
+There are no final failed checks or dependency/environment blockers. Exact
+published PR-head hosted evidence is recorded separately in the PR description.
+
+This adopts the bounded idle path described above; general layouts, retained user
+work/reload policy, active structural product decisions and real desktop/audio/
+performance acceptance remain open. The legacy application is preserved.
