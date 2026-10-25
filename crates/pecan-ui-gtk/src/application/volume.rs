@@ -445,6 +445,11 @@ impl Session {
     pub fn volume_model(&self) -> Mixer {
         Volumes::model(&self.0.state.borrow()).unwrap_or_default()
     }
+    /// Read-only layout metadata from exactly the adopted configuration used
+    /// by volume_model. This supplies no new graph or command authority.
+    pub(crate) fn bus_definitions(&self) -> Option<Vec<pecan_core::domain::buses::BusDef>> {
+        self.0.state.borrow().history.buses.definitions().ok()
+    }
     pub fn volume_active(&self, token: &GestureToken) -> bool {
         self.0
             .state

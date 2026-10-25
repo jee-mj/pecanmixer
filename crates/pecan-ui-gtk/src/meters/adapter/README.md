@@ -124,13 +124,20 @@ the adapter's existing conservative reconciliation rule: definition changes clea
 shared samples/hold/clipping before accepting fresh samples, including unaffected
 sources. It introduces no capture-health or sample-age inference.
 
-Production adoption is **pending a read-only Session accessor**. The current
-application wrapper still supplies startup defaults; this candidate does not
-claim live configuration adoption. The requested minimal interface is
-`Session::bus_definitions() -> Option<Vec<BusDef>>`, backed by the validated
-adopted configuration. Then the wrapper can pass that value to
-`apply_definitions` instead of constructing defaults. Session/history and routing
-remain unchanged here; the owning integrator must provide/review this seam.
+The isolated telemetry half at `6e2daac6` is independently cleared by 360 clean
+all-feature GTK cases and four additional probe groups: conservative sample/hold/
+clipping clearing, unavailable-definition recovery, stale/future stamp rejection,
+channel projection and missing serial/port-generation authority. Its wrapper
+still supplied startup defaults, so this clearance alone did not establish
+production adoption.
+
+The separate integration candidate adds the read-only crate-private
+`Session::bus_definitions() -> Option<Vec<BusDef>>`, derived from exactly the
+adopted configuration used by `volume_model`. The ordinary telemetry wrapper now
+passes that value to `apply_definitions`; it supplies no new configuration/graph
+authority, consumer, timer or audio command. This accessor/wiring delta requires
+independent review before PR2 publication. Core/backend, routing, history
+reduction/admission and application polling order remain unchanged.
 
 The two added synthetic workspace checks cover configuration-only split, add,
 join and remove, stable unaffected widgets, same-stamp peak ordering, coalesced
@@ -139,7 +146,21 @@ supply definitions through the candidate boundary, rather than asserting that
 the production wrapper already uses them. No hardware, audio service, real user
 configuration or private topology is involved.
 
-This candidate passes all 360 all-feature GTK cases, including seven application
+The isolated telemetry half passes all 360 all-feature GTK cases, including seven application
 telemetry checks, plus native build, formatting and whitespace checks. These
 checks establish the supplied-definition boundary; production accessor/wrapper
-adoption and its end-to-end workspace check remain pending integration work.
+adoption has a separate review gate. The additional integration regression first
+fails on the startup-default wrapper (stereo instead of adopted mono keys), then
+passes with the accessor wiring. It exercises normal workspace polling without a
+direct telemetry call across split/add/join/remove, same-stamp peaks, unchanged
+wrapper/module retention, conservative clearing, rejected invalid definitions and
+unchanged graph/history/audio-admission state.
+
+The accessor/wiring candidate passes **361 all-feature and 319 default GTK
+tests**, native build, formatting and whitespace checks on isolated cloud
+Xvfb/private D-Bus. Its only production changes beyond `6e2daac6` are the
+read-only accessor and wrapper call. Core/backend/legacy suites and the aggregate
+validator were not repeated for this GTK-only delta. Independent review of this
+delta remains required; no PR2 adoption or hardware/desktop acceptance is implied.
+Capture freshness/availability limits and configuration-driven history
+reconciliation remain separate.

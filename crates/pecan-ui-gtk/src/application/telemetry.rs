@@ -43,16 +43,7 @@ impl Default for Telemetry {
 }
 impl Telemetry {
     pub(crate) fn apply(&mut self, session: &Session, batch: &InboxBatch) {
-        self.apply_definitions(
-            session,
-            batch,
-            Some(
-                super::default_idle_configuration()
-                    .buses
-                    .definitions()
-                    .expect("validated native defaults"),
-            ),
-        );
+        self.apply_definitions(session, batch, session.bus_definitions());
     }
     /// Supply validated Session-adopted definitions, not a new backend/config
     /// authority. This consumes the same already-drained batch exactly once.

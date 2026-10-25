@@ -395,3 +395,105 @@ fn configuration_rebind_precedes_equal_stamp_peaks_and_unchanged_frames_do_not_r
     assert!(!source.reading().bound);
     assert!(meter(&view, MeterSurface::Mixer, 20, 0).1.reading().bound);
 }
+
+#[gtk::test]
+fn workspace_poll_uses_adopted_bus_definitions_without_a_graph_or_direct_telemetry_call() {
+    let (view, driver, _window) = setup();
+    let (g, identities) = recording_graph();
+    let accepted = driver.publish(g, identities);
+    view.poll();
+    let (_, source) = meter(&view, MeterSurface::Mixer, 10, 0);
+    let (_, mini) = meter(&view, MeterSurface::Patchbay, 30, 0);
+    let stereo = recording_meter(&view, "bus|rec-1-2");
+    driver.publish_peaks([(10, vec![1.2, 0.8]), (30, vec![0.2, 0.4, 0.6, 0.8])].into());
+    view.poll();
+    pump(60);
+    assert!(source.reading().clipped && source.reading().held > 0.0);
+    let history = view.session.history_lengths();
+    let adopt = |widths: &[usize]| {
+        view.session
+            .adopt_buses(&accepted, &definitions(widths))
+            .unwrap();
+    };
+
+    adopt(&[1, 1]);
+    driver.publish_peaks([(10, vec![0.2, 0.1]), (30, vec![0.1, 0.3, 0.5, 0.7])].into());
+    view.poll();
+    pump(60);
+    assert_eq!(
+        recording_keys(&view),
+        ["bus|rec-1".into(), "bus|rec-2".into()].into()
+    );
+    assert!(!stereo.reading().bound);
+    assert!(view.telemetry.borrow().report.peaks_accepted);
+    assert!(!view.telemetry.borrow().report.graph_accepted);
+    assert!(source.reading().has_frame && !source.reading().clipped);
+    let mono = recording_meter(&view, "bus|rec-1");
+    assert!(mono.widget().is_ancestor(view.mixer.widget()));
+    let model_keys: BTreeSet<_> = view
+        .session
+        .volume_model()
+        .destinations
+        .iter()
+        .filter(|strip| strip.node.id == 30)
+        .map(|strip| strip.key.clone())
+        .collect();
+    assert_eq!(recording_keys(&view), model_keys);
+    assert_eq!(
+        view.session.bus_definitions(),
+        Some(definitions(&[1, 1]).definitions().unwrap())
+    );
+
+    adopt(&[1, 1, 2]);
+    view.poll();
+    assert_eq!(recording_meter(&view, "bus|rec-1").widget(), mono.widget());
+    let added = recording_meter(&view, "bus|rec-3-4");
+    assert!(added.widget().is_ancestor(view.mixer.widget()));
+    assert!(source.reading().bound && !source.reading().has_frame);
+    assert!(!source.reading().clipped);
+    assert_eq!(source.reading().held, 0.0);
+
+    adopt(&[2, 2]);
+    view.poll();
+    assert!(!mono.reading().bound);
+    assert_eq!(
+        recording_meter(&view, "bus|rec-3-4").widget(),
+        added.widget()
+    );
+    adopt(&[2]);
+    view.poll();
+    assert_eq!(recording_keys(&view), ["bus|rec-1-2".into()].into());
+    assert!(!added.reading().bound);
+    assert_eq!(
+        meter(&view, MeterSurface::Mixer, 10, 0).1.widget(),
+        source.widget()
+    );
+    assert_eq!(
+        meter(&view, MeterSurface::Patchbay, 30, 0).1.widget(),
+        mini.widget()
+    );
+    assert!(view
+        .telemetry
+        .borrow()
+        .patch_widgets()
+        .iter()
+        .any(|(node, _, widget)| { *node == 30 && widget == mini.widget() }));
+    let projections = view.telemetry.borrow().source_projections;
+    for _ in 0..100 {
+        view.poll();
+    }
+    assert_eq!(view.telemetry.borrow().source_projections, projections);
+    assert_eq!(view.session.history_lengths(), history);
+    let current = view.session.graph().unwrap();
+    assert_eq!(current.stamp, accepted.stamp);
+    assert!(std::sync::Arc::ptr_eq(&current.value, &accepted.value));
+    assert!(view
+        .session
+        .adopt_buses(&accepted, &definitions(&[]))
+        .is_err());
+    assert_eq!(
+        view.session.bus_definitions(),
+        Some(definitions(&[2]).definitions().unwrap())
+    );
+    assert!(driver.take_requests().is_empty());
+}
