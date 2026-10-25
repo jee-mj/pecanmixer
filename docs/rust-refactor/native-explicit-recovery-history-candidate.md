@@ -1,8 +1,9 @@
-# Explicit recovery history reconciliation candidate
+# Reviewed explicit recovery history reconciliation
 
 Base: reviewed PR2 `6d1703acdd9b20b8c0f43fa1016e922177ea1457`.
-This is a separate candidate pending independent review, not a PR2 adoption or
-claim that the full JavaScript/native port is complete.
+Exact source `1875221e8b964e3a084c995d08678a338518a211` independently clears
+review and is adopted here unchanged. This is not a claim that the full
+JavaScript/native port or physical acceptance is complete.
 
 ## Concrete missing behavior
 
@@ -70,3 +71,25 @@ settings schema and versions remain unchanged. No real PipeWire service, audio,
 user profile, physical desktop, performance run or private device data is used.
 General repair, large-reset batching, queued input and active-recording structural
 policy remain separate work. PR2 is left unchanged during candidate preparation.
+
+## Independent review and adoption
+
+Independent review passes 30 Session checks in each feature mode, a separate
+45-case history/input filter and three extra probe groups. Those independent
+filters differ from and overlap the initial 54-case local filter; counts are
+reported separately. [Exact candidate CI40183074217](https://github.com/jee-mj/pecanmixer/actions/runs/40183074217)
+succeeds. The source applies without conflicts onto PR2 `6d1703ac`; all runtime
+and fixture source matches the reviewed candidate exactly, with no new guard
+policy or reconciliation logic. Only these adoption/coverage notes differ.
+Combined checks and exact published-head hosted receipts are verified separately.
+
+Fresh combined cloud validation passes 86 validator controls, 79 core, 253
+backend and 582 all-feature GTK tests, plus 528 default GTK tests, ten legacy
+library tests and compilation of all five legacy examples. Formatting, native
+build, three headless fixtures, three controlled smokes and Cargo/ELF audits
+pass with zero Node attempts. Host and explicit-target workspace packages are
+cleaned and rebuilt first. Scope/privacy checks verify exact reviewed runtime
+and fixture source, authored generic data, unchanged core/backend/legacy,
+settings schema, dependencies, versions and manifests/lockfile. There is no
+final local failure or environment/dependency blocker. Exact combined-head
+hosted evidence is recorded separately in the PR description.
