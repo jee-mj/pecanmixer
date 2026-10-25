@@ -92,7 +92,7 @@ fn request(commands: &Commands, configuration: IdleBusConfig) -> IdleConfigInten
         configuration,
     }
 }
-fn drain(commands: &Commands, target: &mut Target) {
+fn drain(commands: &Commands, target: &mut impl ConfigTarget) {
     assert!(commands
         .drain_with_config(
             |_| true,
@@ -629,3 +629,6 @@ fn stable_invalid_legacy_readback_does_not_churn_revisions_and_can_be_repaired()
     assert_eq!(result(&receipt).outcome, LocalConfigOutcome::Applied);
     assert_eq!(target.gain, [1., 1.]);
 }
+
+#[path = "config_origin_tests.rs"]
+mod origin;

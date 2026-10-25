@@ -143,7 +143,10 @@ pub(crate) struct Prepared {
     pub options: Opties,
     /// Some only for the level-only entrypoint; captured at admission, never
     /// rebound to a replacement filter or port set during execution.
-    pub gain_binding: Option<GainBinding>,
+    pub gain_binding: Option<RecBinding>,
+    /// Some for retained-origin full configuration. Existing inputs stay bound
+    /// even if an unrouted resize adds ports after the original publication.
+    pub full_binding: Option<RecBinding>,
     receipt: ConfigReceipt,
     completed: bool,
 }
@@ -213,6 +216,7 @@ impl Prepared {
                 gains: gain,
                 options,
                 gain_binding: None,
+                full_binding: None,
                 receipt: receipt.clone(),
                 completed: false,
             },
@@ -324,7 +328,7 @@ pub(crate) trait ConfigTarget {
 }
 
 #[derive(PartialEq, Eq)]
-pub(crate) struct GainBinding {
+pub(crate) struct RecBinding {
     pub epoch: u64,
     pub node: u32,
     pub generation: u64,
