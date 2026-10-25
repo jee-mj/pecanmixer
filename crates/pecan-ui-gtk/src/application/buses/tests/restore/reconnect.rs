@@ -1,7 +1,7 @@
 //! Completed synthetic user work, retained receipts and authenticated epochs.
 use super::*;
 use crate::recording_buses::levels::{Change, Event};
-fn reconnect(owner: &BusOwner, fake: &Fake, driver: &FixtureDriver) {
+pub(super) fn reconnect(owner: &BusOwner, fake: &Fake, driver: &FixtureDriver) {
     let mut graph = (*owner.session.graph().unwrap().value).clone();
     graph.verbonden = false;
     driver.publish(graph.clone(), generations(&graph));

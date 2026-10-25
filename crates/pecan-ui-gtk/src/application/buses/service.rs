@@ -127,6 +127,17 @@ pub enum Stop {
     Take(TakeKey),
 }
 pub trait Service {
+    fn supports_saved_layout(&self) -> bool {
+        false
+    }
+    fn restore_saved_layout(
+        &self,
+        _intent: pecan_pipewire::bus_migration::SavedLayoutIntent,
+    ) -> Result<Rc<dyn MigrationPoll>, Error> {
+        Err(Error::Owner(
+            "Saved Rec layout restoration is unavailable.".into(),
+        ))
+    }
     fn supports_restore(&self) -> bool {
         false
     }
@@ -297,6 +308,18 @@ impl MigrationPoll for NativeMigration {
 }
 pub(crate) struct Native(pub Rc<pecan_pipewire::graaf::Graaf>);
 impl Service for Native {
+    fn supports_saved_layout(&self) -> bool {
+        true
+    }
+    fn restore_saved_layout(
+        &self,
+        intent: pecan_pipewire::bus_migration::SavedLayoutIntent,
+    ) -> Result<Rc<dyn MigrationPoll>, Error> {
+        self.0
+            .restore_idle_layout(intent)
+            .map(|r| Rc::new(NativeMigration(r)) as Rc<dyn MigrationPoll>)
+            .map_err(Error::Migration)
+    }
     fn supports_restore(&self) -> bool {
         true
     }
