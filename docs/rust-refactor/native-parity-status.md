@@ -178,3 +178,10 @@ general layout migration, active-recording reload/structural policy, clock effec
 profile import or automatic recording. Corrected owner `3c318cee` independently
 clears original foreign-route probes while preserving the owned routed-layout
 gate. Its source is adopted without runtime reconciliation onto `f9fc8e7c`.
+
+A separate [reconnect-after-completed-edits candidate](./native-rec-reconnect-edits-candidate.md)
+addresses the retained successful user-operation gate on `d0d8f23f`. It requires
+closed original receipts, released ownership and fresh authenticated idle
+presentation before archiving old work and capturing current preferences for a
+new request. Pending/uncertain work, recording reload and general layouts remain
+gated. This owner delta is not published to PR2 until independent review clears.

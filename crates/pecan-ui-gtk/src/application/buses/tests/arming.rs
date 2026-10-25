@@ -90,7 +90,12 @@ fn child(fake: &Fake, arm: usize, bus: &str) -> Rc<Take> {
     fake.takes.borrow_mut().push(take.clone());
     take
 }
-fn complete(fake: &Fake, index: usize, outcome: ArmingOutcome, publish: bool) -> ConfigSnapshot {
+pub(super) fn complete(
+    fake: &Fake,
+    index: usize,
+    outcome: ArmingOutcome,
+    publish: bool,
+) -> ConfigSnapshot {
     let (intent, receipt) = fake.arms.borrow()[index].clone();
     let mut config = fake.config.borrow().clone();
     config.revision.revision += 1;

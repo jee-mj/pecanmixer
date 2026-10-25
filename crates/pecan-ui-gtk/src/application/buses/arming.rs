@@ -12,6 +12,25 @@ pub(super) struct Work {
     // Preserve the actual decided readback, removed/withheld IDs and children.
     last: Option<ArmingStatus>,
 }
+impl Work {
+    pub(super) fn closed_for_reconnect(&self, ticket: u64, expected: ConfigRevision) -> bool {
+        self.last.as_ref().is_some_and(|r| {
+            r.ticket == ticket
+                && r.expected_config == expected
+                && r.source == self.source
+                && r.expected_recording == self.membership
+                && r.failure.is_none()
+                && r.configuration.revision.owner == expected.owner
+                && r.configuration.revision.epoch == expected.epoch
+                && matches!(
+                    r.progress,
+                    ArmingProgress::Completed(
+                        ArmingOutcome::AppliedLocally | ArmingOutcome::NoOpLocally
+                    )
+                )
+        })
+    }
+}
 impl BusOwner {
     pub(super) fn recording_active(&self) -> bool {
         let d = self.data.borrow();

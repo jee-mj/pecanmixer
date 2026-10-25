@@ -101,6 +101,20 @@ pub(super) struct Work {
     last: Option<ConfigReport>,
     pub(super) released: bool,
 }
+impl Work {
+    pub(super) fn closed_for_reconnect(&self, ticket: u64, expected: ConfigRevision) -> bool {
+        self.released
+            && self.ended
+            && !self.flight
+            && !self.dispatching
+            && !self.awaiting_inspection
+            && self.failed.is_none()
+            && self
+                .last
+                .as_ref()
+                .is_some_and(|r| super::restore::closed_config(r, ticket, expected))
+    }
+}
 impl BusOwner {
     pub(crate) fn tick_levels(&self, now: std::time::Duration) {
         self.view.tick_levels(now);
