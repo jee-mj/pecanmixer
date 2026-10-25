@@ -1,11 +1,12 @@
-# Native elapsed adapter candidate
+# Reviewed native elapsed adoption
 
 This separate review branch descends from producer `38db4706` on PR2 `940afbd1`.
 Independent producer review passes its 203 backend and ten legacy tests plus four
 additional probe groups: cached measurement age, serial/node/port generation and
 epoch replacement, unconfirmed ownership, and 1,000 real measurement reads that
 preserve membership/latest identity. No backend defect was found. The UI adoption
-below has its own independent gate before PR2 inclusion.
+below independently clears at `bcdd4553`; integration retains its exact Rust
+source and producer `38db4706`, with documentation-only follow-up.
 
 The existing native receipt adapter maps duration only to the producer's eligible
 stable TrackIds. It retains the exact `observed_at` as the additive
@@ -59,4 +60,19 @@ UI-only adoption delta. Native workspace packages were rebuilt for the explicit
 target to avoid stale cross-candidate artifacts. No final local failing check or
 environment blocker remains. The source, fixtures and scope audit finds only
 synthetic/public project data, with no dependency, version or lockfile change.
-Independent adapter review and hosted candidate results remain separate gates.
+Independent adapter review passes 82 owner tests, eight transport tests and
+three additional cache/stop/pending-token probes. [Exact candidate hosted run
+40156462471](https://github.com/jee-mj/pecanmixer/actions/runs/40156462471) passes.
+Final integrated PR-head checks are recorded in the PR description separately.
+
+## Integration checkpoint
+
+Integration fast-forwards PR2 `940afbd1` through the independently reviewed
+producer and adapter. All Rust source matches `bcdd4553`; follow-up changes only
+documentation. Fresh host and explicit-target workspace rebuilds pass the native
+aggregate with 86 validator controls, 74 core, 203 backend and 411 GTK tests,
+formatting/build/dependency audits, three headless fixtures and three smokes.
+Default GTK passes 368 tests. All ten legacy library tests and compilation of the
+five legacy examples pass again. Zero Node-tool attempts are recorded. No final
+local failure or environment blocker remains. The separate Rec-level UI and
+active-gain backend candidates are not included in this checkpoint.

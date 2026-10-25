@@ -38,9 +38,11 @@ Do not restamp a cached timing report as newly measured.
 
 At isolated helper review, BusOwner had no read-only root/latest-start projection.
 The separate Folder owner candidate adds that projection and one retained actual
-latest-start receipt. Native `Track.elapsed` still remains `None`; real duration
-production is not part of that adoption. Activity stays Unknown when inspection
-is uncertain. Active elapsed is unavailable, without an arrival stopwatch.
+latest-start receipt. The subsequent reviewed producer/adapter now maps eligible
+track durations and retains the original measurement instant. Its age is applied
+before the existing oldest-take formatter; cached delivery cannot refresh timing.
+Activity stays Unknown when inspection is uncertain. See the
+[elapsed adoption record](../../../../../docs/rust-refactor/native-elapsed-adoption-candidate.md).
 
 Use structural `observe`/`offer` when folder authority, root, latest evidence or
 closing state changes. Keep its opaque origin stable independently of periodic
@@ -96,7 +98,9 @@ formatting and whitespace checks passed. Core/backend/legacy sources are unchang
 and their test suites were not rerun for this UI/helper-only candidate.
 
 The reviewed Folder owner now mounts this presentation with authenticated explicit
-paths and off-UI preparation/launch/reaping; see its adoption record above. Real
-timing production and actual desktop acceptance remain pending. No hardware,
+paths and off-UI preparation/launch/reaping; see its adoption record above. The
+elapsed follow-up uses local monotonic wall time since validated attachment,
+not sample duration/alignment. Actual desktop and recording acceptance remain
+pending. No hardware,
 private profile/topology, recording/audio,
 Wayland/screen-reader, performance or finalization acceptance is claimed.

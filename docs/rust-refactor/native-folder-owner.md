@@ -54,9 +54,10 @@ preparation cannot launch after closing; admitted external helpers retain their
 normal independent process lifetime.
 
 The owning shell supplies its existing monotonic clock to the workspace. Timing
-updates do not replace Folder bindings. Native track elapsed remains `None`, so
-active recording time is visibly unavailable; only authoritative idle can show
-zero. No receipt-arrival stopwatch or audio alignment assertion is made.
+updates do not replace Folder bindings. At this Folder checkpoint native track
+elapsed remained `None`; the separately reviewed elapsed follow-up below now
+adopts real producer observations. No receipt-arrival stopwatch or audio alignment
+assertion is made.
 
 ## Synthetic validation and limits
 
@@ -138,16 +139,12 @@ preparation retains its execution capacity through background join/teardown, and
 substituted plans fail before launch while releasing the original request token.
 The integration retains that exact logic and the existing migration source.
 
-The smallest remaining transport slice is a real native elapsed producer.
-`RecordingReport` currently has no elapsed value and the native adapter supplies
-`Track.elapsed = None`. It needs authoritative stable take/track start and stop
-evidence, plus a producer measurement time that is not refreshed merely because a
-cached report was polled. Only then can the existing presentation interpolate
-from that measured duration using the shell clock and select the oldest running
-take as the original JS does. Opening, failure, dynamic arming, per-track stop,
-disconnect and finalization need explicit unavailable/frozen behavior. Receipt
-arrival, latest-folder identity and file bytes cannot substitute for duration or
-prove sample arrival/alignment. This integration adds no timing producer.
+The next transport prerequisite identified here was real native elapsed
+production. The subsequent [reviewed elapsed follow-up](./native-elapsed-adoption-candidate.md)
+now retains producer measurement time and eligible stable tracks, compensates
+cached observation age, and reuses the existing clock/oldest-take formatter.
+Opening, failure, stop, disconnect and finalization remain unavailable as required.
+This source wall time does not prove sample arrival/alignment or file duration.
 
 ## Combined integration validation
 

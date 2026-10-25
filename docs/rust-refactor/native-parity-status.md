@@ -30,7 +30,7 @@ Immediate configuration-driven history reconciliation remains separate.
 | Patch module positioning and reconnect behavior (`Plekken`, `ModuleKaart`) | Reviewed session movement/rearrange and reconnect aliases on retained view | Session-layout and physical-input acceptance |
 | Undo/redo queue and keyboard shortcuts (`src/geschiedenis.ts`, `src/handelingen.ts`, `src/App.tsx`) | Reviewed generation/selector guards, shared receipts, immutable history activation and one-step observed gesture history | Queued input, complete shortcuts and audio/input acceptance |
 | Add/remove/link buses, Rec gain/mute/arming (`src/bussen.ts`, `Mixer`) | Bus owner mounts typed idle config/readback and correlated controls; Session/routing/meters use adopted definitions; corrected dynamic arming is wired through shared owner admission/retained receipts; idle routed split/join/remove use reviewed retained migration receipts | Editable bus gain/mute, saved config effects and immediate configuration-driven history reconciliation; routed Add and observed-port/desktop acceptance; active structural edits remain a user-decision gate |
-| Record/stop, per-bus start/stop, elapsed time, folder action (`src/Transport.tsx`, `src/api.ts`) | Bus owner adds explicit-root all-armed/per-bus start, captured stable stop IDs, retained receipts and quit diagnostics; Folder is mounted with latest-start authority and off-UI preparation/launch/reaping | Real elapsed producer, elapsed/alignment and live recording/desktop acceptance; all-armed membership is preflight only, not atomic CAS |
+| Record/stop, per-bus start/stop, elapsed time, folder action (`src/Transport.tsx`, `src/api.ts`) | Bus owner adds explicit-root all-armed/per-bus start, captured stable stop IDs, retained receipts and quit diagnostics; Folder is mounted with latest-start authority and off-UI preparation/launch/reaping; reviewed elapsed producer/adapter preserve measurement age and use the existing clock/oldest-take formatter | Live elapsed/recording/desktop acceptance and sample alignment remain unproven; all-armed membership is preflight only, not atomic CAS |
 | MIDI clock/start-stop, MIDI tabs/route/activity (`src/MidiMixer.tsx`, `src/midi.ts`, `src/MidiMeter.tsx`) | Legacy MIDI feature flag remains disabled | Preserve disabled status; separately define/verify any enabled MIDI parity scope |
 | Meter ballistics/peak hold, per-channel rendering (`src/meters.ts`, `src/Meter.tsx`) | Entrypoint uses Session-adopted definitions for same-graph split/add/join/remove reprojection; retained wrappers, registry bindings, graph-before-peaks and visibility gating remain | Capture freshness/availability protocol and live/animation acceptance remain |
 | Hide/show strips/rows and reconnect names (`src/App.tsx`, `Mixer`) | Reviewed display panel/filter/save bridge; full graph/origin/history retained | Transient IDs must not become durable identity; reconnect/desktop acceptance |
@@ -120,12 +120,12 @@ The reviewed [Folder owner adoption](./native-folder-owner.md) mounts
 the corrected helper with actual latest-start receipt authority and explicit
 worker-based preparation/launch/reaping. Independent correction review clears
 `07e6edaf`, including retained cancelled-worker capacity and prepared-plan path
-correlation before launch. It is included in the matrix above. Active elapsed
-stays unavailable; a real producer is the next transport prerequisite, not a
-UI-arrival stopwatch.
+correlation before launch. It is included in the matrix above. Its original
+missing elapsed producer is adopted in the separately reviewed follow-up below.
 
-The separate [elapsed adapter candidate](./native-elapsed-adoption-candidate.md)
-adopts independently reviewed producer `38db4706` through retained measurement
+The reviewed [elapsed adoption](./native-elapsed-adoption-candidate.md)
+adopts independently cleared producer `38db4706` through retained measurement
 instants and the existing transport clock. It compensates different observation
 ages without restamping cached reports or rebinding edit controls. This new UI
-delta awaits independent review and is not completed PR2 timing acceptance.
+delta clears independently at `bcdd4553` and is included here. Source adoption
+does not establish physical timing, sample alignment or recording acceptance.
