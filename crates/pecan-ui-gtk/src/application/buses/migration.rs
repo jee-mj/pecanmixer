@@ -64,6 +64,27 @@ impl Postcondition {
                     == self.pairs)
     }
 }
+impl Work {
+    pub(super) fn closed_for_reconnect(&self, ticket: u64, expected: ConfigRevision) -> bool {
+        self.released
+            && self.last.as_ref().is_some_and(|r| {
+                r.ticket == ticket
+                    && r.expected_config == expected
+                    && r.source == self.source
+                    && r.expected_recording == self.membership
+                    && r.in_progress == 0
+                    && !r.cancellation_requested
+                    && matches!(
+                        r.progress,
+                        MigrationProgress::Completed(
+                            MigrationOutcome::AppliedLocally
+                                | MigrationOutcome::NoOpLocally
+                                | MigrationOutcome::Observed
+                        )
+                    )
+            })
+    }
+}
 impl BusOwner {
     /// Actual retained evidence, including local-only outcomes and failed work.
     pub fn migration_report(&self) -> Option<MigrationReport> {

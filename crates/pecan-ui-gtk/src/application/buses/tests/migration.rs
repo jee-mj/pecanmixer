@@ -68,6 +68,9 @@ impl MigrationPoll for Migration {
         report
     }
 }
+pub(super) fn set_report(receipt: &Migration, report: MigrationReport) {
+    *receipt.report.borrow_mut() = Some(report);
+}
 pub(super) fn routed() -> (Rc<BusOwner>, Rc<Fake>, FixtureDriver, BTreeMap<u32, u64>) {
     let (owner, fake, driver) = setup();
     let mut graph = graph();
@@ -146,7 +149,7 @@ fn edit(owner: &BusOwner, action: ui::Action) -> Result<Request, Error> {
     };
     owner.configure(&origin, action, proposed)
 }
-fn complete(
+pub(super) fn complete(
     fake: &Fake,
     index: usize,
     outcome: MigrationOutcome,
